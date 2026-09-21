@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1790004554052,
+      "tag": "0000_magical_lady_mastermind",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790004560326,
+      "tag": "0001_enable_pgvector",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790004562093,
+      "tag": "0002_audit_log_append_only",
+      "breakpoints": true
+    }
+  ]
+}

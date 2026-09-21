@@ -1,0 +1,22 @@
+node_modules/
+dist/
+build/
+*.log
+*.tsbuildinfo
+.env
+.env.local
+.DS_Store
+coverage/
+
+# model weights are large binary artifacts, never committed
+models/*.gguf
+models/*.bin
+
+# python
+services/*/.venv/
+services/*/__pycache__/
+services/*/**/__pycache__/
+*.pyc
+
+# spike scratch output that isn't a committed result
+scripts/spikes/results/.scratch/

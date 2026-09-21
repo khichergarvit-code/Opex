@@ -1,0 +1,145 @@
+networks:
+  edge:
+    driver: bridge
+  core:
+    internal: true
+
+volumes:
+  pgdata:
+
+x-offline-env: &offline-env
+  DO_NOT_TRACK: "1"
+  HF_HUB_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    networks:
+      - edge
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    networks:
+      - edge
+      - core
+    environment:
+      <<: *offline-env
+      # Not "production": no TLS terminates in front of the API until B6,
+      # and express-session correctly refuses to ever send a `secure` cookie
+      # over plain HTTP — setting this to "production" here would silently
+      # break every login. Flip this once B6 adds TLS at the edge.
+      NODE_ENV: development
+      PORT: "3000"
+      DATABASE_URL: postgres://${POSTGRES_USER:-opex}:${POSTGRES_PASSWORD:-opex_dev_only_change_me}@postgres:5432/${POSTGRES_DB:-opex}
+      SESSION_SECRET: ${SESSION_SECRET:-dev_only_change_me_use_a_random_64_byte_value}
+      MODELS_DIR: /models
+      MANIFEST_PATH: /app/infra/models/manifest.yaml
+      LLM_SMALL_URL: http://llm-small:8081
+      LLM_MAIN_URL: http://llm-main:8082
+      LLM_EMBED_URL: http://llm-embed:8083
+      LLM_RERANK_URL: http://llm-rerank:8084
+    volumes:
+      - ./models:/models:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    networks:
+      - core
+    environment:
+      <<: *offline-env
+      POSTGRES_USER: ${POSTGRES_USER:-opex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-opex_dev_only_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-opex}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # No published port: `core` is internal:true, and Docker doesn't forward
+    # host ports onto internal-only networks anyway. Reach postgres for
+    # migrations/psql/spikes via `docker compose exec postgres ...` — never
+    # by exposing it to the host (see invariant #1).
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-opex}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  llm-small:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    networks:
+      - core
+    environment: *offline-env
+    volumes:
+      - ./models:/models:ro
+    command: ["-m", "/models/qwen2.5-0.5b-instruct-q4_k_m.gguf", "--host", "0.0.0.0", "--port", "8081", "-c", "8192", "--jinja"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  llm-main:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    networks:
+      - core
+    environment: *offline-env
+    volumes:
+      - ./models:/models:ro
+    command: ["-m", "/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf", "--host", "0.0.0.0", "--port", "8082", "-c", "16384", "--jinja"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8082/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 60s
+
+  llm-embed:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    networks:
+      - core
+    environment: *offline-env
+    volumes:
+      - ./models:/models:ro
+    command: ["-m", "/models/bge-m3-Q8_0.gguf", "--host", "0.0.0.0", "--port", "8083", "--embedding", "-c", "8192"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  llm-rerank:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    networks:
+      - core
+    environment: *offline-env
+    volumes:
+      - ./models:/models:ro
+    command: ["-m", "/models/bge-reranker-v2-m3-Q8_0.gguf", "--host", "0.0.0.0", "--port", "8084", "--reranking", "-c", "8192"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8084/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  ingest:
+    build:
+      context: .
+      dockerfile: services/ingest/Dockerfile
+    networks:
+      - core
+    environment: *offline-env
