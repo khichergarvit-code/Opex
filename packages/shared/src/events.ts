@@ -7,11 +7,11 @@ import { z } from 'zod';
  *   route, plan, step_start, status, retrieval, memory_used, tool_call,
  *   approval_required, tool_result, token, citation, verify, done, error
  *
- * A1 has no router, planner, retrieval, memory, tools, or verifier yet, so only
- * the 4 events below are ever emitted in this milestone. The rest are added as
- * the systems that produce them are built (A2 retrieval/citation, A3
- * router/plan/step_start/tool_call/tool_result, B2 memory_used, B3 verify,
- * B4 approval_required).
+ * A1 shipped status/token/done/error. A2 adds citation (doc_qa's answer
+ * source mapping). A3 adds route/tool_call/tool_result/verify. The rest
+ * (plan/step_start/memory_used/approval_required) are added as the systems
+ * that produce them are built (B2 memory_used, B3 plan/step_start, B4
+ * approval_required).
  */
 
 export const statusEventSchema = z.object({
@@ -44,11 +44,76 @@ export const errorEventSchema = z.object({
   }),
 });
 
+const bboxSchema = z.object({
+  x0: z.number(),
+  y0: z.number(),
+  x1: z.number(),
+  y1: z.number(),
+});
+
+export const citationEventSchema = z.object({
+  type: z.literal('citation'),
+  data: z.object({
+    marker: z.number().int(),
+    documentId: z.string().uuid(),
+    filename: z.string(),
+    page: z.number().int(),
+    bbox: bboxSchema,
+  }),
+});
+export type CitationEvent = z.infer<typeof citationEventSchema>;
+
+export const routeEventSchema = z.object({
+  type: z.literal('route'),
+  data: z.object({
+    taskType: z.enum(['chat', 'doc_qa', 'analysis', 'code', 'research', 'vision']),
+    agent: z.string(),
+    complexity: z.enum(['simple', 'multi_step']),
+    reason: z.string(),
+  }),
+});
+export type RouteEvent = z.infer<typeof routeEventSchema>;
+
+export const toolCallEventSchema = z.object({
+  type: z.literal('tool_call'),
+  data: z.object({
+    toolName: z.string(),
+    callId: z.string(),
+    args: z.record(z.string(), z.unknown()),
+  }),
+});
+export type ToolCallEvent = z.infer<typeof toolCallEventSchema>;
+
+export const toolResultEventSchema = z.object({
+  type: z.literal('tool_result'),
+  data: z.object({
+    callId: z.string(),
+    status: z.enum(['ok', 'error']),
+    summary: z.string(),
+    artifactIds: z.array(z.string().uuid()).default([]),
+  }),
+});
+export type ToolResultEvent = z.infer<typeof toolResultEventSchema>;
+
+export const verifyEventSchema = z.object({
+  type: z.literal('verify'),
+  data: z.object({
+    ok: z.boolean(),
+    uncitedClaims: z.number().int(),
+  }),
+});
+export type VerifyEvent = z.infer<typeof verifyEventSchema>;
+
 export const sseEventSchema = z.discriminatedUnion('type', [
   statusEventSchema,
   tokenEventSchema,
   doneEventSchema,
   errorEventSchema,
+  citationEventSchema,
+  routeEventSchema,
+  toolCallEventSchema,
+  toolResultEventSchema,
+  verifyEventSchema,
 ]);
 
 export type SseEvent = z.infer<typeof sseEventSchema>;

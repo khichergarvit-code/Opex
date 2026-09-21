@@ -2,8 +2,30 @@ import 'dotenv/config';
 import argon2 from 'argon2';
 import { createDb } from './client.js';
 import { loadEnv } from '../env.js';
-import { policies, projectMembers, projects, users, workspaces } from './schema/index.js';
+import { agents, policies, projectMembers, projects, users, workspaces } from './schema/index.js';
 import { DEFAULT_POLICY_RULES } from '../policy/rules.js';
+
+/**
+ * A2 seeds general/doc_qa. A3 adds vision/analysis when the router and
+ * their tools exist. systemPromptTemplate is a filename resolved against
+ * apps/api/src/prompts/ at call time (see orchestrator/agents.ts).
+ */
+const SEED_AGENTS = [
+  {
+    name: 'general',
+    description: 'Plain chat, no documents or tools.',
+    systemPromptTemplate: 'chat-system.md',
+    modelRole: 'general' as const,
+    toolAllowlist: [],
+  },
+  {
+    name: 'doc_qa',
+    description: 'Answers questions from ingested project documents, with citations.',
+    systemPromptTemplate: 'doc-qa-system.md',
+    modelRole: 'general' as const,
+    toolAllowlist: ['doc_search'],
+  },
+];
 
 const DEV_PASSWORD = 'opex-dev-password';
 
@@ -42,6 +64,10 @@ async function main() {
   if (!project) throw new Error('failed to seed project');
 
   await db.insert(policies).values({ name: 'default', rules: DEFAULT_POLICY_RULES });
+
+  for (const agent of SEED_AGENTS) {
+    await db.insert(agents).values(agent);
+  }
 
   const passwordHash = await argon2.hash(DEV_PASSWORD);
 

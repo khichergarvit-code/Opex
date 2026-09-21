@@ -6,6 +6,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   SESSION_SECRET: z.string().min(16),
   MODELS_DIR: z.string().default('./models'),
+  DATA_DIR: z.string().default('./data'),
   MANIFEST_PATH: z.string().default('./infra/models/manifest.yaml'),
   LLM_SMALL_URL: z.string().url().default('http://localhost:8081'),
   LLM_MAIN_URL: z.string().url().default('http://localhost:8082'),

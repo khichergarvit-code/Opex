@@ -22,7 +22,9 @@
     "drizzle-orm": "^0.36.1",
     "express": "^5.0.1",
     "express-session": "^1.18.1",
+    "file-type": "^22.1.1",
     "js-yaml": "^4.1.0",
+    "multer": "^2.4.0",
     "postgres": "^3.4.4",
     "zod": "^3.23.8"
   },
@@ -31,6 +33,7 @@
     "@types/express": "^5.0.0",
     "@types/express-session": "^1.18.0",
     "@types/js-yaml": "^4.0.9",
+    "@types/multer": "^2.2.0",
     "@types/node": "^22.9.0",
     "@types/supertest": "^6.0.2",
     "drizzle-kit": "^0.31.11",

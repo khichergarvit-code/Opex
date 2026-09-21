@@ -1,10 +1,11 @@
 import { fetchEventSource } from '@microsoft/fetch-event-source';
-import type { SseEvent } from '@opex/shared';
+import type { Citation, SseEvent } from '@opex/shared';
 import { getCsrfToken } from './api';
 
 export interface StreamMessageHandlers {
   onToken: (delta: string) => void;
   onStatus?: (state: string, model: string) => void;
+  onCitation?: (citation: Citation) => void;
   onDone: (messageId: string, traceId: string) => void;
   onError: (message: string) => void;
 }
@@ -36,6 +37,9 @@ export async function streamMessage(
           break;
         case 'status':
           handlers.onStatus?.(event.data.state, event.data.model);
+          break;
+        case 'citation':
+          handlers.onCitation?.(event.data);
           break;
         case 'done':
           handlers.onDone(event.data.messageId, event.data.traceId);

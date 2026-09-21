@@ -129,6 +129,32 @@ export async function llamaEmbed(endpoint: string, texts: string[]): Promise<num
   return json.data.map((d) => d.embedding);
 }
 
+/**
+ * llama-server's /v1/rerank response is `{ results: [{index, relevance_score}] }`
+ * with `relevance_score` a raw (unbounded, often negative) logit, not a 0-1
+ * score — confirmed live against bge-reranker-v2-m3 (relevant chunks scored
+ * around -2 to -3, an irrelevant one around -11). Callers threshold on the
+ * raw scale, not a normalized one.
+ */
+export async function llamaRerank(
+  endpoint: string,
+  query: string,
+  documents: string[],
+): Promise<number[]> {
+  const res = await fetch(`${endpoint}/v1/rerank`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query, documents }),
+  });
+  if (!res.ok) throw new Error(`llama-server rerank ${res.status}`);
+  const json = (await res.json()) as {
+    results: Array<{ index: number; relevance_score: number }>;
+  };
+  const scores = new Array<number>(documents.length).fill(-Infinity);
+  for (const r of json.results) scores[r.index] = r.relevance_score;
+  return scores;
+}
+
 export async function llamaTokenize(endpoint: string, text: string): Promise<number[]> {
   const res = await fetch(`${endpoint}/tokenize`, {
     method: 'POST',

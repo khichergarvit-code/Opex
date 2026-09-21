@@ -2,13 +2,14 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
 import { Router, type Response } from 'express';
-import type { SseEvent } from '@opex/shared';
+import type { CitationEvent, SseEvent } from '@opex/shared';
 import { createConversationRequestSchema, postMessageRequestSchema } from '@opex/shared';
 import type { Db } from '../db/client.js';
 import { conversations, messages, projectMembers, projects, traces } from '../db/schema/index.js';
-import type { ModelGateway } from '../models/gateway.js';
+import type { ModelGateway, SpanWriter } from '../models/gateway.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
+import { buildDocQaPrompt, extractCitedMarkers, projectHasReadyDocuments } from './docQa.js';
 
 const CHAT_SYSTEM_PROMPT_PATH = fileURLToPath(new URL('../prompts/chat-system.md', import.meta.url));
 
@@ -25,7 +26,7 @@ async function isProjectMember(db: Db, userId: string, projectId: string): Promi
   return rows.length > 0;
 }
 
-export function createConversationsRouter(db: Db, gateway: ModelGateway): Router {
+export function createConversationsRouter(db: Db, gateway: ModelGateway, spanWriter: SpanWriter): Router {
   const router = Router();
 
   router.post('/conversations', requireAuth(db), async (req, res) => {
@@ -143,29 +144,78 @@ export function createConversationsRouter(db: Db, gateway: ModelGateway): Router
       .select()
       .from(messages)
       .where(eq(messages.conversationId, conversation.id));
-    const systemPrompt = await readFile(CHAT_SYSTEM_PROMPT_PATH, 'utf8');
+    // The just-inserted user row is last; prior turns exclude it since
+    // doc_qa rebuilds the latest turn itself with retrieved chunks attached.
+    const priorTurns = history.slice(0, -1).map((m) => ({ role: m.role, content: m.content }));
+
+    const useDocQa = await projectHasReadyDocuments(db, conversation.projectId);
 
     let assistantContent = '';
     let traceStatus: 'ok' | 'error' = 'ok';
-    try {
-      for await (const delta of gateway.chatStream({
-        role: 'general',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...history.map((m) => ({ role: m.role, content: m.content })),
-        ],
+    let citations: Array<{ marker: number; documentId: string; filename: string; page: number; bbox: unknown }> = [];
+
+    if (useDocQa) {
+      const docQa = await buildDocQaPrompt({
+        db,
+        gateway,
+        spanWriter,
         user,
         traceId: trace.id,
-      })) {
-        assistantContent += delta;
-        sendEvent(res, { type: 'token', data: { delta } });
-      }
-    } catch (err) {
-      traceStatus = 'error';
-      sendEvent(res, {
-        type: 'error',
-        data: { message: err instanceof Error ? err.message : 'model call failed' },
+        workspaceId: conversation.workspaceId,
+        projectId: conversation.projectId,
+        priorTurns,
+        question: parsed.data.content,
       });
+
+      if (docQa.noSupportAnswer) {
+        assistantContent = docQa.noSupportAnswer;
+        sendEvent(res, { type: 'token', data: { delta: assistantContent } });
+      } else {
+        try {
+          for await (const delta of gateway.chatStream({
+            role: 'general',
+            messages: [
+              { role: 'system', content: docQa.systemPrompt },
+              ...docQa.messages,
+            ],
+            user,
+            traceId: trace.id,
+          })) {
+            assistantContent += delta;
+            sendEvent(res, { type: 'token', data: { delta } });
+          }
+          const citedMarkers = new Set(extractCitedMarkers(assistantContent));
+          citations = docQa.citationMap.filter((c) => citedMarkers.has(c.marker));
+          for (const citation of citations) {
+            sendEvent(res, { type: 'citation', data: citation as CitationEvent['data'] });
+          }
+        } catch (err) {
+          traceStatus = 'error';
+          sendEvent(res, {
+            type: 'error',
+            data: { message: err instanceof Error ? err.message : 'model call failed' },
+          });
+        }
+      }
+    } else {
+      const systemPrompt = await readFile(CHAT_SYSTEM_PROMPT_PATH, 'utf8');
+      try {
+        for await (const delta of gateway.chatStream({
+          role: 'general',
+          messages: [{ role: 'system', content: systemPrompt }, ...priorTurns, { role: 'user', content: parsed.data.content }],
+          user,
+          traceId: trace.id,
+        })) {
+          assistantContent += delta;
+          sendEvent(res, { type: 'token', data: { delta } });
+        }
+      } catch (err) {
+        traceStatus = 'error';
+        sendEvent(res, {
+          type: 'error',
+          data: { message: err instanceof Error ? err.message : 'model call failed' },
+        });
+      }
     }
 
     let assistantMessageId = '';
@@ -177,6 +227,7 @@ export function createConversationsRouter(db: Db, gateway: ModelGateway): Router
           role: 'assistant',
           content: assistantContent,
           traceId: trace.id,
+          citations,
         })
         .returning();
       assistantMessageId = assistantRow?.id ?? '';

@@ -13,6 +13,11 @@ export const policyRulesSchema = z.object({
   allowedTools: z.record(z.string(), z.array(z.string())).default({}),
   uploadLimitMb: z.number().default(50),
   webAccess: z.boolean().default(false),
+  // Tools that can reach outside the sandbox/host once one exists (B6's
+  // web_search). A3's 3 tools (code_exec, make_chart, describe_image) are
+  // all local — this list is empty until B6, but can()'s tool:invoke case
+  // already reads it (invariant #10's code path, built now, used later).
+  egressCapableTools: z.array(z.string()).default([]),
 });
 export type PolicyRules = z.infer<typeof policyRulesSchema>;
 
@@ -26,4 +31,5 @@ export const DEFAULT_POLICY_RULES: PolicyRules = {
   allowedTools: {},
   uploadLimitMb: 50,
   webAccess: false,
+  egressCapableTools: [],
 };

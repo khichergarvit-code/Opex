@@ -5,7 +5,7 @@ import { can } from '../policy/can.js';
 import type { PolicyRules } from '../policy/rules.js';
 import { DEFAULT_POLICY_RULES } from '../policy/rules.js';
 import { CircuitBreaker } from './circuitBreaker.js';
-import { llamaChat, llamaChatStream, llamaEmbed, llamaTokenize } from './llamaClient.js';
+import { llamaChat, llamaChatStream, llamaEmbed, llamaRerank, llamaTokenize } from './llamaClient.js';
 import type {
   ChatRequest,
   EmbedRequest,
@@ -36,6 +36,7 @@ export interface ChatFns {
   chat: typeof llamaChat;
   chatStream: typeof llamaChatStream;
   embed: typeof llamaEmbed;
+  rerank: typeof llamaRerank;
   tokenize: typeof llamaTokenize;
 }
 
@@ -59,6 +60,7 @@ export class ModelGateway {
       chat: llamaChat,
       chatStream: llamaChatStream,
       embed: llamaEmbed,
+      rerank: llamaRerank,
       tokenize: llamaTokenize,
       ...deps.fns,
     };
@@ -230,9 +232,41 @@ export class ModelGateway {
     }
   }
 
-  /** Reranking is not exercised until A2 retrieval exists; stubbed for interface completeness. */
-  async rerank(_req: RerankRequest): Promise<number[]> {
-    throw new Error('rerank is not implemented until A2 (retrieval)');
+  async rerank(req: RerankRequest): Promise<number[]> {
+    const decision = can(
+      req.user,
+      'model:invoke',
+      { modelRole: 'rerank' },
+      this.deps.policyRules ?? DEFAULT_POLICY_RULES,
+    );
+    if (!decision.allowed) {
+      throw new PolicyDeniedError(decision.reason ?? 'denied');
+    }
+    const { id: modelId, endpoint } = await this.resolveEndpoint('rerank');
+    const started = Date.now();
+    try {
+      const scores = await this.fns.rerank(endpoint, req.query, req.documents);
+      await this.deps.spanWriter.writeSpan({
+        traceId: req.traceId,
+        kind: 'llm',
+        name: 'gateway.rerank',
+        model: modelId,
+        latencyMs: Date.now() - started,
+        status: 'ok',
+      });
+      return scores;
+    } catch (err) {
+      await this.deps.spanWriter.writeSpan({
+        traceId: req.traceId,
+        kind: 'llm',
+        name: 'gateway.rerank',
+        model: modelId,
+        latencyMs: Date.now() - started,
+        status: 'error',
+        attrs: { error: err instanceof Error ? err.message : String(err) },
+      });
+      throw err;
+    }
   }
 
   async tokenize(req: TokenizeRequest): Promise<number[]> {

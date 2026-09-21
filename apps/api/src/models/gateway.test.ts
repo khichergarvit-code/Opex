@@ -106,3 +106,44 @@ describe('ModelGateway.chat', () => {
     expect(chatFn.mock.calls.length).toBe(callsBeforeOpen);
   });
 });
+
+describe('ModelGateway.rerank', () => {
+  it('returns scores and writes an ok span on success', async () => {
+    const db = fakeDb({ id: 'llm-rerank', endpoint: 'http://x', role: 'rerank', enabled: true });
+    const { spanWriter, spans } = spanRecorder();
+    const rerankFn = vi.fn().mockResolvedValue([-2.3, -11.0]);
+    const gw = new ModelGateway({ db, spanWriter, fns: { rerank: rerankFn } });
+
+    const scores = await gw.rerank({
+      query: 'torque spec',
+      documents: ['bolt A is 50 Nm', 'the weather is sunny'],
+      user: fakeUser('employee'),
+      traceId: 't1',
+    });
+
+    expect(scores).toEqual([-2.3, -11.0]);
+    expect(rerankFn).toHaveBeenCalledWith('http://x', 'torque spec', [
+      'bolt A is 50 Nm',
+      'the weather is sunny',
+    ]);
+    expect(spans).toHaveLength(1);
+    expect(spans[0]).toMatchObject({ status: 'ok', model: 'llm-rerank' });
+  });
+
+  it('denies model:invoke for a role without rerank access', async () => {
+    const db = fakeDb({ id: 'llm-rerank', endpoint: 'http://x', role: 'rerank', enabled: true });
+    const { spanWriter } = spanRecorder();
+    const rerankFn = vi.fn();
+    const gw = new ModelGateway({ db, spanWriter, fns: { rerank: rerankFn } });
+
+    await expect(
+      gw.rerank({
+        query: 'q',
+        documents: ['d'],
+        user: { ...fakeUser('employee'), status: 'disabled' },
+        traceId: 't1',
+      }),
+    ).rejects.toBeInstanceOf(PolicyDeniedError);
+    expect(rerankFn).not.toHaveBeenCalled();
+  });
+});

@@ -15,6 +15,9 @@ export const conversations = pgTable('conversations', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   title: text('title'),
+  // Working memory's rolling summary (A3) — folded from older turns once
+  // history exceeds the working-memory budget threshold.
+  workingSummary: text('working_summary'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

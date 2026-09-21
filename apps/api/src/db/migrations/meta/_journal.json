@@ -22,6 +22,20 @@
       "when": 1790004562093,
       "tag": "0002_audit_log_append_only",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790023133024,
+      "tag": "0003_workable_ronan",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790023141264,
+      "tag": "0004_chunks_tsv_hnsw_gin",
+      "breakpoints": true
     }
   ]
 }

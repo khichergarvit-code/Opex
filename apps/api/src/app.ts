@@ -9,6 +9,7 @@ import { createDbSpanWriter } from './spans/writeSpan.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createProjectsRouter } from './routes/projects.js';
 import { createConversationsRouter } from './routes/conversations.js';
+import { createDocumentsRouter } from './routes/documents.js';
 
 export function createApp(db: Db, env: Env): Express {
   const app = express();
@@ -23,7 +24,8 @@ export function createApp(db: Db, env: Env): Express {
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
   app.use(createAuthRouter(db));
   app.use(createProjectsRouter(db));
-  app.use(createConversationsRouter(db, gateway));
+  app.use(createConversationsRouter(db, gateway, spanWriter));
+  app.use(createDocumentsRouter(db, env.DATA_DIR));
 
   app.use(errorHandler);
   return app;
