@@ -1,4 +1,13 @@
-import type { ApiDocument, LoginRequest, MeResponse, Project } from '@opex/shared';
+import type {
+  AdminUser,
+  ApiDocument,
+  ApiGroup,
+  CreateGroupRequest,
+  CreateUserRequest,
+  LoginRequest,
+  MeResponse,
+  Project,
+} from '@opex/shared';
 
 export class ApiError extends Error {
   constructor(
@@ -96,6 +105,35 @@ export async function fetchAdminLogs(params: { kind?: string; status?: string } 
 
 export async function fetchAdminUsage(): Promise<AdminUsageRow[]> {
   return request<AdminUsageRow[]>('/admin/usage');
+}
+
+export async function fetchAdminUsers(): Promise<AdminUser[]> {
+  return request<AdminUser[]>('/admin/users');
+}
+
+export async function createAdminUser(body: CreateUserRequest): Promise<AdminUser> {
+  return request<AdminUser>('/admin/users', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function setAdminUserStatus(userId: string, status: 'active' | 'disabled'): Promise<AdminUser> {
+  const path = status === 'disabled' ? 'disable' : 'enable';
+  return request<AdminUser>(`/admin/users/${userId}/${path}`, { method: 'PATCH' });
+}
+
+export async function fetchAdminGroups(): Promise<ApiGroup[]> {
+  return request<ApiGroup[]>('/admin/groups');
+}
+
+export async function createAdminGroup(body: CreateGroupRequest): Promise<ApiGroup> {
+  return request<ApiGroup>('/admin/groups', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function addGroupMember(groupId: string, userId: string): Promise<void> {
+  await request(`/admin/groups/${groupId}/members`, { method: 'POST', body: JSON.stringify({ userId }) });
+}
+
+export async function removeGroupMember(groupId: string, userId: string): Promise<void> {
+  await request(`/admin/groups/${groupId}/members/${userId}`, { method: 'DELETE' });
 }
 
 export async function uploadDocument(projectId: string, file: File): Promise<ApiDocument> {

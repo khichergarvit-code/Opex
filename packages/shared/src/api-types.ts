@@ -121,3 +121,44 @@ export const accessRequestSchema = z.object({
   createdAt: z.string(),
 });
 export type AccessRequest = z.infer<typeof accessRequestSchema>;
+
+export const userStatusSchema = z.enum(['active', 'disabled']);
+export type UserStatus = z.infer<typeof userStatusSchema>;
+
+export const createUserRequestSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1),
+  password: z.string().min(12),
+  role: roleSchema,
+  clearance: classificationSchema,
+});
+export type CreateUserRequest = z.infer<typeof createUserRequestSchema>;
+
+export const adminUserSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string(),
+  name: z.string(),
+  role: roleSchema,
+  clearance: classificationSchema,
+  status: userStatusSchema,
+  createdAt: z.string(),
+});
+export type AdminUser = z.infer<typeof adminUserSchema>;
+
+export const createGroupRequestSchema = z.object({
+  name: z.string().min(1).max(100),
+});
+export type CreateGroupRequest = z.infer<typeof createGroupRequestSchema>;
+
+export const groupMembershipRequestSchema = z.object({
+  userId: z.string().uuid(),
+});
+export type GroupMembershipRequest = z.infer<typeof groupMembershipRequestSchema>;
+
+export const groupSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  createdAt: z.string(),
+  memberIds: z.array(z.string().uuid()),
+});
+export type ApiGroup = z.infer<typeof groupSchema>;
