@@ -3,11 +3,14 @@ import type {
   AdminUser,
   ApiDocument,
   ApiGroup,
+  Conversation,
   CreateGroupRequest,
   CreateUserRequest,
   LoginRequest,
   MeResponse,
+  Message,
   Project,
+  RegisterRequest,
 } from '@opex/shared';
 
 export class ApiError extends Error {
@@ -55,6 +58,32 @@ export async function login(
   return result;
 }
 
+export async function register(
+  body: RegisterRequest,
+): Promise<MeResponse & { csrfToken: string }> {
+  const result = await request<MeResponse & { csrfToken: string }>('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  setCsrfToken(result.csrfToken);
+  return result;
+}
+
+export async function fetchMe(): Promise<(MeResponse & { csrfToken: string }) | null> {
+  try {
+    const result = await request<MeResponse & { csrfToken: string }>('/me');
+    setCsrfToken(result.csrfToken);
+    return result;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) return null;
+    throw err;
+  }
+}
+
+export async function fetchHealth(): Promise<{ status: string }> {
+  return request<{ status: string }>('/health');
+}
+
 export async function logout(): Promise<void> {
   await request('/auth/logout', { method: 'POST' });
   csrfToken = null;
@@ -64,8 +93,20 @@ export async function fetchProjects(): Promise<Project[]> {
   return request<Project[]>('/projects');
 }
 
-export async function createConversation(projectId: string): Promise<{ id: string }> {
-  return request('/conversations', { method: 'POST', body: JSON.stringify({ projectId }) });
+export async function createConversation(projectId: string, title?: string): Promise<{ id: string }> {
+  return request('/conversations', { method: 'POST', body: JSON.stringify({ projectId, title }) });
+}
+
+export async function fetchConversations(): Promise<
+  Array<Pick<Conversation, 'id' | 'projectId' | 'title'> & { createdAt: string; updatedAt: string }>
+> {
+  return request('/conversations');
+}
+
+export async function fetchConversation(
+  conversationId: string,
+): Promise<{ conversation: Conversation; messages: Message[] }> {
+  return request(`/conversations/${conversationId}`);
 }
 
 export async function fetchDocuments(projectId: string): Promise<ApiDocument[]> {
@@ -106,6 +147,49 @@ export async function fetchAdminLogs(params: { kind?: string; status?: string } 
 
 export async function fetchAdminUsage(): Promise<AdminUsageRow[]> {
   return request<AdminUsageRow[]>('/admin/usage');
+}
+
+export interface AdminModelRow {
+  id: string;
+  role: string;
+  endpoint: string;
+  vramMb: number | null;
+  license: string;
+  origin: string;
+  enabled: boolean;
+  groupAllowlist: string[];
+  status: 'up' | 'down';
+  vramLive: string;
+}
+
+export async function fetchAdminModels(): Promise<AdminModelRow[]> {
+  return request<AdminModelRow[]>('/admin/models');
+}
+
+export interface AdminAgentRow {
+  id: string;
+  name: string;
+  version: number;
+  description: string;
+  modelRole: string;
+  toolAllowlist: string[];
+  enabled: boolean;
+}
+
+export async function fetchAdminAgents(): Promise<AdminAgentRow[]> {
+  return request<AdminAgentRow[]>('/admin/agents');
+}
+
+export interface AdminSystemResponse {
+  queueByStatus: Array<{ status: string; count: number }>;
+  diskUsedPct: number;
+  gpu: string;
+  vram: string;
+  alerts: string[];
+}
+
+export async function fetchAdminSystem(): Promise<AdminSystemResponse> {
+  return request<AdminSystemResponse>('/admin/system');
 }
 
 export async function fetchAdminUsers(): Promise<AdminUser[]> {

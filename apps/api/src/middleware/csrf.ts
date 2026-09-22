@@ -5,7 +5,7 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 // Login has no prior session to carry a CSRF token, so it can't be
 // double-submit protected — it's guarded instead by argon2 + lockout.
-const CSRF_EXEMPT_PATHS = new Set(['/auth/login']);
+const CSRF_EXEMPT_PATHS = new Set(['/auth/login', '/auth/register']);
 
 export function issueCsrfToken(req: Request): string {
   if (!req.session.csrfToken) {

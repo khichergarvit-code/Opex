@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+  background: #f6f7fb;
+  color: #111827;
+}
+
+.dot-grid {
+  background-image: radial-gradient(#d4d7e5 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark body {
+  background: #0f1117;
+  color: #f3f4f6;
+}

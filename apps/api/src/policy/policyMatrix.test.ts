@@ -4,7 +4,7 @@ import { DEFAULT_POLICY_RULES, type PolicyRules } from './rules.js';
 import type { Action, AuthedUser, PolicyContext } from './types.js';
 
 function user(overrides: Partial<AuthedUser> = {}): AuthedUser {
-  return { id: 'u1', email: 'u@opex.local', role: 'employee', clearance: 1, status: 'active', ...overrides };
+  return { id: 'u1', email: 'u@opex.local', name: 'User', role: 'employee', clearance: 1, status: 'active', ...overrides };
 }
 
 interface Row {

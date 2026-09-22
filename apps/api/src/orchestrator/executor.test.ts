@@ -4,7 +4,7 @@ import type { AgentConfig } from './types.js';
 import type { AuthedUser } from '../policy/types.js';
 
 function user(): AuthedUser {
-  return { id: 'u1', email: 'u@opex.local', role: 'employee', clearance: 1, status: 'active' };
+  return { id: 'u1', email: 'u@opex.local', name: 'User', role: 'employee', clearance: 1, status: 'active' };
 }
 
 function agent(overrides: Partial<AgentConfig> = {}): AgentConfig {

@@ -3,6 +3,7 @@ import type { Classification, Role } from '@opex/shared';
 export interface AuthedUser {
   id: string;
   email: string;
+  name: string;
   role: Role;
   clearance: Classification;
   status: 'active' | 'disabled';

@@ -7,6 +7,7 @@ function user(overrides: Partial<AuthedUser> = {}): AuthedUser {
   return {
     id: 'u1',
     email: 'u@opex.local',
+    name: 'User',
     role: 'employee',
     clearance: 1,
     status: 'active',

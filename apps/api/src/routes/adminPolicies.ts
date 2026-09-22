@@ -77,7 +77,7 @@ export function createAdminPoliciesRouter(db: Db, auditWriter: AuditWriter): Rou
     const rulesParsed = policyRulesSchema.safeParse(req.body.rules);
     const draftRules = rulesParsed.success ? rulesParsed.data : undefined;
     const decisionResult = can(
-      { id: target.id, email: target.email, role: target.role, clearance: target.clearance as 0 | 1 | 2 | 3, status: target.status },
+      { id: target.id, email: target.email, name: target.name, role: target.role, clearance: target.clearance as 0 | 1 | 2 | 3, status: target.status },
       parsed.data.action as Action,
       parsed.data.ctx as PolicyContext,
       draftRules,

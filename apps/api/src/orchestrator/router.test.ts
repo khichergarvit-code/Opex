@@ -3,7 +3,7 @@ import { route } from './router.js';
 import type { AuthedUser } from '../policy/types.js';
 
 function user(): AuthedUser {
-  return { id: 'u1', email: 'u@opex.local', role: 'employee', clearance: 1, status: 'active' };
+  return { id: 'u1', email: 'u@opex.local', name: 'User', role: 'employee', clearance: 1, status: 'active' };
 }
 
 describe('route() — rule pre-checks', () => {

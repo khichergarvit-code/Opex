@@ -15,7 +15,7 @@ function fakeDb(row: { id: string; endpoint: string; role: string; enabled: bool
 }
 
 function fakeUser(role: AuthedUser['role'] = 'employee'): AuthedUser {
-  return { id: 'u1', email: 'u@opex.local', role, clearance: 1, status: 'active' };
+  return { id: 'u1', email: 'u@opex.local', name: 'User', role, clearance: 1, status: 'active' };
 }
 
 function spanRecorder(): { spanWriter: SpanWriter; spans: unknown[] } {

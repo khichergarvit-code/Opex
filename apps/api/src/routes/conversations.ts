@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { Router, type Response } from 'express';
 import type { CitationEvent, SseEvent } from '@opex/shared';
 import { createConversationRequestSchema, postMessageRequestSchema } from '@opex/shared';
@@ -85,6 +85,23 @@ export function createConversationsRouter(
       })
       .returning();
     res.status(201).json(row);
+  });
+
+  router.get('/conversations', requireAuth(db), async (req, res) => {
+    const user = req.user!;
+    const rows = await db
+      .select({
+        id: conversations.id,
+        projectId: conversations.projectId,
+        title: conversations.title,
+        createdAt: conversations.createdAt,
+        updatedAt: conversations.updatedAt,
+      })
+      .from(conversations)
+      .where(eq(conversations.userId, user.id))
+      .orderBy(desc(conversations.updatedAt))
+      .limit(100);
+    res.json(rows);
   });
 
   router.get('/conversations/:id', requireAuth(db), async (req, res) => {
