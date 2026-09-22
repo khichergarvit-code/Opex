@@ -8,7 +8,7 @@ import { runExtractionForConversation } from './extraction.js';
 const IDLE_MINUTES = 30;
 
 async function extractIdleConversations(db: Db, gateway: ModelGateway, spanWriter: SpanWriter): Promise<void> {
-  const cutoff = new Date(Date.now() - IDLE_MINUTES * 60_000);
+  const cutoff = new Date(Date.now() - IDLE_MINUTES * 60_000).toISOString();
   const idle = await db.execute(sql`
     SELECT id FROM conversations
     WHERE updated_at < ${cutoff}

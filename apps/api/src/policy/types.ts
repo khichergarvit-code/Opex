@@ -68,6 +68,8 @@ export interface PolicyContext {
   dailyTokensUsedToday?: number;
   /** Present for document:upload — moves the size check inside can(). */
   uploadSizeBytes?: number;
+  /** Present for admin:memory:purge — allows a user to delete their own memory. */
+  memoryOwnerId?: string;
 }
 
 export interface PolicyDecision {

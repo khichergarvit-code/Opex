@@ -51,7 +51,7 @@ export function createApp(db: Db, env: Env): Express {
   app.use(createAdminModelsRouter(db, auditWriter));
   app.use(createAdminPoliciesRouter(db, auditWriter));
   app.use(createAdminAgentsRouter(db, gateway, auditWriter));
-  app.use(createAdminMemoryRouter(db, auditWriter));
+  app.use(createAdminMemoryRouter(db, gateway, spanWriter, auditWriter));
   app.use(createFeedbackRouter(db, auditWriter));
   app.use(createAdminSystemRouter(db, env.DATA_DIR));
 
