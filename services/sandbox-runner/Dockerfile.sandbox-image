@@ -1,0 +1,10 @@
+# The prebuilt image code_exec/make_chart actually run inside — never the
+# sandbox-runner service's own image. No pip at runtime: the container runs
+# with --network none --read-only, so there is nothing to install into even
+# if pip were invoked (tools.md).
+FROM python:3.12-slim
+RUN pip install --no-cache-dir numpy pandas matplotlib openpyxl
+# Non-root, matches docker_exec.py's --user 10001.
+RUN useradd -u 10001 -m sandboxuser
+USER 10001
+WORKDIR /work

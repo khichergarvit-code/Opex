@@ -8,6 +8,8 @@ export interface StreamMessageHandlers {
   onCitation?: (citation: Citation) => void;
   onDone: (messageId: string, traceId: string) => void;
   onError: (message: string) => void;
+  /** Fired for every event (including the ones above) — the timeline builds its log from this. */
+  onEvent?: (event: SseEvent) => void;
 }
 
 /**
@@ -31,6 +33,7 @@ export async function streamMessage(
       if (!ev.event) return;
       const data = JSON.parse(ev.data || '{}');
       const event = { type: ev.event, data } as SseEvent;
+      handlers.onEvent?.(event);
       switch (event.type) {
         case 'token':
           handlers.onToken(event.data.delta);

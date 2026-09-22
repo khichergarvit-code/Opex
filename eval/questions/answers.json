@@ -1,0 +1,12 @@
+[
+  { "question": "What is the rated flow of the Centrifugal Pump CP-4400?", "expectedKeyword": "440" },
+  { "question": "What is the torque spec for the discharge flange bolts?", "expectedKeyword": "460" },
+  { "question": "How often should the bearings be relubricated?", "expectedKeyword": "4000" },
+  { "question": "Who performed the boiler feed pump inspection?", "expectedKeyword": "Sharma" },
+  { "question": "What bearing temperature was recorded during the inspection?", "expectedKeyword": "78" },
+  { "question": "What was the overall rating given in the inspection report?", "expectedKeyword": "Fair" },
+  { "question": "What does tag V-203 represent in the P&ID diagram?", "expectedKeyword": "valve" },
+  { "question": "What is the normal discharge pressure range shown in the diagram?", "expectedKeyword": "8" },
+  { "question": "What is the minimum oxygen level required for confined-space entry per the safety circular?", "expectedKeyword": "19.5" },
+  { "question": "What is the maximum dry-run time for the pump?", "expectedKeyword": "30" }
+]

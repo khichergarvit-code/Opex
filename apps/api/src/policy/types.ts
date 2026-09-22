@@ -18,7 +18,23 @@ export type Action =
   | 'document:read'
   | 'tool:invoke'
   | 'admin:traces:read'
-  | 'admin:usage:read';
+  | 'admin:usage:read'
+  | 'access_request:create'
+  | 'access_request:approve'
+  | 'access_grant:read'
+  | 'user:create'
+  | 'user:disable'
+  | 'group:manage'
+  | 'admin:policies:read'
+  | 'admin:policies:write'
+  | 'admin:models:manage'
+  | 'admin:agents:manage'
+  | 'admin:memory:read'
+  | 'admin:memory:purge'
+  | 'admin:feedback:triage'
+  | 'admin:system:read'
+  | 'admin:conversation:read'
+  | 'admin:audit:read';
 
 export interface PolicyContext {
   /** Present for conversation:* and document:* actions — the project in scope. */
@@ -31,11 +47,27 @@ export interface PolicyContext {
   documentClassification?: Classification;
   documentAclGroupIds?: string[];
   userGroupIds?: string[];
+  /**
+   * Present for document:read — whether the caller already found a live
+   * (non-expired) access_grants row for this user+document. Mirrors
+   * retrieval/aclFilter.ts's `OR EXISTS (... access_grants ...)` clause,
+   * just computed by the caller and passed in rather than inline SQL,
+   * since document:read isn't itself a chunk-level SQL query.
+   */
+  hasActiveAccessGrant?: boolean;
   /** Present for tool:invoke — the tool name and the calling agent's allowlist. */
   toolName?: string;
   agentToolAllowlist?: string[];
   /** Present for tool:invoke — the current task's classification floor (invariant #10). */
   taskClassification?: Classification;
+  /** Present for access_request:create — the document being requested. */
+  documentId?: string;
+  /** Present for user:disable — guards against a self-disable lockout. */
+  targetUserId?: string;
+  /** Present for model:invoke — today's token usage, for dailyTokenQuota. */
+  dailyTokensUsedToday?: number;
+  /** Present for document:upload — moves the size check inside can(). */
+  uploadSizeBytes?: number;
 }
 
 export interface PolicyDecision {

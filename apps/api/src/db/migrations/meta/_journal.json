@@ -36,6 +36,13 @@
       "when": 1790023141264,
       "tag": "0004_chunks_tsv_hnsw_gin",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790058233517,
+      "tag": "0005_steep_dragon_man",
+      "breakpoints": true
     }
   ]
 }

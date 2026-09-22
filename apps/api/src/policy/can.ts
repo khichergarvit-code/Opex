@@ -30,13 +30,32 @@ export function can(
           reason: `role ${user.role} is not allowed to invoke model role ${ctx.modelRole}`,
         };
       }
+      const quota = rules.dailyTokenQuota[user.role];
+      if (quota !== undefined && (ctx.dailyTokensUsedToday ?? 0) >= quota) {
+        return { allowed: false, reason: `daily token quota (${quota}) reached for role ${user.role}` };
+      }
       return { allowed: true };
     }
 
     case 'conversation:create':
     case 'conversation:read':
-    case 'conversation:message':
+    case 'conversation:message': {
+      if (user.role === 'super_admin' || user.role === 'workspace_admin') {
+        return { allowed: true };
+      }
+      if (!ctx.isProjectMember) {
+        return { allowed: false, reason: 'user is not a member of this project' };
+      }
+      return { allowed: true };
+    }
+
     case 'document:upload': {
+      if (
+        ctx.uploadSizeBytes !== undefined &&
+        ctx.uploadSizeBytes > rules.uploadLimitMb * 1024 * 1024
+      ) {
+        return { allowed: false, reason: `file exceeds the ${rules.uploadLimitMb}MB upload limit` };
+      }
       if (user.role === 'super_admin' || user.role === 'workspace_admin') {
         return { allowed: true };
       }
@@ -52,6 +71,9 @@ export function can(
       }
       if (!ctx.isProjectMember) {
         return { allowed: false, reason: 'user is not a member of this project' };
+      }
+      if (ctx.hasActiveAccessGrant) {
+        return { allowed: true };
       }
       if (
         ctx.documentClassification !== undefined &&
@@ -77,6 +99,10 @@ export function can(
       if (!(ctx.agentToolAllowlist ?? []).includes(ctx.toolName)) {
         return { allowed: false, reason: `tool "${ctx.toolName}" is not in the agent's allowlist` };
       }
+      const roleTools = rules.allowedTools[user.role];
+      if (roleTools !== undefined && !roleTools.includes(ctx.toolName)) {
+        return { allowed: false, reason: `tool "${ctx.toolName}" is not allowed for role ${user.role}` };
+      }
       // Invariant #10: once a task touches Confidential+ data, outbound
       // tools are disabled for that task. A3 has no egress-capable tools
       // (code_exec/make_chart/describe_image all run locally), so this is
@@ -92,8 +118,39 @@ export function can(
       return { allowed: true };
     }
 
+    case 'access_request:create': {
+      if (!ctx.documentId) {
+        return { allowed: false, reason: 'documentId is required for access_request:create' };
+      }
+      return { allowed: true };
+    }
+
+    case 'user:disable': {
+      if (ctx.targetUserId !== undefined && ctx.targetUserId === user.id) {
+        return { allowed: false, reason: 'a user cannot disable their own account' };
+      }
+      if (user.role === 'super_admin' || user.role === 'workspace_admin') {
+        return { allowed: true };
+      }
+      return { allowed: false, reason: 'user administration requires super_admin or workspace_admin' };
+    }
+
     case 'admin:traces:read':
-    case 'admin:usage:read': {
+    case 'admin:usage:read':
+    case 'access_request:approve':
+    case 'access_grant:read':
+    case 'user:create':
+    case 'group:manage':
+    case 'admin:policies:read':
+    case 'admin:policies:write':
+    case 'admin:models:manage':
+    case 'admin:agents:manage':
+    case 'admin:memory:read':
+    case 'admin:memory:purge':
+    case 'admin:feedback:triage':
+    case 'admin:system:read':
+    case 'admin:conversation:read':
+    case 'admin:audit:read': {
       if (user.role === 'super_admin' || user.role === 'workspace_admin') {
         return { allowed: true };
       }

@@ -16,6 +16,8 @@ export default defineConfig({
       '/projects': 'http://localhost:3000',
       '/conversations': 'http://localhost:3000',
       '/documents': 'http://localhost:3000',
+      '/artifacts': 'http://localhost:3000',
+      '/admin': 'http://localhost:3000',
     },
   },
   build: {

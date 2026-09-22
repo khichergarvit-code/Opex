@@ -15,10 +15,17 @@ export interface LlamaChatOptions {
   maxRetries?: number;
 }
 
+export interface LlamaToolCall {
+  id: string;
+  name: string;
+  arguments: string; // raw JSON string, as the model emits it
+}
+
 export interface LlamaChatResult {
   content: string;
   tokensIn: number;
   tokensOut: number;
+  toolCalls: LlamaToolCall[];
 }
 
 async function sleep(ms: number) {
@@ -59,13 +66,24 @@ export async function llamaChat(opts: LlamaChatOptions): Promise<LlamaChatResult
       }
 
       const json = (await res.json()) as {
-        choices: Array<{ message: { content: string } }>;
+        choices: Array<{
+          message: {
+            content: string | null;
+            tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
+          };
+        }>;
         usage?: { prompt_tokens?: number; completion_tokens?: number };
       };
+      const message = json.choices[0]?.message;
       return {
-        content: json.choices[0]?.message.content ?? '',
+        content: message?.content ?? '',
         tokensIn: json.usage?.prompt_tokens ?? 0,
         tokensOut: json.usage?.completion_tokens ?? 0,
+        toolCalls: (message?.tool_calls ?? []).map((tc) => ({
+          id: tc.id,
+          name: tc.function.name,
+          arguments: tc.function.arguments,
+        })),
       };
     } catch (err) {
       clearTimeout(timer);

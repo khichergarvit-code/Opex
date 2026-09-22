@@ -1,15 +1,15 @@
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, or } from 'drizzle-orm';
 import { Router, type Response } from 'express';
 import multer from 'multer';
 import { fileTypeFromBuffer } from 'file-type';
 import type { Db } from '../db/client.js';
-import { documents, jobs, projectMembers, projects, userGroups } from '../db/schema/index.js';
+import { accessGrants, documents, jobs, projectMembers, projects, userGroups } from '../db/schema/index.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
-import { DEFAULT_POLICY_RULES } from '../policy/rules.js';
+import { loadActivePolicyRules } from '../policy/loadPolicyRules.js';
 
 /**
  * Magic-byte-verified mime types accepted for ingestion (documents.md
@@ -65,12 +65,27 @@ async function loadAndAuthorizeDocument(
     .select({ groupId: userGroups.groupId })
     .from(userGroups)
     .where(eq(userGroups.userId, user.id));
+  // Mirrors retrieval/aclFilter.ts's `OR EXISTS (... access_grants ...)`
+  // clause — the same grant that lets a chunk through retrieval must also
+  // let the raw document file/page through this direct route.
+  const [grant] = await db
+    .select({ id: accessGrants.id })
+    .from(accessGrants)
+    .where(
+      and(
+        eq(accessGrants.documentId, doc.id),
+        eq(accessGrants.userId, user.id),
+        or(isNull(accessGrants.expiresAt), gt(accessGrants.expiresAt, new Date())),
+      ),
+    )
+    .limit(1);
   const decision = can(user, 'document:read', {
     projectId: doc.projectId,
     isProjectMember: member,
     documentClassification: doc.classification as 0 | 1 | 2 | 3,
     documentAclGroupIds: doc.aclGroupIds,
     userGroupIds: userGroupRows.map((r) => r.groupId),
+    hasActiveAccessGrant: Boolean(grant),
   });
   if (!decision.allowed) {
     res.status(403).json({ error: decision.reason ?? 'forbidden' });
@@ -91,22 +106,23 @@ export function createDocumentsRouter(db: Db, dataDir: string): Router {
       return;
     }
 
-    const member = await isProjectMember(db, user.id, projectId);
-    const decision = can(user, 'document:upload', { projectId, isProjectMember: member });
-    if (!decision.allowed) {
-      res.status(403).json({ error: decision.reason ?? 'forbidden' });
-      return;
-    }
-
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
     if (!project) {
       res.status(404).json({ error: 'project not found' });
       return;
     }
 
-    const uploadLimitBytes = DEFAULT_POLICY_RULES.uploadLimitMb * 1024 * 1024;
-    if (file.size > uploadLimitBytes) {
-      res.status(413).json({ error: `file exceeds the ${DEFAULT_POLICY_RULES.uploadLimitMb}MB upload limit` });
+    const member = await isProjectMember(db, user.id, projectId);
+    const rules = await loadActivePolicyRules(db, project.workspaceId);
+    const decision = can(
+      user,
+      'document:upload',
+      { projectId, isProjectMember: member, uploadSizeBytes: file.size },
+      rules,
+    );
+    if (!decision.allowed) {
+      const status = decision.reason?.includes('upload limit') ? 413 : 403;
+      res.status(status).json({ error: decision.reason ?? 'forbidden' });
       return;
     }
 
@@ -124,16 +140,6 @@ export function createDocumentsRouter(db: Db, dataDir: string): Router {
 
     const sha256 = createHash('sha256').update(file.buffer).digest('hex');
 
-    const [existing] = await db
-      .select()
-      .from(documents)
-      .where(and(eq(documents.projectId, projectId), eq(documents.sha256, sha256)))
-      .limit(1);
-    if (existing) {
-      res.status(200).json(existing);
-      return;
-    }
-
     const classification = req.body.classification
       ? Number(req.body.classification)
       : project.defaultClassification;
@@ -142,7 +148,11 @@ export function createDocumentsRouter(db: Db, dataDir: string): Router {
     await mkdir(destDir, { recursive: true });
     await writeFile(path.join(destDir, sha256), file.buffer);
 
-    const [doc] = await db
+    // Dedupe by (project_id, sha256) via ON CONFLICT DO NOTHING, not a
+    // check-then-insert — a plain SELECT-then-INSERT has a real race
+    // (two concurrent uploads of the same file both pass the check, the
+    // second's INSERT then hits the unique constraint and 500s).
+    const [inserted] = await db
       .insert(documents)
       .values({
         workspaceId: project.workspaceId,
@@ -155,15 +165,24 @@ export function createDocumentsRouter(db: Db, dataDir: string): Router {
         uploadedBy: user.id,
         status: 'queued',
       })
+      .onConflictDoNothing({ target: [documents.projectId, documents.sha256] })
       .returning();
-    if (!doc) throw new Error('failed to create document row');
 
-    await db.insert(jobs).values({
-      kind: 'ingest_document',
-      payload: { documentId: doc.id },
-    });
+    if (inserted) {
+      await db.insert(jobs).values({
+        kind: 'ingest_document',
+        payload: { documentId: inserted.id },
+      });
+      res.status(201).json(inserted);
+      return;
+    }
 
-    res.status(201).json(doc);
+    const [existing] = await db
+      .select()
+      .from(documents)
+      .where(and(eq(documents.projectId, projectId), eq(documents.sha256, sha256)))
+      .limit(1);
+    res.status(200).json(existing);
   });
 
   router.get('/projects/:id/documents', requireAuth(db), async (req, res) => {

@@ -93,3 +93,31 @@ export const documentSchema = z.object({
   createdAt: z.string(),
 });
 export type ApiDocument = z.infer<typeof documentSchema>;
+
+export const createAccessRequestSchema = z.object({
+  documentId: z.string().uuid(),
+  reason: z.string().min(1).max(1000),
+});
+export type CreateAccessRequestRequest = z.infer<typeof createAccessRequestSchema>;
+
+export const decideAccessRequestSchema = z.object({
+  decision: z.enum(['approved', 'denied']),
+  expiresAt: z.string().datetime().nullable().optional(),
+});
+export type DecideAccessRequestRequest = z.infer<typeof decideAccessRequestSchema>;
+
+export const accessRequestStatusSchema = z.enum(['pending', 'approved', 'denied']);
+export type AccessRequestStatus = z.infer<typeof accessRequestStatusSchema>;
+
+export const accessRequestSchema = z.object({
+  id: z.string().uuid(),
+  documentId: z.string().uuid(),
+  userId: z.string().uuid(),
+  reason: z.string(),
+  status: accessRequestStatusSchema,
+  decidedBy: z.string().uuid().nullable(),
+  decidedAt: z.string().nullable(),
+  expiresAt: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type AccessRequest = z.infer<typeof accessRequestSchema>;

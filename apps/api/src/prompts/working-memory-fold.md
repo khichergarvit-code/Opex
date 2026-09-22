@@ -1,0 +1,1 @@
+Summarize the conversation so far, preserving all numbers, names, decisions, and open questions. If an existing summary is provided, merge the new turns into it — do not drop anything already captured. Output only the updated summary, as plain prose, with no preamble.

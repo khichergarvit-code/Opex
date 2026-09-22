@@ -1,17 +1,22 @@
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
 import { Router, type Response } from 'express';
 import type { CitationEvent, SseEvent } from '@opex/shared';
 import { createConversationRequestSchema, postMessageRequestSchema } from '@opex/shared';
 import type { Db } from '../db/client.js';
 import { conversations, messages, projectMembers, projects, traces } from '../db/schema/index.js';
+import type { Env } from '../env.js';
+import { getWorkingMemory, type WorkingMemoryTurn } from '../memory/working.js';
 import type { ModelGateway, SpanWriter } from '../models/gateway.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
+import { loadAgent, loadAgentSystemPrompt } from '../orchestrator/agents.js';
+import { runExecutor } from '../orchestrator/executor.js';
+import { route as routeMessage } from '../orchestrator/router.js';
+import { verifyCitations } from '../orchestrator/verifier.js';
 import { buildDocQaPrompt, extractCitedMarkers, projectHasReadyDocuments } from './docQa.js';
 
-const CHAT_SYSTEM_PROMPT_PATH = fileURLToPath(new URL('../prompts/chat-system.md', import.meta.url));
+const CHAT_SYSTEM_PROMPT_PATH = new URL('../prompts/chat-system.md', import.meta.url);
 
 function sendEvent(res: Response, event: SseEvent): void {
   res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`);
@@ -26,7 +31,21 @@ async function isProjectMember(db: Db, userId: string, projectId: string): Promi
   return rows.length > 0;
 }
 
-export function createConversationsRouter(db: Db, gateway: ModelGateway, spanWriter: SpanWriter): Router {
+/** Builds the [{role,content}] turns fed to a model from working memory's state. */
+function toChatTurns(summary: string | null, recentTurns: WorkingMemoryTurn[]): WorkingMemoryTurn[] {
+  if (!summary) return recentTurns;
+  return [
+    { role: 'system', content: `Summary of earlier turns in this conversation:\n${summary}` },
+    ...recentTurns,
+  ];
+}
+
+export function createConversationsRouter(
+  db: Db,
+  gateway: ModelGateway,
+  spanWriter: SpanWriter,
+  env: Pick<Env, 'DATA_DIR' | 'SANDBOX_RUNNER_URL' | 'SANDBOX_SHARED_SECRET'>,
+): Router {
   const router = Router();
 
   router.post('/conversations', requireAuth(db), async (req, res) => {
@@ -144,17 +163,51 @@ export function createConversationsRouter(db: Db, gateway: ModelGateway, spanWri
       .select()
       .from(messages)
       .where(eq(messages.conversationId, conversation.id));
-    // The just-inserted user row is last; prior turns exclude it since
-    // doc_qa rebuilds the latest turn itself with retrieved chunks attached.
-    const priorTurns = history.slice(0, -1).map((m) => ({ role: m.role, content: m.content }));
+    // The just-inserted user row is last; prior turns exclude it since each
+    // path below rebuilds the latest turn itself (doc_qa attaches chunks,
+    // the executor path attaches nothing extra).
+    const priorHistory = history.slice(0, -1).map((m) => ({ role: m.role, content: m.content }));
 
-    const useDocQa = await projectHasReadyDocuments(db, conversation.projectId);
+    const hasReadyDocuments = await projectHasReadyDocuments(db, conversation.projectId);
+
+    const routeDecision = await routeMessage({
+      message: parsed.data.content,
+      attachments: [],
+      hasReadyDocuments,
+      gateway,
+      user,
+      traceId: trace.id,
+    });
+    sendEvent(res, {
+      type: 'route',
+      data: {
+        taskType: routeDecision.taskType,
+        agent: routeDecision.agent,
+        complexity: routeDecision.complexity,
+        reason: routeDecision.reason,
+      },
+    });
+
+    // Working memory: last-N raw turns + a rolling summary, folded once the
+    // conversation exceeds budget (replaces A1/A2's "send full history").
+    const memoryResult = await getWorkingMemory(
+      { gateway, user, traceId: trace.id },
+      priorHistory,
+      conversation.workingSummary,
+    );
+    if (memoryResult.folded) {
+      await db
+        .update(conversations)
+        .set({ workingSummary: memoryResult.summary })
+        .where(eq(conversations.id, conversation.id));
+    }
+    const memoryTurns = toChatTurns(memoryResult.summary, memoryResult.recentTurns);
 
     let assistantContent = '';
     let traceStatus: 'ok' | 'error' = 'ok';
     let citations: Array<{ marker: number; documentId: string; filename: string; page: number; bbox: unknown }> = [];
 
-    if (useDocQa) {
+    if (routeDecision.agent === 'doc_qa') {
       const docQa = await buildDocQaPrompt({
         db,
         gateway,
@@ -163,7 +216,7 @@ export function createConversationsRouter(db: Db, gateway: ModelGateway, spanWri
         traceId: trace.id,
         workspaceId: conversation.workspaceId,
         projectId: conversation.projectId,
-        priorTurns,
+        priorTurns: memoryTurns,
         question: parsed.data.content,
       });
 
@@ -174,10 +227,7 @@ export function createConversationsRouter(db: Db, gateway: ModelGateway, spanWri
         try {
           for await (const delta of gateway.chatStream({
             role: 'general',
-            messages: [
-              { role: 'system', content: docQa.systemPrompt },
-              ...docQa.messages,
-            ],
+            messages: [{ role: 'system', content: docQa.systemPrompt }, ...docQa.messages],
             user,
             traceId: trace.id,
           })) {
@@ -189,6 +239,62 @@ export function createConversationsRouter(db: Db, gateway: ModelGateway, spanWri
           for (const citation of citations) {
             sendEvent(res, { type: 'citation', data: citation as CitationEvent['data'] });
           }
+          const verifyResult = verifyCitations(assistantContent, new Set(docQa.citationMap.map((c) => c.marker)));
+          sendEvent(res, { type: 'verify', data: verifyResult });
+        } catch (err) {
+          traceStatus = 'error';
+          sendEvent(res, {
+            type: 'error',
+            data: { message: err instanceof Error ? err.message : 'model call failed' },
+          });
+        }
+      }
+    } else if (routeDecision.agent === 'vision' || routeDecision.agent === 'analysis') {
+      const agentConfig = await loadAgent(db, routeDecision.agent);
+      if (!agentConfig) {
+        traceStatus = 'error';
+        sendEvent(res, { type: 'error', data: { message: `agent "${routeDecision.agent}" is not configured` } });
+      } else {
+        try {
+          const systemPrompt = await loadAgentSystemPrompt(agentConfig);
+          const executorResult = await runExecutor(
+            {
+              db,
+              gateway,
+              spanWriter,
+              sandboxRunnerUrl: env.SANDBOX_RUNNER_URL,
+              sandboxSharedSecret: env.SANDBOX_SHARED_SECRET,
+              dataDir: env.DATA_DIR,
+            },
+            {
+              agent: agentConfig,
+              systemPrompt,
+              messages: [...memoryTurns, { role: 'user', content: parsed.data.content }],
+              user,
+              traceId: trace.id,
+              conversationId: conversation.id,
+              workspaceId: conversation.workspaceId,
+              projectId: conversation.projectId,
+              // No per-task classification tracking yet (would need to know
+              // which documents/data a tool call touches) — defaults to
+              // Public, so invariant #10's gate is a no-op until that
+              // exists. Documented as Debt.
+              taskClassification: 0,
+              onToolCall: (e) => sendEvent(res, { type: 'tool_call', data: { toolName: e.toolName, callId: e.callId, args: e.args ?? {} } }),
+              onToolResult: (e) =>
+                sendEvent(res, {
+                  type: 'tool_result',
+                  data: {
+                    callId: e.callId,
+                    status: e.result?.ok ? 'ok' : 'error',
+                    summary: e.result?.summary ?? '',
+                    artifactIds: e.result?.artifactIds ?? [],
+                  },
+                }),
+            },
+          );
+          assistantContent = executorResult.answer;
+          sendEvent(res, { type: 'token', data: { delta: assistantContent } });
         } catch (err) {
           traceStatus = 'error';
           sendEvent(res, {
@@ -202,7 +308,7 @@ export function createConversationsRouter(db: Db, gateway: ModelGateway, spanWri
       try {
         for await (const delta of gateway.chatStream({
           role: 'general',
-          messages: [{ role: 'system', content: systemPrompt }, ...priorTurns, { role: 'user', content: parsed.data.content }],
+          messages: [{ role: 'system', content: systemPrompt }, ...memoryTurns, { role: 'user', content: parsed.data.content }],
           user,
           traceId: trace.id,
         })) {

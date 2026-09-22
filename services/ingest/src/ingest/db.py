@@ -20,8 +20,19 @@ BACKOFF_BASE_SECONDS = 30
 BACKOFF_MAX_SECONDS = 600
 
 
+async def _init_connection(conn: asyncpg.Connection) -> None:
+    # asyncpg returns jsonb as raw text by default; decode it to a dict/list
+    # so callers (worker.py's job payload, this module's bbox reads) don't
+    # have to remember to json.loads() it themselves.
+    await conn.set_type_codec(
+        "jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog"
+    )
+
+
 async def create_pool(database_url: str) -> asyncpg.Pool:
-    return await asyncpg.create_pool(database_url, min_size=1, max_size=4)
+    return await asyncpg.create_pool(
+        database_url, min_size=1, max_size=4, init=_init_connection
+    )
 
 
 async def claim_job(pool: asyncpg.Pool, kind: str) -> Optional[asyncpg.Record]:
@@ -118,7 +129,7 @@ async def insert_chunk(pool: asyncpg.Pool, chunk: dict[str, Any]) -> None:
         chunk["acl_group_ids"],
         chunk["kind"],
         chunk["page"],
-        json.dumps(chunk["bbox"]),
+        chunk["bbox"],
         chunk["section_path"],
         chunk["text"],
         _to_pgvector_literal(chunk.get("embedding")),
@@ -172,5 +183,5 @@ async def write_span(
         tokens_out,
         latency_ms,
         status,
-        json.dumps(attrs or {}),
+        attrs or {},
     )
