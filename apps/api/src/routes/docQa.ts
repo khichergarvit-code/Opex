@@ -33,7 +33,7 @@ export async function projectHasReadyDocuments(db: Db, projectId: string): Promi
   return rows.length > 0;
 }
 
-async function loadUserGroupIds(db: Db, userId: string): Promise<string[]> {
+export async function loadUserGroupIds(db: Db, userId: string): Promise<string[]> {
   const rows = await db
     .select({ groupId: userGroups.groupId })
     .from(userGroups)

@@ -1,9 +1,10 @@
 import type { Db } from '../../db/client.js';
-import type { SpanWriter } from '../../models/gateway.js';
+import type { ModelGateway, SpanWriter } from '../../models/gateway.js';
 import type { AuthedUser } from '../../policy/types.js';
 
 export interface ToolContext {
   db: Db;
+  gateway: ModelGateway;
   spanWriter: SpanWriter;
   user: AuthedUser;
   traceId: string;

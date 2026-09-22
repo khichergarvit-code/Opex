@@ -119,6 +119,7 @@ export async function runExecutor(deps: ExecutorDeps, input: ExecutorInput): Pro
       } else {
         toolResult = await toolDef.execute(args, {
           db: deps.db,
+          gateway: deps.gateway,
           spanWriter: deps.spanWriter,
           user: input.user,
           traceId: input.traceId,

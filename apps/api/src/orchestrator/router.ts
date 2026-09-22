@@ -126,9 +126,17 @@ function fallbackRoute(input: RouteInput, reason: string): RouteDecision {
 // on a project with ready documents, classified as "general" instead of
 // "doc_qa" — llm-small (0.5B) had no in-prompt signal that documents even
 // existed, and its `reason` fields showed format degeneration (literally
-// echoing the schema, e.g. "description_of_task"). These examples are
-// only shown when hasReadyDocuments is true, since they'd be wrong advice
-// otherwise.
+// echoing the schema, e.g. "description_of_task").
+//
+// The first version of this fix overcorrected: a second live eval run
+// (with the "prefer doc_qa when documents exist" instruction added but no
+// negative examples) found the model then over-routed greetings, thanks,
+// meta-questions about the assistant, and arithmetic to doc_qa too (e.g.
+// "hi" -> doc_qa, "what's 12 times 8?" -> doc_qa). The negative examples
+// below are there specifically to counterbalance that — pulled straight
+// from the questions that regressed. Only shown when hasReadyDocuments is
+// true, since the positive-only advice caused the regression in the
+// first place.
 const DOC_QA_FEW_SHOTS = `
 Examples (this project has ready documents):
 Q: "What is the torque spec for the discharge flange bolts?"
@@ -137,6 +145,12 @@ Q: "Who inspected the boiler feed pump?"
 A: {"task_type":"doc_qa","complexity":"simple","agent":"doc_qa","needs":{"documents":true,"memory":[],"tools":["doc_search"]},"reason":"asks about a past inspection likely recorded in a document"}
 Q: "hi, how are you?"
 A: {"task_type":"chat","complexity":"simple","agent":"general","needs":{"documents":false,"memory":[],"tools":[]},"reason":"a plain greeting, not a content question"}
+Q: "thanks, that's all for now"
+A: {"task_type":"chat","complexity":"simple","agent":"general","needs":{"documents":false,"memory":[],"tools":[]},"reason":"a closing remark, not a content question"}
+Q: "can you explain what OpeX is?"
+A: {"task_type":"chat","complexity":"simple","agent":"general","needs":{"documents":false,"memory":[],"tools":[]},"reason":"asks about the assistant itself, not the uploaded documents"}
+Q: "what's 12 times 8?"
+A: {"task_type":"chat","complexity":"simple","agent":"general","needs":{"documents":false,"memory":[],"tools":[]},"reason":"a plain arithmetic question, not a document lookup"}
 `.trim();
 
 function buildRouterSystemPrompt(hasReadyDocuments: boolean): string {
@@ -149,10 +163,11 @@ function buildRouterSystemPrompt(hasReadyDocuments: boolean): string {
     return `${base}\n\nThis project has NO ready ingested documents yet. Do not route to doc_qa.`;
   }
   return (
-    `${base}\n\nThis project HAS ready ingested documents. If the question could plausibly be ` +
-    `answered from a document (a spec, a manual, an inspection report, a diagram, a policy), ` +
-    `classify it as task_type "doc_qa" and agent "doc_qa" — even with no attachment and no /doc ` +
-    `prefix.\n\n${DOC_QA_FEW_SHOTS}`
+    `${base}\n\nThis project HAS ready ingested documents. Route to doc_qa ONLY when the message ` +
+    `asks about specific factual content (a spec, a value, a name, an event) that a document could ` +
+    `plausibly contain. Greetings, thanks/closings, small talk, questions about the assistant itself, ` +
+    `and plain arithmetic are ALWAYS "general", never doc_qa, even on a project with documents.` +
+    `\n\n${DOC_QA_FEW_SHOTS}`
   );
 }
 
