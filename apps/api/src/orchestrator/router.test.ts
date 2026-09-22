@@ -50,7 +50,7 @@ describe('route() — rule pre-checks', () => {
     expect(chat).not.toHaveBeenCalled();
   });
 
-  it('/code forces analysis (no dedicated code agent until B3)', async () => {
+  it('/code forces the code agent (B3)', async () => {
     const chat = vi.fn();
     const decision = await route({
       message: '/code plot this',
@@ -60,7 +60,7 @@ describe('route() — rule pre-checks', () => {
       user: user(),
       traceId: 't1',
     });
-    expect(decision.agent).toBe('analysis');
+    expect(decision.agent).toBe('code');
     expect(chat).not.toHaveBeenCalled();
   });
 });
@@ -116,6 +116,60 @@ describe('route() — llm-small JSON classification', () => {
       traceId: 't1',
     });
     expect(decision.agent).toBe('doc_qa');
+  });
+
+  // Regression for a real eval finding (eval/results/2026-09-22.md): all
+  // 9/32 router failures were plain-English document questions on a
+  // project with ready documents, misclassified as "general" — the
+  // system prompt never told the model documents existed. This asserts
+  // the fix actually reaches the prompt, not just that hasReadyDocuments
+  // is accepted as a parameter.
+  it('tells the model documents are ready when hasReadyDocuments is true', async () => {
+    const chat = vi.fn().mockResolvedValue({
+      content: JSON.stringify({
+        task_type: 'doc_qa',
+        complexity: 'simple',
+        agent: 'doc_qa',
+        needs: { documents: true, memory: [], tools: ['doc_search'] },
+        reason: 'a document question',
+      }),
+      tokensIn: 1,
+      tokensOut: 1,
+    });
+    await route({
+      message: 'what is the torque spec?',
+      attachments: [],
+      hasReadyDocuments: true,
+      gateway: { chat } as never,
+      user: user(),
+      traceId: 't1',
+    });
+    const systemMessage = chat.mock.calls[0]![0].messages[0].content as string;
+    expect(systemMessage).toMatch(/HAS ready ingested documents/);
+  });
+
+  it('tells the model there are no documents when hasReadyDocuments is false', async () => {
+    const chat = vi.fn().mockResolvedValue({
+      content: JSON.stringify({
+        task_type: 'chat',
+        complexity: 'simple',
+        agent: 'general',
+        needs: { documents: false, memory: [], tools: [] },
+        reason: 'a greeting',
+      }),
+      tokensIn: 1,
+      tokensOut: 1,
+    });
+    await route({
+      message: 'hi',
+      attachments: [],
+      hasReadyDocuments: false,
+      gateway: { chat } as never,
+      user: user(),
+      traceId: 't1',
+    });
+    const systemMessage = chat.mock.calls[0]![0].messages[0].content as string;
+    expect(systemMessage).toMatch(/NO ready ingested documents/);
   });
 
   // Regression: found via a live eval run where llm-small (0.5B, easily

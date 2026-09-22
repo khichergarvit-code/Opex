@@ -39,6 +39,24 @@ const SEED_AGENTS = [
     modelRole: 'general' as const,
     toolAllowlist: ['code_exec', 'make_chart'],
   },
+  {
+    // B3 adds code/research. Both run on modelRole:'general' — there is
+    // no coder-role model in the manifest, so `code` doesn't get a real
+    // coder model any more than `vision` gets a real vision model
+    // (documented gap, same honesty pattern as A3's vision agent).
+    name: 'code',
+    description: 'Writes and runs code for data/analysis tasks (/code).',
+    systemPromptTemplate: 'code-system.md',
+    modelRole: 'general' as const,
+    toolAllowlist: ['code_exec', 'make_chart'],
+  },
+  {
+    name: 'research',
+    description: 'Answers multi-document, cross-referencing questions using document search and memory.',
+    systemPromptTemplate: 'research-system.md',
+    modelRole: 'general' as const,
+    toolAllowlist: ['doc_search', 'memory_search'],
+  },
 ];
 
 const DEV_PASSWORD = 'opex-dev-password';

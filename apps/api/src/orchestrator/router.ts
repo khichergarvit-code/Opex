@@ -10,7 +10,7 @@ const ROUTE_DECISION_SCHEMA = {
     properties: {
       task_type: { type: 'string', enum: ['chat', 'doc_qa', 'analysis', 'code', 'research', 'vision'] },
       complexity: { type: 'string', enum: ['simple', 'multi_step'] },
-      agent: { type: 'string', enum: ['general', 'doc_qa', 'vision', 'analysis'] },
+      agent: { type: 'string', enum: ['general', 'doc_qa', 'vision', 'analysis', 'code', 'research'] },
       needs: {
         type: 'object',
         properties: {
@@ -36,7 +36,7 @@ const routerResponseSchema = z.object({
   // unvalidated value here silently fell through to plain chat even when
   // task_type correctly said 'doc_qa' — found via a live eval run where the
   // model returned agent:"agent" and doc_qa never fired.
-  agent: z.enum(['general', 'doc_qa', 'vision', 'analysis']),
+  agent: z.enum(['general', 'doc_qa', 'vision', 'analysis', 'code', 'research']),
   needs: z.object({
     documents: z.boolean(),
     memory: z.array(z.string()),
@@ -90,14 +90,12 @@ function ruleBasedRoute(input: RouteInput): RouteDecision | null {
     };
   }
   if (trimmed.startsWith('/code')) {
-    // The real `code` agent is B3 — /code routes to `analysis` in A3, the
-    // closest agent with code_exec access (documented gap, see the plan).
     return {
       taskType: 'code',
       complexity: 'simple',
-      agent: 'analysis',
-      needs: { documents: false, memory: [], tools: ['code_exec'] },
-      reason: '/code forces analysis (no dedicated code agent until B3)',
+      agent: 'code',
+      needs: { documents: false, memory: [], tools: ['code_exec', 'make_chart'] },
+      reason: '/code forces the code agent',
     };
   }
   return null;
@@ -122,6 +120,42 @@ function fallbackRoute(input: RouteInput, reason: string): RouteDecision {
   };
 }
 
+// Few-shot examples targeting the exact, confirmed failure mode: a live
+// eval run (eval/results/2026-09-22.md) found all 9/32 router failures
+// were plain-English document questions (no attachment, no /doc prefix)
+// on a project with ready documents, classified as "general" instead of
+// "doc_qa" — llm-small (0.5B) had no in-prompt signal that documents even
+// existed, and its `reason` fields showed format degeneration (literally
+// echoing the schema, e.g. "description_of_task"). These examples are
+// only shown when hasReadyDocuments is true, since they'd be wrong advice
+// otherwise.
+const DOC_QA_FEW_SHOTS = `
+Examples (this project has ready documents):
+Q: "What is the torque spec for the discharge flange bolts?"
+A: {"task_type":"doc_qa","complexity":"simple","agent":"doc_qa","needs":{"documents":true,"memory":[],"tools":["doc_search"]},"reason":"asks for a spec value likely found in an uploaded document"}
+Q: "Who inspected the boiler feed pump?"
+A: {"task_type":"doc_qa","complexity":"simple","agent":"doc_qa","needs":{"documents":true,"memory":[],"tools":["doc_search"]},"reason":"asks about a past inspection likely recorded in a document"}
+Q: "hi, how are you?"
+A: {"task_type":"chat","complexity":"simple","agent":"general","needs":{"documents":false,"memory":[],"tools":[]},"reason":"a plain greeting, not a content question"}
+`.trim();
+
+function buildRouterSystemPrompt(hasReadyDocuments: boolean): string {
+  const base =
+    'Classify the user message into task_type/complexity/agent/needs/reason per the JSON schema. ' +
+    'agent must be one of: general, doc_qa, vision, analysis, code, research. ' +
+    'reason must be 20 words or fewer and must describe the classification decision itself — ' +
+    'never restate the schema, and never say things like "description of task".';
+  if (!hasReadyDocuments) {
+    return `${base}\n\nThis project has NO ready ingested documents yet. Do not route to doc_qa.`;
+  }
+  return (
+    `${base}\n\nThis project HAS ready ingested documents. If the question could plausibly be ` +
+    `answered from a document (a spec, a manual, an inspection report, a diagram, a policy), ` +
+    `classify it as task_type "doc_qa" and agent "doc_qa" — even with no attachment and no /doc ` +
+    `prefix.\n\n${DOC_QA_FEW_SHOTS}`
+  );
+}
+
 /**
  * Rule pre-checks run first (orchestration.md). If none match, llm-small
  * classifies via JSON; a parse failure falls back to the rules.
@@ -134,11 +168,7 @@ export async function route(input: RouteInput): Promise<RouteDecision> {
     const result = await input.gateway.chat({
       role: 'router',
       messages: [
-        {
-          role: 'system',
-          content:
-            'Classify the user message into task_type/complexity/agent/needs/reason per the JSON schema. agent must be one of: general, doc_qa, vision, analysis. reason must be 20 words or fewer.',
-        },
+        { role: 'system', content: buildRouterSystemPrompt(input.hasReadyDocuments) },
         { role: 'user', content: input.message },
       ],
       jsonSchema: ROUTE_DECISION_SCHEMA,
