@@ -18,7 +18,23 @@ export type Action =
   | 'document:read'
   | 'tool:invoke'
   | 'admin:traces:read'
-  | 'admin:usage:read';
+  | 'admin:usage:read'
+  | 'access_request:create'
+  | 'access_request:approve'
+  | 'access_grant:read'
+  | 'user:create'
+  | 'user:disable'
+  | 'group:manage'
+  | 'admin:policies:read'
+  | 'admin:policies:write'
+  | 'admin:models:manage'
+  | 'admin:agents:manage'
+  | 'admin:memory:read'
+  | 'admin:memory:purge'
+  | 'admin:feedback:triage'
+  | 'admin:system:read'
+  | 'admin:conversation:read'
+  | 'admin:audit:read';
 
 export interface PolicyContext {
   /** Present for conversation:* and document:* actions — the project in scope. */
@@ -36,6 +52,14 @@ export interface PolicyContext {
   agentToolAllowlist?: string[];
   /** Present for tool:invoke — the current task's classification floor (invariant #10). */
   taskClassification?: Classification;
+  /** Present for access_request:create — the document being requested. */
+  documentId?: string;
+  /** Present for user:disable — guards against a self-disable lockout. */
+  targetUserId?: string;
+  /** Present for model:invoke — today's token usage, for dailyTokenQuota. */
+  dailyTokensUsedToday?: number;
+  /** Present for document:upload — moves the size check inside can(). */
+  uploadSizeBytes?: number;
 }
 
 export interface PolicyDecision {

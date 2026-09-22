@@ -9,7 +9,7 @@ import type { Db } from '../db/client.js';
 import { documents, jobs, projectMembers, projects, userGroups } from '../db/schema/index.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
-import { DEFAULT_POLICY_RULES } from '../policy/rules.js';
+import { loadActivePolicyRules } from '../policy/loadPolicyRules.js';
 
 /**
  * Magic-byte-verified mime types accepted for ingestion (documents.md
@@ -91,22 +91,23 @@ export function createDocumentsRouter(db: Db, dataDir: string): Router {
       return;
     }
 
-    const member = await isProjectMember(db, user.id, projectId);
-    const decision = can(user, 'document:upload', { projectId, isProjectMember: member });
-    if (!decision.allowed) {
-      res.status(403).json({ error: decision.reason ?? 'forbidden' });
-      return;
-    }
-
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
     if (!project) {
       res.status(404).json({ error: 'project not found' });
       return;
     }
 
-    const uploadLimitBytes = DEFAULT_POLICY_RULES.uploadLimitMb * 1024 * 1024;
-    if (file.size > uploadLimitBytes) {
-      res.status(413).json({ error: `file exceeds the ${DEFAULT_POLICY_RULES.uploadLimitMb}MB upload limit` });
+    const member = await isProjectMember(db, user.id, projectId);
+    const rules = await loadActivePolicyRules(db, project.workspaceId);
+    const decision = can(
+      user,
+      'document:upload',
+      { projectId, isProjectMember: member, uploadSizeBytes: file.size },
+      rules,
+    );
+    if (!decision.allowed) {
+      const status = decision.reason?.includes('upload limit') ? 413 : 403;
+      res.status(status).json({ error: decision.reason ?? 'forbidden' });
       return;
     }
 
