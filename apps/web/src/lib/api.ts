@@ -136,6 +136,50 @@ export async function removeGroupMember(groupId: string, userId: string): Promis
   await request(`/admin/groups/${groupId}/members/${userId}`, { method: 'DELETE' });
 }
 
+export interface AdminConversationRow {
+  id: string;
+  userId: string;
+  userEmail: string;
+  projectId: string;
+  title: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminMessageRow {
+  id: string;
+  conversationId: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  createdAt: string;
+}
+
+export async function fetchAdminConversations(userId?: string): Promise<AdminConversationRow[]> {
+  const qs = userId ? `?userId=${encodeURIComponent(userId)}` : '';
+  return request<AdminConversationRow[]>(`/admin/conversations${qs}`);
+}
+
+export async function fetchAdminConversationMessages(conversationId: string): Promise<AdminMessageRow[]> {
+  return request<AdminMessageRow[]>(`/admin/conversations/${conversationId}/messages`);
+}
+
+export interface AdminAuditRow {
+  id: string;
+  ts: string;
+  actorId: string | null;
+  actorEmail: string | null;
+  action: string;
+  resource: string;
+  details: unknown;
+  prevHash: string | null;
+  hash: string | null;
+}
+
+export async function fetchAdminAudit(params: { action?: string; actorId?: string } = {}): Promise<AdminAuditRow[]> {
+  const qs = new URLSearchParams(params as Record<string, string>).toString();
+  return request<AdminAuditRow[]>(`/admin/audit${qs ? `?${qs}` : ''}`);
+}
+
 export async function uploadDocument(projectId: string, file: File): Promise<ApiDocument> {
   const form = new FormData();
   form.append('file', file);

@@ -36,7 +36,7 @@ export function createApp(db: Db, env: Env): Express {
   app.use(createConversationsRouter(db, gateway, spanWriter, env));
   app.use(createDocumentsRouter(db, env.DATA_DIR));
   app.use(createRetrievalRouter(db, gateway, spanWriter));
-  app.use(createAdminRouter(db));
+  app.use(createAdminRouter(db, auditWriter));
   app.use(createArtifactsRouter(db, env.DATA_DIR));
   app.use(createRouterDebugRouter(db, gateway));
   app.use(createAccessRequestsRouter(db, auditWriter));
