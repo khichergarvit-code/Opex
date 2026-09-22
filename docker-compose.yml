@@ -58,6 +58,11 @@ services:
     volumes:
       - ./models:/models:ro
       - ./data:/data
+      # Feedback triage's "export to eval" writes a new case into
+      # eval/questions/answers.json — that dir isn't baked into the api
+      # image (only dist/ is), so it needs a real host mount, same
+      # reasoning as ./data above.
+      - ./eval/questions:/app/eval/questions
     depends_on:
       postgres:
         condition: service_healthy
