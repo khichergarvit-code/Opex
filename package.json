@@ -15,7 +15,8 @@
     "seed": "pnpm --filter @opex/api run seed",
     "eval": "tsx eval/runner.ts",
     "eval:test": "tsx --test eval/lib/*.test.ts",
-    "manifest:check": "tsx scripts/manifest-check.ts"
+    "manifest:check": "tsx scripts/manifest-check.ts",
+    "audit:verify": "tsx scripts/audit-verify.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",
