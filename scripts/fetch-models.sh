@@ -60,3 +60,33 @@ done <<< "$MANIFEST_TSV"
 echo
 echo "All models downloaded to $MODELS_DIR."
 echo "Run 'pnpm manifest:check' to verify everything against infra/models/manifest.yaml."
+
+# Docling's own layout/table-structure models aren't GGUFs and aren't in
+# the manifest — it downloads them from HF lazily on first use. The ingest
+# container runs with HF_HUB_OFFLINE=1 (invariant #1/#2), so that cache
+# must be pre-populated here, on the host, where network access is fine,
+# and mounted into the container (see docker-compose.yml's ingest service).
+DOCLING_CACHE_DIR="$MODELS_DIR/docling-cache"
+if [[ -d "$DOCLING_CACHE_DIR/hub" ]] && find "$DOCLING_CACHE_DIR/hub" -maxdepth 1 -iname "*docling*" | grep -q .; then
+  echo "[docling] model cache already present at $DOCLING_CACHE_DIR"
+else
+  echo "[docling] warming the layout/table-structure model cache (one-time, needs network)..."
+  mkdir -p "$DOCLING_CACHE_DIR"
+  if [[ -x "$ROOT_DIR/services/ingest/.venv/bin/python" ]]; then
+    PY="$ROOT_DIR/services/ingest/.venv/bin/python"
+  elif command -v uv >/dev/null 2>&1; then
+    (cd "$ROOT_DIR/services/ingest" && uv sync >/dev/null)
+    PY="$ROOT_DIR/services/ingest/.venv/bin/python"
+  else
+    echo "[docling] neither services/ingest/.venv nor uv is available — skipping cache warm-up." >&2
+    echo "[docling] run 'cd services/ingest && uv sync' then re-run this script." >&2
+    PY=""
+  fi
+  if [[ -n "$PY" ]]; then
+    HF_HOME="$DOCLING_CACHE_DIR" "$PY" -c "
+from docling.document_converter import DocumentConverter
+DocumentConverter()  # triggers Docling's lazy model download
+print('[docling] model cache warmed at $DOCLING_CACHE_DIR')
+"
+  fi
+fi

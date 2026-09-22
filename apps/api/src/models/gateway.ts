@@ -6,6 +6,7 @@ import type { PolicyRules } from '../policy/rules.js';
 import { DEFAULT_POLICY_RULES } from '../policy/rules.js';
 import { CircuitBreaker } from './circuitBreaker.js';
 import { llamaChat, llamaChatStream, llamaEmbed, llamaRerank, llamaTokenize } from './llamaClient.js';
+import type { LlamaToolCall } from './llamaClient.js';
 import type {
   ChatRequest,
   EmbedRequest,
@@ -92,7 +93,12 @@ export class ModelGateway {
     return { id: row.id, endpoint: row.endpoint };
   }
 
-  async chat(req: ChatRequest): Promise<{ content: string; tokensIn: number; tokensOut: number }> {
+  async chat(req: ChatRequest): Promise<{
+    content: string;
+    tokensIn: number;
+    tokensOut: number;
+    toolCalls: LlamaToolCall[];
+  }> {
     const decision = can(
       req.user,
       'model:invoke',

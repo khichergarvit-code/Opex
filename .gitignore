@@ -11,6 +11,15 @@ coverage/
 # model weights are large binary artifacts, never committed
 models/*.gguf
 models/*.bin
+# Docling's HF layout/table-structure model cache — host-fetched by
+# scripts/fetch-models.sh, same category as the GGUF weights above.
+models/docling-cache/
+
+# per-workspace uploaded document blobs, figure crops, and artifacts —
+# runtime data (DATA_DIR), not source. eval/corpus/ is separate, committed
+# fixture data and is unaffected by this rule.
+/data/
+apps/api/data/
 
 # python
 services/*/.venv/

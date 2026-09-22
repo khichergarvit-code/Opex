@@ -88,6 +88,38 @@ describe('document upload', () => {
     expect(allDocs).toHaveLength(1);
   });
 
+  it('handles two concurrent uploads of the identical file without a 500 (dedupe race)', async () => {
+    if (!db) return;
+    const app = createApp(db, loadEnv());
+    const agentA = request.agent(app);
+    const agentB = request.agent(app);
+    const [loginA, loginB] = await Promise.all([
+      agentA.post('/auth/login').send({ email, password }),
+      agentB.post('/auth/login').send({ email, password }),
+    ]);
+    const csrfA = loginA.body.csrfToken as string;
+    const csrfB = loginB.body.csrfToken as string;
+
+    const concurrentBytes = Buffer.from(
+      MINIMAL_PDF.toString('binary') + `\n% concurrency-test-${Date.now()}`,
+      'binary',
+    );
+
+    const [resA, resB] = await Promise.all([
+      agentA
+        .post(`/projects/${projectId}/documents`)
+        .set('x-csrf-token', csrfA)
+        .attach('file', concurrentBytes, { filename: 'concurrent-a.pdf', contentType: 'application/pdf' }),
+      agentB
+        .post(`/projects/${projectId}/documents`)
+        .set('x-csrf-token', csrfB)
+        .attach('file', concurrentBytes, { filename: 'concurrent-b.pdf', contentType: 'application/pdf' }),
+    ]);
+
+    expect([resA.status, resB.status].sort()).toEqual([200, 201]);
+    expect(resA.body.id).toBe(resB.body.id);
+  });
+
   it('rejects a file whose magic bytes do not match an allowed type', async () => {
     if (!db) return;
     const app = createApp(db, loadEnv());

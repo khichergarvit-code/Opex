@@ -3,6 +3,11 @@ networks:
     driver: bridge
   core:
     internal: true
+  # Forward-compatible placeholder for B4's docker-socket-proxy — in A3,
+  # sandbox-runner reaches the Docker socket via a direct bind mount, not
+  # through this network (see the sandbox-runner service below).
+  sock:
+    internal: true
 
 volumes:
   pgdata:
@@ -47,8 +52,12 @@ services:
       LLM_MAIN_URL: http://llm-main:8082
       LLM_EMBED_URL: http://llm-embed:8083
       LLM_RERANK_URL: http://llm-rerank:8084
+      DATA_DIR: /data
+      SANDBOX_RUNNER_URL: http://sandbox-runner:8000
+      SANDBOX_SHARED_SECRET: ${SANDBOX_SHARED_SECRET:-dev_only_change_me}
     volumes:
       - ./models:/models:ro
+      - ./data:/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -142,4 +151,40 @@ services:
       dockerfile: services/ingest/Dockerfile
     networks:
       - core
-    environment: *offline-env
+    environment:
+      <<: *offline-env
+      DATABASE_URL: postgres://${POSTGRES_USER:-opex}:${POSTGRES_PASSWORD:-opex_dev_only_change_me}@postgres:5432/${POSTGRES_DB:-opex}
+      LLM_EMBED_URL: http://llm-embed:8083
+      LLM_MAIN_URL: http://llm-main:8082
+      DATA_DIR: /data
+      # Docling downloads its layout/table-structure models from HF on
+      # first use — HF_HUB_OFFLINE=1 correctly blocks that at runtime, so
+      # the cache must be pre-populated on the host (./scripts/fetch-models.sh)
+      # and mounted in, exactly like the GGUF models/ mount below it.
+      HF_HOME: /hf-cache
+    volumes:
+      - ./data:/data
+      - ./models/docling-cache:/hf-cache:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  sandbox-runner:
+    build:
+      context: .
+      dockerfile: services/sandbox-runner/Dockerfile
+    networks:
+      - core
+      - sock
+    environment:
+      <<: *offline-env
+      SANDBOX_SHARED_SECRET: ${SANDBOX_SHARED_SECRET:-dev_only_change_me}
+    volumes:
+      # The only Docker-socket user in the system (invariant #8) — a direct
+      # bind mount for A3; docker-socket-proxy is B4.
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

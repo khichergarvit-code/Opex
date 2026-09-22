@@ -25,6 +25,20 @@ const SEED_AGENTS = [
     modelRole: 'general' as const,
     toolAllowlist: ['doc_search'],
   },
+  {
+    name: 'vision',
+    description: 'Handles image attachments. No vision model is loaded — scaffolded, not functional.',
+    systemPromptTemplate: 'vision-system.md',
+    modelRole: 'general' as const,
+    toolAllowlist: ['describe_image'],
+  },
+  {
+    name: 'analysis',
+    description: 'Runs sandboxed Python/matplotlib for CSV/XLSX questions and chart requests.',
+    systemPromptTemplate: 'analysis-system.md',
+    modelRole: 'general' as const,
+    toolAllowlist: ['code_exec', 'make_chart'],
+  },
 ];
 
 const DEV_PASSWORD = 'opex-dev-password';

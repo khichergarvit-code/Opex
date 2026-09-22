@@ -2,9 +2,19 @@ import type { AuthedUser } from '../policy/types.js';
 
 export type ModelRole = 'router' | 'general' | 'coder' | 'vision' | 'embed' | 'rerank';
 
+export interface ToolCallRequest {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
+  role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
+  /** Set on an assistant turn that made tool calls (native --jinja tool calling). */
+  tool_calls?: ToolCallRequest[];
+  /** Set on a 'tool' turn — which call this result answers. */
+  tool_call_id?: string;
 }
 
 export interface ChatRequest {

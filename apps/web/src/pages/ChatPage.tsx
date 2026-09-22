@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Bbox, Citation, MeResponse, Project } from '@opex/shared';
+import type { Bbox, Citation, MeResponse, Project, SseEvent } from '@opex/shared';
 import { createConversation, fetchProjects, logout } from '../lib/api';
 import { streamMessage } from '../lib/sse';
 import { Composer } from '../components/Composer';
 import { MessageList, type DisplayMessage } from '../components/MessageList';
+import { AgentTimeline } from '../components/AgentTimeline';
+import { ArtifactsPanel, type DisplayArtifact } from '../components/ArtifactsPanel';
 
 export function ChatPage({
   user,
@@ -11,12 +13,16 @@ export function ChatPage({
   onActiveProjectChange,
   onOpenDocuments,
   onOpenCitation,
+  onOpenAdminTraces,
+  onOpenAdminUsage,
 }: {
   user: MeResponse;
   onLoggedOut: () => void;
   onActiveProjectChange: (project: Project) => void;
   onOpenDocuments: () => void;
   onOpenCitation: (documentId: string, page: number, bbox: Bbox) => void;
+  onOpenAdminTraces?: () => void;
+  onOpenAdminUsage?: () => void;
 }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<string>('');
@@ -24,6 +30,9 @@ export function ChatPage({
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [timelineEvents, setTimelineEvents] = useState<SseEvent[]>([]);
+  const [artifacts, setArtifacts] = useState<DisplayArtifact[]>([]);
+  const [showTimeline, setShowTimeline] = useState(false);
   const assistantIdRef = useRef<string>('');
 
   useEffect(() => {
@@ -39,6 +48,8 @@ export function ChatPage({
     // Reset conversation when switching projects — a conversation belongs to one project.
     setConversationId(null);
     setMessages([]);
+    setTimelineEvents([]);
+    setArtifacts([]);
   }, [projectId, projects]);
 
   async function ensureConversation(): Promise<string> {
@@ -60,8 +71,16 @@ export function ChatPage({
     ]);
     setStreaming(true);
     setStatus(null);
+    setTimelineEvents([]);
 
     await streamMessage(convId, content, {
+      onEvent: (event) => {
+        setTimelineEvents((prev) => [...prev, event]);
+        if (event.type === 'tool_result') {
+          const newArtifacts = event.data.artifactIds.map((id) => ({ id, toolName: 'tool' }));
+          if (newArtifacts.length > 0) setArtifacts((prev) => [...prev, ...newArtifacts]);
+        }
+      },
       onToken: (delta) => {
         setMessages((prev) =>
           prev.map((m) =>
@@ -91,13 +110,26 @@ export function ChatPage({
   }
 
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto', padding: 16, fontFamily: 'sans-serif' }}>
+    <div style={{ maxWidth: 960, margin: '0 auto', padding: 16, fontFamily: 'sans-serif' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1>OpeX</h1>
         <div>
           <button onClick={onOpenDocuments} style={{ marginRight: 12 }}>
             Documents
           </button>
+          <button onClick={() => setShowTimeline((v) => !v)} style={{ marginRight: 12 }}>
+            {showTimeline ? 'Hide' : 'Show'} timeline
+          </button>
+          {onOpenAdminTraces && (
+            <button onClick={onOpenAdminTraces} style={{ marginRight: 12 }}>
+              Admin: Traces
+            </button>
+          )}
+          {onOpenAdminUsage && (
+            <button onClick={onOpenAdminUsage} style={{ marginRight: 12 }}>
+              Admin: Usage
+            </button>
+          )}
           <span style={{ marginRight: 12 }}>
             {user.email} ({user.role})
           </span>
@@ -118,14 +150,27 @@ export function ChatPage({
         </label>
       </div>
 
-      <MessageList
-        messages={messages}
-        onOpenCitation={(c) => onOpenCitation(c.documentId, c.page, c.bbox)}
-      />
-      {status && <p style={{ color: '#6b7280', fontSize: 12 }}>{status}</p>}
+      <div style={{ display: 'flex', gap: 16 }}>
+        <div style={{ flex: 1 }}>
+          <MessageList
+            messages={messages}
+            onOpenCitation={(c) => onOpenCitation(c.documentId, c.page, c.bbox)}
+          />
+          {status && <p style={{ color: '#6b7280', fontSize: 12 }}>{status}</p>}
 
-      <div style={{ marginTop: 16 }}>
-        <Composer disabled={streaming || !projectId} onSend={handleSend} />
+          <div style={{ marginTop: 16 }}>
+            <Composer disabled={streaming || !projectId} onSend={handleSend} />
+          </div>
+        </div>
+
+        {showTimeline && (
+          <div style={{ width: 320, flexShrink: 0 }}>
+            <h3 style={{ fontSize: 14, marginBottom: 8 }}>Timeline</h3>
+            <AgentTimeline events={timelineEvents} />
+            <h3 style={{ fontSize: 14, marginTop: 16, marginBottom: 8 }}>Artifacts</h3>
+            <ArtifactsPanel artifacts={artifacts} />
+          </div>
+        )}
       </div>
     </div>
   );

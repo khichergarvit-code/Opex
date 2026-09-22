@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { Router } from 'express';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { projectMembers, projects, userGroups } from '../db/schema/index.js';
+import { projectMembers, projects, traces, userGroups } from '../db/schema/index.js';
 import type { ModelGateway, SpanWriter } from '../models/gateway.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
@@ -50,18 +50,20 @@ export function createRetrievalRouter(db: Db, gateway: ModelGateway, spanWriter:
       .from(userGroups)
       .where(eq(userGroups.userId, user.id));
 
-    const [proj] = await db
-      .select()
-      .from((await import('../db/schema/index.js')).projects)
-      .where(eq((await import('../db/schema/index.js')).projects.id, projectId))
-      .limit(1);
+    const [proj] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
     if (!proj) {
       res.status(404).json({ error: 'project not found' });
       return;
     }
 
+    // search() writes a kind:'retrieval' span (invariant #6), which needs a
+    // real traces row to satisfy the FK — a bare crypto.randomUUID() here
+    // would 500 on the first span write (found via a real eval run).
+    const [trace] = await db.insert(traces).values({ userId: user.id }).returning();
+    if (!trace) throw new Error('failed to open trace');
+
     const outcome = await search(
-      { db, gateway, spanWriter, user, traceId: crypto.randomUUID() },
+      { db, gateway, spanWriter, user, traceId: trace.id },
       {
         workspaceId: proj.workspaceId,
         projectIds: [projectId],

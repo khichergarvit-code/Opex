@@ -124,16 +124,6 @@ export function createDocumentsRouter(db: Db, dataDir: string): Router {
 
     const sha256 = createHash('sha256').update(file.buffer).digest('hex');
 
-    const [existing] = await db
-      .select()
-      .from(documents)
-      .where(and(eq(documents.projectId, projectId), eq(documents.sha256, sha256)))
-      .limit(1);
-    if (existing) {
-      res.status(200).json(existing);
-      return;
-    }
-
     const classification = req.body.classification
       ? Number(req.body.classification)
       : project.defaultClassification;
@@ -142,7 +132,11 @@ export function createDocumentsRouter(db: Db, dataDir: string): Router {
     await mkdir(destDir, { recursive: true });
     await writeFile(path.join(destDir, sha256), file.buffer);
 
-    const [doc] = await db
+    // Dedupe by (project_id, sha256) via ON CONFLICT DO NOTHING, not a
+    // check-then-insert — a plain SELECT-then-INSERT has a real race
+    // (two concurrent uploads of the same file both pass the check, the
+    // second's INSERT then hits the unique constraint and 500s).
+    const [inserted] = await db
       .insert(documents)
       .values({
         workspaceId: project.workspaceId,
@@ -155,15 +149,24 @@ export function createDocumentsRouter(db: Db, dataDir: string): Router {
         uploadedBy: user.id,
         status: 'queued',
       })
+      .onConflictDoNothing({ target: [documents.projectId, documents.sha256] })
       .returning();
-    if (!doc) throw new Error('failed to create document row');
 
-    await db.insert(jobs).values({
-      kind: 'ingest_document',
-      payload: { documentId: doc.id },
-    });
+    if (inserted) {
+      await db.insert(jobs).values({
+        kind: 'ingest_document',
+        payload: { documentId: inserted.id },
+      });
+      res.status(201).json(inserted);
+      return;
+    }
 
-    res.status(201).json(doc);
+    const [existing] = await db
+      .select()
+      .from(documents)
+      .where(and(eq(documents.projectId, projectId), eq(documents.sha256, sha256)))
+      .limit(1);
+    res.status(200).json(existing);
   });
 
   router.get('/projects/:id/documents', requireAuth(db), async (req, res) => {

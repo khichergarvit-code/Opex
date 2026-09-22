@@ -1,58 +1,60 @@
 # Progress
 
 ## Status
-A1 (Walking skeleton) complete. Monorepo, compose stack, manifest hash
-check, hw-probe, verify-offline.sh, seeded-user auth with `can()`, model
-gateway, conversations + SSE chat, and a minimal web UI are built and
-passing lint/typecheck/tests (33 tests, real Postgres). All 4 A1 spikes ran
-with real results (see `scripts/spikes/results/`). `make up` was run from a
-completely clean volume (no manual steps) and the full AC was demonstrated
-end-to-end through the real published ports: login → project → conversation
-→ streamed chat (`ghcr.io/ggml-org/llama.cpp:server`, CPU-only in-container)
-→ a `spans` row with token counts → `verify-offline.sh` PASS (8/8
-containers blocked).
+A1 (Walking skeleton) and A2 (Documents) are **fully done, all ACs
+demonstrated live**: `verify-offline.sh` → 9/9 containers blocked (real
+run); `/doc What is the torque spec for the discharge flange bolts?` →
+"460 Nm [1]" citing pump-manual.pdf p.1 with a real bbox, `verify` event
+ok; recall@5=100%/MRR=1.0, **ACL-leak count=0** (A2's one hard gate). See
+`eval/results/2026-09-22.md`.
+
+A3 (Routing, timeline, one tool) is **built, but one AC fails on this dev
+hardware**: router+4 agents/executor/verifier/memory/sandbox-runner/
+timeline/admin views/README/DEMO.md all built, 82 API + 14 ingest + 15
+sandbox-runner tests green, network-unplugged and timeline-routing ACs
+check out. The **"<10s/step" AC does not hold**: the doc_qa request above
+took **71s** (CPU-only llm-main, 7B Q4_K_M, no GPU) — corrected in
+`docs/DEMO.md`, which wrongly claimed "well under 10s" unverified. Needs a
+GPU or faster answer model (Stage B hardware decision), not a code fix.
 
 ## Decisions
-- GGUF picks (Apache-2.0/MIT, single-file, verified against real HF repos):
-  llm-small = Qwen2.5-0.5B-Instruct-Q4_K_M, llm-main = Qwen2.5-7B-Instruct-
-  Q4_K_M (bartowski's single-file build — Qwen's own repo splits it into 2
-  shards, which the manifest schema doesn't support), llm-embed = bge-m3-
-  Q8_0, llm-rerank = bge-reranker-v2-m3-Q8_0. llm-main is text-only in A1;
-  vision deferred (Spike B).
-- llama-server runs host-native (Metal) for spikes/dev, in-container
-  (CPU-only) for `make up` — Docker Desktop on Mac doesn't pass Metal
-  through to Linux containers.
-- Node 22 target in `engines`, but built with the pre-installed Node 25 — no
-  incompatibility observed.
-- `core` stays `internal: true` as spec'd. Docker refuses to publish host
-  ports on internal-only networks at all, not just block egress — host-side
-  migrations/spikes reach Postgres via `docker compose exec ... psql`.
-- `orchestrator/`, `memory/`, `retrieval/` directories and `sandbox-runner`
-  were not scaffolded — no A1 code belongs there.
-- CSRF: `/auth/login` is exempt from the double-submit check (no session
-  exists yet before login) — found and fixed via the smoke test.
-- `NODE_ENV=development` in `make up`'s compose file, deliberately, not
-  `production`: found via the full-stack demo that `production` silently
-  broke every login (express-session refuses to ever emit a `secure`
-  cookie over plain HTTP — correct behavior, but there's no TLS in front of
-  the API until B6). Flip to `production` when B6 adds TLS at the edge.
-- `index.ts` now runs migrations at boot (`runMigrations`, shared with
-  `db:migrate`'s CLI), not just the manifest check — confirmed by tearing
-  down the Postgres volume entirely and re-running `make up` from empty.
+- ACL SQL bug found via a real integration test: Drizzle's `sql` template
+  spreads a plain JS array into a comma list, not a single bound array
+  param — broke `= ANY($1)`/`&&  $1`. Fixed by building Postgres array
+  literals ourselves and casting (`aclFilter.ts`).
+- Docker's `put_archive`/`get_archive` refuse to operate at all on a
+  `--read-only` container. sandbox-runner writes/reads files via a
+  bootstrap script's own stdout (JSON) instead of the archive API.
+- llm-main is text-only — `vision`/`describe_image` are scaffolded but
+  return "not available", never a fabricated caption. OCR: Tesseract
+  (`eng+hin`), not Docling's RapidOCR (badly garbled the scanned fixture).
+- `router.ts`'s `agent` field must be a Zod/JSON-schema enum, not
+  `z.string()` — llm-small (0.5B) once returned `agent:"agent"` (echoing the
+  schema's field name), silently skipping doc_qa/vision/analysis.
+- eval's ACL-leak check must test for restricted *facts* (dollar figures,
+  pressure ratings), not the bare codename — the probe questions themselves
+  say "Kestrel-9", so a safe refusal echoing it back was a false-positive
+  leak under the old `.includes(codename)` check (`eval/lib/metrics.ts`).
+- `code_exec persist=true` is hard-denied (403) — no B4 approval flow yet.
+- All 4 agents map to `model_role: 'general'` (llm-main); `/code` router-
+  forces `analysis`, not a dedicated `code` agent (B3).
 
 ## Debt
-- Spike A: the 4 models don't comfortably fit in memory concurrently on
-  this 16GB dev machine (see `scripts/spikes/results/vram-probe.md`).
-  Real fix is llama-swap (B4).
-- TLS is not yet in front of the API (`secure` cookie flag is
-  environment-gated) — B6 hardening adds it.
-- Docling spike measured ~39 CPU-s/page on CPU-only backend; A2 should
-  revisit throughput/parallelism once real corpus sizes are known.
-- `apps/web`'s inline styles are placeholder UI, not the eventual design —
-  fine for a walking skeleton, revisit in A3 (ui.md).
+- Router's llm-small prompt never tells the model whether the project has
+  ready documents, so free-text (no `/doc`) document questions default to
+  `general` far more than `doc_qa` — likely the main driver of the 20%
+  answers-suite accuracy. Cheap follow-up: pass `hasReadyDocuments` in.
+- No per-task classification tracking for tool calls (invariant #10's gate
+  defaults to Public until B1/B4 compute a real floor). `answers` eval
+  suite scores by keyword containment, not LLM-judge.
+- Figure captions during ingestion are a placeholder (no vision model).
+- This dev machine's ~7.75GiB Docker memory limit can OOM-kill llm-main
+  when ingest (Docling/torch) + all 4 llama-servers run together —
+  observed live. Stop `ingest` during heavy eval runs.
+- TLS not in front of the API (B6); `apps/web` styling is placeholder (B5);
+  chat-history admin view and gVisor deferred to B1/B4/B5.
 
 ## Open questions
-- Exact production GPU box specs (affects whether Q4_K_M is still the right
-  quant for llm-main at Stage B) — deferred to B-stage planning.
-- Whether Docling's RapidOCR CPU throughput is acceptable for the real A2
-  corpus, or a lighter OCR backend should be evaluated.
+- Real production GPU box specs (Stage B quant/model sizing).
+- Whether Tesseract's Hindi accuracy holds on a *rasterized* Hindi page —
+  the fixture kept a real text layer, so OCR wasn't exercised on Devanagari.

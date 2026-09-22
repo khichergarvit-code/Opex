@@ -66,6 +66,38 @@ export async function fetchDocument(documentId: string): Promise<ApiDocument> {
   return request<ApiDocument>(`/documents/${documentId}`);
 }
 
+export interface AdminSpanRow {
+  id: string;
+  traceId: string;
+  kind: string;
+  name: string;
+  model: string | null;
+  tokensIn: number | null;
+  tokensOut: number | null;
+  latencyMs: number | null;
+  status: 'ok' | 'error';
+  createdAt: string;
+}
+
+export interface AdminUsageRow {
+  userId: string;
+  userEmail: string;
+  model: string | null;
+  day: string;
+  tokensIn: number;
+  tokensOut: number;
+  callCount: number;
+}
+
+export async function fetchAdminLogs(params: { kind?: string; status?: string } = {}): Promise<AdminSpanRow[]> {
+  const qs = new URLSearchParams(params as Record<string, string>).toString();
+  return request<AdminSpanRow[]>(`/admin/logs${qs ? `?${qs}` : ''}`);
+}
+
+export async function fetchAdminUsage(): Promise<AdminUsageRow[]> {
+  return request<AdminUsageRow[]>('/admin/usage');
+}
+
 export async function uploadDocument(projectId: string, file: File): Promise<ApiDocument> {
   const form = new FormData();
   form.append('file', file);

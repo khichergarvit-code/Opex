@@ -1150,6 +1150,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "docling" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "pillow" },
     { name = "pytesseract" },
     { name = "uvicorn", extra = ["standard"] },
@@ -1157,7 +1158,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "pytest" },
 ]
 
@@ -1166,16 +1166,14 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.30" },
     { name = "docling", specifier = ">=2.0" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "pillow", specifier = ">=10.0" },
     { name = "pytesseract", specifier = ">=0.3.13" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "pytest", specifier = ">=8" },
-]
+dev = [{ name = "pytest", specifier = ">=8" }]
 
 [[package]]
 name = "packaging"
