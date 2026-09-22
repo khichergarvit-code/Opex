@@ -1,4 +1,5 @@
 import type {
+  AccessRequest,
   AdminUser,
   ApiDocument,
   ApiGroup,
@@ -28,7 +29,7 @@ export function getCsrfToken(): string | null {
   return csrfToken;
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const method = (init.method ?? 'GET').toUpperCase();
   const headers = new Headers(init.headers);
   if (init.body) headers.set('content-type', 'application/json');
@@ -178,6 +179,30 @@ export interface AdminAuditRow {
 export async function fetchAdminAudit(params: { action?: string; actorId?: string } = {}): Promise<AdminAuditRow[]> {
   const qs = new URLSearchParams(params as Record<string, string>).toString();
   return request<AdminAuditRow[]>(`/admin/audit${qs ? `?${qs}` : ''}`);
+}
+
+export async function createAccessRequest(documentId: string, reason: string): Promise<AccessRequest> {
+  return request<AccessRequest>('/access-requests', { method: 'POST', body: JSON.stringify({ documentId, reason }) });
+}
+
+export async function fetchAdminAccessRequests(status?: string): Promise<AccessRequest[]> {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+  return request<AccessRequest[]>(`/admin/access-requests${qs}`);
+}
+
+export async function decideAccessRequest(
+  id: string,
+  decision: 'approved' | 'denied',
+  expiresAt: string | null,
+): Promise<AccessRequest> {
+  return request<AccessRequest>(`/access-requests/${id}/decide`, {
+    method: 'POST',
+    body: JSON.stringify({ decision, expiresAt }),
+  });
+}
+
+export async function submitFeedback(messageId: string, rating: 'thumbs_up' | 'thumbs_down'): Promise<void> {
+  await request('/feedback', { method: 'POST', body: JSON.stringify({ messageId, rating }) });
 }
 
 export async function uploadDocument(projectId: string, file: File): Promise<ApiDocument> {

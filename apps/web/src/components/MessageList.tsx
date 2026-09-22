@@ -28,9 +28,11 @@ function renderContentWithCitations(content: string, citations: Citation[], onOp
 export function MessageList({
   messages,
   onOpenCitation,
+  onFeedback,
 }: {
   messages: DisplayMessage[];
   onOpenCitation: (c: Citation) => void;
+  onFeedback?: (messageId: string, rating: 'thumbs_up' | 'thumbs_down') => void;
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -39,14 +41,32 @@ export function MessageList({
           key={m.id}
           style={{
             alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-            background: m.role === 'user' ? '#dbeafe' : '#f3f4f6',
-            borderRadius: 8,
-            padding: '8px 12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
             maxWidth: '80%',
-            whiteSpace: 'pre-wrap',
           }}
         >
-          {renderContentWithCitations(m.content, m.citations ?? [], onOpenCitation)}
+          <div
+            style={{
+              background: m.role === 'user' ? '#dbeafe' : '#f3f4f6',
+              borderRadius: 8,
+              padding: '8px 12px',
+              whiteSpace: 'pre-wrap',
+            }}
+          >
+            {renderContentWithCitations(m.content, m.citations ?? [], onOpenCitation)}
+          </div>
+          {onFeedback && m.role === 'assistant' && (
+            <div style={{ display: 'flex', gap: 6, fontSize: 12 }}>
+              <button onClick={() => onFeedback(m.id, 'thumbs_up')} title="Good answer" style={{ cursor: 'pointer' }}>
+                👍
+              </button>
+              <button onClick={() => onFeedback(m.id, 'thumbs_down')} title="Bad answer" style={{ cursor: 'pointer' }}>
+                👎
+              </button>
+            </div>
+          )}
         </div>
       ))}
     </div>

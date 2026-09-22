@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ApiDocument, Project } from '@opex/shared';
-import { ApiError, fetchDocuments, uploadDocument } from '../lib/api';
+import { ApiError, createAccessRequest, fetchDocuments, uploadDocument } from '../lib/api';
 
 const CLASSIFICATION_LABELS = ['Public', 'Internal', 'Confidential', 'Restricted'];
 const CLASSIFICATION_COLORS = ['#dcfce7', '#dbeafe', '#fef3c7', '#fee2e2'];
@@ -81,7 +81,51 @@ function DocumentRow({ doc, onOpen }: { doc: ApiDocument; onOpen: (id: string) =
       <td style={{ padding: '8px 12px', fontSize: 12, color: '#6b7280' }}>
         {(live.sizeBytes / 1024).toFixed(0)} KB
       </td>
+      <td style={{ padding: '8px 12px' }}>
+        <RequestAccessButton documentId={doc.id} />
+      </td>
     </tr>
+  );
+}
+
+function RequestAccessButton({ documentId }: { documentId: string }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [status, setStatus] = useState<'idle' | 'sent' | 'error'>('idle');
+
+  async function submit() {
+    if (!reason.trim()) return;
+    try {
+      await createAccessRequest(documentId, reason);
+      setStatus('sent');
+      setOpen(false);
+    } catch {
+      setStatus('error');
+    }
+  }
+
+  if (status === 'sent') return <span style={{ fontSize: 12, color: '#16a34a' }}>Requested</span>;
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} style={{ fontSize: 12 }}>
+        Request access
+      </button>
+    );
+  }
+
+  return (
+    <span style={{ display: 'flex', gap: 4 }}>
+      <input
+        placeholder="reason"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        style={{ fontSize: 12, width: 140 }}
+      />
+      <button onClick={submit} style={{ fontSize: 12 }}>
+        Send
+      </button>
+    </span>
   );
 }
 
@@ -151,6 +195,7 @@ export function DocumentsPage({
             <th style={{ padding: '8px 12px' }}>Classification</th>
             <th style={{ padding: '8px 12px' }}>Status</th>
             <th style={{ padding: '8px 12px' }}>Size</th>
+            <th style={{ padding: '8px 12px' }}></th>
           </tr>
         </thead>
         <tbody>

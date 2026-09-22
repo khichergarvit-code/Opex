@@ -4,15 +4,13 @@ import { LoginPage } from './pages/LoginPage';
 import { ChatPage } from './pages/ChatPage';
 import { DocumentsPage } from './pages/DocumentsPage';
 import { DocumentViewerPage, type ViewerTarget } from './pages/DocumentViewerPage';
-import { TracesPage } from './pages/admin/TracesPage';
-import { UsagePage } from './pages/admin/UsagePage';
+import { AdminLayout, type AdminSection } from './pages/admin/AdminLayout';
 
 type View =
   | { name: 'chat' }
   | { name: 'documents' }
   | { name: 'viewer'; target: ViewerTarget }
-  | { name: 'admin-traces' }
-  | { name: 'admin-usage' };
+  | { name: 'admin'; section: AdminSection };
 
 const ADMIN_ROLES = new Set(['super_admin', 'workspace_admin']);
 
@@ -38,12 +36,14 @@ export function App() {
     return <DocumentViewerPage target={view.target} onBack={() => setView({ name: 'chat' })} />;
   }
 
-  if (view.name === 'admin-traces' && ADMIN_ROLES.has(user.role)) {
-    return <TracesPage onBack={() => setView({ name: 'chat' })} />;
-  }
-
-  if (view.name === 'admin-usage' && ADMIN_ROLES.has(user.role)) {
-    return <UsagePage onBack={() => setView({ name: 'chat' })} />;
+  if (view.name === 'admin' && ADMIN_ROLES.has(user.role)) {
+    return (
+      <AdminLayout
+        section={view.section}
+        onSectionChange={(section) => setView({ name: 'admin', section })}
+        onBack={() => setView({ name: 'chat' })}
+      />
+    );
   }
 
   return (
@@ -53,8 +53,7 @@ export function App() {
       onActiveProjectChange={setActiveProject}
       onOpenDocuments={() => setView({ name: 'documents' })}
       onOpenCitation={(documentId, page, bbox) => setView({ name: 'viewer', target: { documentId, page, bbox } })}
-      onOpenAdminTraces={ADMIN_ROLES.has(user.role) ? () => setView({ name: 'admin-traces' }) : undefined}
-      onOpenAdminUsage={ADMIN_ROLES.has(user.role) ? () => setView({ name: 'admin-usage' }) : undefined}
+      onOpenAdmin={ADMIN_ROLES.has(user.role) ? (section) => setView({ name: 'admin', section }) : undefined}
     />
   );
 }

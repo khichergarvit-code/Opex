@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Bbox, Citation, MeResponse, Project, SseEvent } from '@opex/shared';
-import { createConversation, fetchProjects, logout } from '../lib/api';
+import { createConversation, fetchProjects, logout, submitFeedback } from '../lib/api';
 import { streamMessage } from '../lib/sse';
 import { Composer } from '../components/Composer';
 import { MessageList, type DisplayMessage } from '../components/MessageList';
 import { AgentTimeline } from '../components/AgentTimeline';
 import { ArtifactsPanel, type DisplayArtifact } from '../components/ArtifactsPanel';
+import type { AdminSection } from './admin/AdminLayout';
 
 export function ChatPage({
   user,
@@ -13,16 +14,14 @@ export function ChatPage({
   onActiveProjectChange,
   onOpenDocuments,
   onOpenCitation,
-  onOpenAdminTraces,
-  onOpenAdminUsage,
+  onOpenAdmin,
 }: {
   user: MeResponse;
   onLoggedOut: () => void;
   onActiveProjectChange: (project: Project) => void;
   onOpenDocuments: () => void;
   onOpenCitation: (documentId: string, page: number, bbox: Bbox) => void;
-  onOpenAdminTraces?: () => void;
-  onOpenAdminUsage?: () => void;
+  onOpenAdmin?: (section: AdminSection) => void;
 }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<string>('');
@@ -98,7 +97,14 @@ export function ChatPage({
           ),
         );
       },
-      onDone: () => {
+      onDone: (messageId) => {
+        // The assistant message was rendered under a client-generated id
+        // while streaming; swap it for the real server id now so feedback
+        // (thumbs up/down) submits against a message that actually exists
+        // in the messages table, not a 404.
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantIdRef.current ? { ...m, id: messageId } : m)),
+        );
         setStreaming(false);
         setStatus(null);
       },
@@ -120,14 +126,9 @@ export function ChatPage({
           <button onClick={() => setShowTimeline((v) => !v)} style={{ marginRight: 12 }}>
             {showTimeline ? 'Hide' : 'Show'} timeline
           </button>
-          {onOpenAdminTraces && (
-            <button onClick={onOpenAdminTraces} style={{ marginRight: 12 }}>
-              Admin: Traces
-            </button>
-          )}
-          {onOpenAdminUsage && (
-            <button onClick={onOpenAdminUsage} style={{ marginRight: 12 }}>
-              Admin: Usage
+          {onOpenAdmin && (
+            <button onClick={() => onOpenAdmin('traces')} style={{ marginRight: 12 }}>
+              Admin
             </button>
           )}
           <span style={{ marginRight: 12 }}>
@@ -155,6 +156,9 @@ export function ChatPage({
           <MessageList
             messages={messages}
             onOpenCitation={(c) => onOpenCitation(c.documentId, c.page, c.bbox)}
+            onFeedback={(messageId, rating) => {
+              submitFeedback(messageId, rating).catch(() => {});
+            }}
           />
           {status && <p style={{ color: '#6b7280', fontSize: 12 }}>{status}</p>}
 
