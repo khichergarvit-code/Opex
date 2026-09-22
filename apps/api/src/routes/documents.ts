@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, or } from 'drizzle-orm';
 import { Router, type Response } from 'express';
 import multer from 'multer';
 import { fileTypeFromBuffer } from 'file-type';
 import type { Db } from '../db/client.js';
-import { documents, jobs, projectMembers, projects, userGroups } from '../db/schema/index.js';
+import { accessGrants, documents, jobs, projectMembers, projects, userGroups } from '../db/schema/index.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
 import { loadActivePolicyRules } from '../policy/loadPolicyRules.js';
@@ -65,12 +65,27 @@ async function loadAndAuthorizeDocument(
     .select({ groupId: userGroups.groupId })
     .from(userGroups)
     .where(eq(userGroups.userId, user.id));
+  // Mirrors retrieval/aclFilter.ts's `OR EXISTS (... access_grants ...)`
+  // clause — the same grant that lets a chunk through retrieval must also
+  // let the raw document file/page through this direct route.
+  const [grant] = await db
+    .select({ id: accessGrants.id })
+    .from(accessGrants)
+    .where(
+      and(
+        eq(accessGrants.documentId, doc.id),
+        eq(accessGrants.userId, user.id),
+        or(isNull(accessGrants.expiresAt), gt(accessGrants.expiresAt, new Date())),
+      ),
+    )
+    .limit(1);
   const decision = can(user, 'document:read', {
     projectId: doc.projectId,
     isProjectMember: member,
     documentClassification: doc.classification as 0 | 1 | 2 | 3,
     documentAclGroupIds: doc.aclGroupIds,
     userGroupIds: userGroupRows.map((r) => r.groupId),
+    hasActiveAccessGrant: Boolean(grant),
   });
   if (!decision.allowed) {
     res.status(403).json({ error: decision.reason ?? 'forbidden' });

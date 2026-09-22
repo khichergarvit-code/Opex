@@ -47,6 +47,14 @@ export interface PolicyContext {
   documentClassification?: Classification;
   documentAclGroupIds?: string[];
   userGroupIds?: string[];
+  /**
+   * Present for document:read — whether the caller already found a live
+   * (non-expired) access_grants row for this user+document. Mirrors
+   * retrieval/aclFilter.ts's `OR EXISTS (... access_grants ...)` clause,
+   * just computed by the caller and passed in rather than inline SQL,
+   * since document:read isn't itself a chunk-level SQL query.
+   */
+  hasActiveAccessGrant?: boolean;
   /** Present for tool:invoke — the tool name and the calling agent's allowlist. */
   toolName?: string;
   agentToolAllowlist?: string[];

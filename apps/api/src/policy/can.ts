@@ -72,6 +72,9 @@ export function can(
       if (!ctx.isProjectMember) {
         return { allowed: false, reason: 'user is not a member of this project' };
       }
+      if (ctx.hasActiveAccessGrant) {
+        return { allowed: true };
+      }
       if (
         ctx.documentClassification !== undefined &&
         user.clearance < ctx.documentClassification

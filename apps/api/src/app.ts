@@ -14,6 +14,8 @@ import { createRetrievalRouter } from './routes/retrieval.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createArtifactsRouter } from './routes/artifacts.js';
 import { createRouterDebugRouter } from './routes/routerDebug.js';
+import { createAccessRequestsRouter } from './routes/accessRequests.js';
+import { createDbAuditWriter } from './audit/writeAudit.js';
 
 export function createApp(db: Db, env: Env): Express {
   const app = express();
@@ -23,6 +25,7 @@ export function createApp(db: Db, env: Env): Express {
   app.use(csrfProtection);
 
   const spanWriter = createDbSpanWriter(db);
+  const auditWriter = createDbAuditWriter(db);
   const gateway = new ModelGateway({ db, spanWriter });
 
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
@@ -34,6 +37,7 @@ export function createApp(db: Db, env: Env): Express {
   app.use(createAdminRouter(db));
   app.use(createArtifactsRouter(db, env.DATA_DIR));
   app.use(createRouterDebugRouter(db, gateway));
+  app.use(createAccessRequestsRouter(db, auditWriter));
 
   app.use(errorHandler);
   return app;

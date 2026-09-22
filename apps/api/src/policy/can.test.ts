@@ -114,6 +114,17 @@ describe('can() — document:read', () => {
     expect(decision.allowed).toBe(true);
   });
 
+  it('allows when an active access grant exists, even above clearance and outside ACL groups', () => {
+    const decision = can(user({ role: 'employee', clearance: 0 }), 'document:read', {
+      isProjectMember: true,
+      documentClassification: 3,
+      documentAclGroupIds: ['group-a'],
+      userGroupIds: [],
+      hasActiveAccessGrant: true,
+    });
+    expect(decision.allowed).toBe(true);
+  });
+
   it('admins bypass classification and ACL groups', () => {
     const decision = can(user({ role: 'super_admin', clearance: 0 }), 'document:read', {
       isProjectMember: false,
