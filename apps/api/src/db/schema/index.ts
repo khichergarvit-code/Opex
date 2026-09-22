@@ -14,4 +14,6 @@ export * from './chunks.js';
 export * from './jobs.js';
 export * from './agents.js';
 export * from './accessGrants.js';
+export * from './accessRequests.js';
+export * from './feedback.js';
 export * from './artifacts.js';

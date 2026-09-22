@@ -1,4 +1,4 @@
-import { boolean, integer, pgEnum, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { boolean, integer, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 export const modelRoleEnum = pgEnum('model_role', [
   'router',
@@ -26,5 +26,8 @@ export const models = pgTable('models', {
   license: text('license').notNull(),
   origin: text('origin').notNull(),
   enabled: boolean('enabled').notNull().default(true),
+  // Mirrors agents.allowedGroups: empty array = no restriction. B5's
+  // Models admin page can restrict a model to specific groups.
+  groupAllowlist: uuid('group_allowlist').array().notNull().default([]),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
