@@ -31,6 +31,7 @@ export type Action =
   | 'admin:agents:manage'
   | 'admin:memory:read'
   | 'admin:memory:purge'
+  | 'approval:decide'
   | 'admin:feedback:triage'
   | 'admin:system:read'
   | 'admin:conversation:read'
@@ -70,6 +71,8 @@ export interface PolicyContext {
   uploadSizeBytes?: number;
   /** Present for admin:memory:purge — allows a user to delete their own memory. */
   memoryOwnerId?: string;
+  /** Present for approval:decide — the user who originally triggered the paused call. */
+  approvalRequesterId?: string;
 }
 
 export interface PolicyDecision {

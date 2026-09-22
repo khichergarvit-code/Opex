@@ -114,6 +114,17 @@ export const memoryUsedEventSchema = z.object({
 });
 export type MemoryUsedEvent = z.infer<typeof memoryUsedEventSchema>;
 
+export const approvalRequiredEventSchema = z.object({
+  type: z.literal('approval_required'),
+  data: z.object({
+    approvalId: z.string().uuid(),
+    toolName: z.string(),
+    args: z.record(z.string(), z.unknown()),
+    reason: z.string(),
+  }),
+});
+export type ApprovalRequiredEvent = z.infer<typeof approvalRequiredEventSchema>;
+
 export const sseEventSchema = z.discriminatedUnion('type', [
   statusEventSchema,
   tokenEventSchema,
@@ -125,6 +136,7 @@ export const sseEventSchema = z.discriminatedUnion('type', [
   toolResultEventSchema,
   verifyEventSchema,
   memoryUsedEventSchema,
+  approvalRequiredEventSchema,
 ]);
 
 export type SseEvent = z.infer<typeof sseEventSchema>;

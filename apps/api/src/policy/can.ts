@@ -148,6 +148,20 @@ export function can(
       return { allowed: false, reason: 'can only delete your own memory, or requires super_admin/workspace_admin' };
     }
 
+    // B4: the user who originally triggered the paused call may decide it
+    // themselves (matches the natural in-chat UX — approving your own
+    // agent's action), or an admin may (oversight). Both allowed, a
+    // stated design decision, not an oversight-only gate.
+    case 'approval:decide': {
+      if (ctx.approvalRequesterId !== undefined && ctx.approvalRequesterId === user.id) {
+        return { allowed: true };
+      }
+      if (user.role === 'super_admin' || user.role === 'workspace_admin') {
+        return { allowed: true };
+      }
+      return { allowed: false, reason: 'can only decide your own approval, or requires super_admin/workspace_admin' };
+    }
+
     case 'admin:traces:read':
     case 'admin:usage:read':
     case 'access_request:approve':

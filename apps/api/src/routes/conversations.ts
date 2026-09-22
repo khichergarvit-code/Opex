@@ -227,6 +227,10 @@ export function createConversationsRouter(
     let assistantContent = '';
     let traceStatus: 'ok' | 'error' = 'ok';
     let citations: Array<{ marker: number; documentId: string; filename: string; page: number; bbox: unknown }> = [];
+    // B4: a paused tool call already set traces.status='awaiting_approval'
+    // and left no assistant message to insert — skip the normal
+    // finalization block entirely rather than overwrite that status.
+    let pausedForApproval = false;
 
     if (routeDecision.agent === 'doc_qa') {
       const docQa = await buildDocQaPrompt({
@@ -291,7 +295,7 @@ export function createConversationsRouter(
       } else {
         try {
           const systemPrompt = await loadAgentSystemPrompt(agentConfig);
-          const executorResult = await runExecutor(
+          const executorOutcome = await runExecutor(
             {
               db,
               gateway,
@@ -327,8 +331,21 @@ export function createConversationsRouter(
                 }),
             },
           );
-          assistantContent = executorResult.answer;
-          sendEvent(res, { type: 'token', data: { delta: assistantContent } });
+          if (executorOutcome.status === 'approval_required') {
+            pausedForApproval = true;
+            sendEvent(res, {
+              type: 'approval_required',
+              data: {
+                approvalId: executorOutcome.approvalId,
+                toolName: executorOutcome.toolName,
+                args: executorOutcome.args,
+                reason: executorOutcome.reason,
+              },
+            });
+          } else {
+            assistantContent = executorOutcome.answer;
+            sendEvent(res, { type: 'token', data: { delta: assistantContent } });
+          }
         } catch (err) {
           traceStatus = 'error';
           sendEvent(res, {
@@ -358,28 +375,30 @@ export function createConversationsRouter(
       }
     }
 
-    let assistantMessageId = '';
-    if (traceStatus === 'ok') {
-      const [assistantRow] = await db
-        .insert(messages)
-        .values({
-          conversationId: conversation.id,
-          role: 'assistant',
-          content: assistantContent,
-          traceId: trace.id,
-          citations,
-        })
-        .returning();
-      assistantMessageId = assistantRow?.id ?? '';
-    }
+    if (!pausedForApproval) {
+      let assistantMessageId = '';
+      if (traceStatus === 'ok') {
+        const [assistantRow] = await db
+          .insert(messages)
+          .values({
+            conversationId: conversation.id,
+            role: 'assistant',
+            content: assistantContent,
+            traceId: trace.id,
+            citations,
+          })
+          .returning();
+        assistantMessageId = assistantRow?.id ?? '';
+      }
 
-    await db
-      .update(traces)
-      .set({ status: traceStatus, endedAt: new Date() })
-      .where(eq(traces.id, trace.id));
+      await db
+        .update(traces)
+        .set({ status: traceStatus, endedAt: new Date() })
+        .where(eq(traces.id, trace.id));
 
-    if (traceStatus === 'ok') {
-      sendEvent(res, { type: 'done', data: { messageId: assistantMessageId, traceId: trace.id } });
+      if (traceStatus === 'ok') {
+        sendEvent(res, { type: 'done', data: { messageId: assistantMessageId, traceId: trace.id } });
+      }
     }
     res.end();
   });

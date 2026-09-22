@@ -1,7 +1,10 @@
 import { pgEnum, pgTable, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 
-export const traceStatusEnum = pgEnum('trace_status', ['running', 'ok', 'error']);
+// B4: 'awaiting_approval' marks a trace paused on a tool call pending a
+// human decision (see schema/approvals.ts) — the trace resumes to 'ok'
+// or 'error' once decided, same finalization path as a normal call.
+export const traceStatusEnum = pgEnum('trace_status', ['running', 'ok', 'error', 'awaiting_approval']);
 
 // conversations is defined after traces to avoid a circular import — messages.trace_id and
 // traces.conversation_id reference each other's tables; see conversations.ts / messages.ts.
