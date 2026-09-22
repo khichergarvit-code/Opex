@@ -1,60 +1,60 @@
 # Progress
 
 ## Status
-A1 (Walking skeleton) and A2 (Documents) are **fully done, all ACs
-demonstrated live**: `verify-offline.sh` → 9/9 containers blocked (real
-run); `/doc What is the torque spec for the discharge flange bolts?` →
-"460 Nm [1]" citing pump-manual.pdf p.1 with a real bbox, `verify` event
-ok; recall@5=100%/MRR=1.0, **ACL-leak count=0** (A2's one hard gate). See
-`eval/results/2026-09-22.md`.
+A1–A3 done — see `docs/archive/a1-a3.md` (one AC still fails on this
+CPU-only dev machine: doc_qa latency, not a code fix — see `docs/DEMO.md`).
 
-A3 (Routing, timeline, one tool) is **built, but one AC fails on this dev
-hardware**: router+4 agents/executor/verifier/memory/sandbox-runner/
-timeline/admin views/README/DEMO.md all built, 82 API + 14 ingest + 15
-sandbox-runner tests green, network-unplugged and timeline-routing ACs
-check out. The **"<10s/step" AC does not hold**: the doc_qa request above
-took **71s** (CPU-only llm-main, 7B Q4_K_M, no GPU) — corrected in
-`docs/DEMO.md`, which wrongly claimed "well under 10s" unverified. Needs a
-GPU or faster answer model (Stage B hardware decision), not a code fix.
+**B1 (Governance) + B5 (Admin console) done, merged as one milestone at
+the user's request** (`docs/plan.md`'s original B1/B5 rows are unchanged;
+this note records the merge). All 3 B1 ACs demonstrated live: 55-case
+`policyMatrix.test.ts` green; `pnpm audit:verify` OK on a real chain, then
+correctly detects a real raw-SQL tamper; an access grant appears (403→200)
+and expires (200→403) for real. All 6 B5 admin pages (Models, Policies,
+Agents, Memory, Feedback, System) plus users/groups/access-requests/
+conversations/audit-log verified live through the actual web UI (nginx on
+:8080), not just direct API calls — every response checked against a real
+DB query, no fabricated fields (Models/System show `"N/A — CPU-only
+stack"` literally, Memory shows a banner that B2 doesn't exist yet).
+148 API tests green.
 
 ## Decisions
-- ACL SQL bug found via a real integration test: Drizzle's `sql` template
-  spreads a plain JS array into a comma list, not a single bound array
-  param — broke `= ANY($1)`/`&&  $1`. Fixed by building Postgres array
-  literals ourselves and casting (`aclFilter.ts`).
-- Docker's `put_archive`/`get_archive` refuse to operate at all on a
-  `--read-only` container. sandbox-runner writes/reads files via a
-  bootstrap script's own stdout (JSON) instead of the archive API.
-- llm-main is text-only — `vision`/`describe_image` are scaffolded but
-  return "not available", never a fabricated caption. OCR: Tesseract
-  (`eng+hin`), not Docling's RapidOCR (badly garbled the scanned fixture).
-- `router.ts`'s `agent` field must be a Zod/JSON-schema enum, not
-  `z.string()` — llm-small (0.5B) once returned `agent:"agent"` (echoing the
-  schema's field name), silently skipping doc_qa/vision/analysis.
-- eval's ACL-leak check must test for restricted *facts* (dollar figures,
-  pressure ratings), not the bare codename — the probe questions themselves
-  say "Kestrel-9", so a safe refusal echoing it back was a false-positive
-  leak under the old `.includes(codename)` check (`eval/lib/metrics.ts`).
-- `code_exec persist=true` is hard-denied (403) — no B4 approval flow yet.
-- All 4 agents map to `model_role: 'general'` (llm-main); `/code` router-
-  forces `analysis`, not a dedicated `code` agent (B3).
+- Policy: `policies` table is now actually read at runtime
+  (`loadPolicyRules.ts`), not just a static default. `document:upload`'s
+  size check and `model:invoke`'s quota check moved inside `can()`.
+- Audit: `audit_log`'s `hash`/`prev_hash` are real now (`writeAudit.ts`,
+  `sha256(prevHash + canonicalRow)`). Canonicalization sorts object keys
+  recursively — Postgres's `jsonb` does **not** preserve key insertion
+  order, so plain `JSON.stringify` on a round-tripped row produced a
+  different string than at write time, falsely flagging untampered rows
+  as a broken chain. Found via a live run, fixed in `audit/canonical.ts`.
+- Access grants: `can()`'s `document:read` case didn't check
+  `access_grants` at all (only retrieval's SQL did) — an approved grant
+  worked for chunk retrieval but not the raw file route. Fixed by having
+  `documents.ts` query the grant and pass `hasActiveAccessGrant` in.
+- User/group admin: disable-not-delete (`users.status`), since
+  `audit_log`/`traces`/`access_grants`/`feedback` all FK to `users.id`.
+  Both `super_admin` and `workspace_admin` can create/disable users and
+  manage groups (user's explicit call — no split by role).
+- Memory admin is scoped to A3's real per-conversation `working_summary`
+  only — B2's long-term store doesn't exist; the page says so, no
+  fabricated TTLs/purge-counts.
+- Feedback export-to-eval needs `docker-compose.yml` to mount
+  `./eval/questions` into the api container — that dir isn't in the image
+  at all (only `dist/` is), found before shipping by tracing the
+  Dockerfile's COPY list.
+- `git`: `models/docling-cache/` (150–212MB HF cache files) had been
+  committed into history, bloating `.git` to 490MB, over GitHub's 100MB
+  push limit. Fixed on a clean branch (soft-reset, gitignore, re-commit).
 
 ## Debt
-- Router's llm-small prompt never tells the model whether the project has
-  ready documents, so free-text (no `/doc`) document questions default to
-  `general` far more than `doc_qa` — likely the main driver of the 20%
-  answers-suite accuracy. Cheap follow-up: pass `hasReadyDocuments` in.
-- No per-task classification tracking for tool calls (invariant #10's gate
-  defaults to Public until B1/B4 compute a real floor). `answers` eval
-  suite scores by keyword containment, not LLM-judge.
-- Figure captions during ingestion are a placeholder (no vision model).
-- This dev machine's ~7.75GiB Docker memory limit can OOM-kill llm-main
-  when ingest (Docling/torch) + all 4 llama-servers run together —
-  observed live. Stop `ingest` during heavy eval runs.
-- TLS not in front of the API (B6); `apps/web` styling is placeholder (B5);
-  chat-history admin view and gVisor deferred to B1/B4/B5.
+- No per-task classification tracking for tool calls (invariant #10's
+  gate defaults to Public until B4 computes a real floor).
+- `answers` eval suite scores by keyword containment, not LLM-judge.
+- TLS not in front of the API (B6). `apps/web` admin pages are plain
+  inline-styled tables/forms, no design pass yet.
+- Agents admin's "test-chat" span isn't tagged in `attrs` (no passthrough
+  on `gateway.ChatRequest` yet) — shows up in `/admin/logs` like a real turn.
+- gVisor not wired into sandbox-runner yet (B4).
 
 ## Open questions
-- Real production GPU box specs (Stage B quant/model sizing).
-- Whether Tesseract's Hindi accuracy holds on a *rasterized* Hindi page —
-  the fixture kept a real text layer, so OCR wasn't exercised on Devanagari.
+- Real production GPU box specs. Tesseract's Hindi OCR on a *rasterized* page.

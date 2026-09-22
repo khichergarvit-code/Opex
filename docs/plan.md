@@ -60,6 +60,11 @@ AC:
 | 11 | B7 Eval + performance | eval | All gates green; p95 latencies published |
 | 12 | B8 Release | this file | Every checklist item below is backed by evidence in docs/RELEASE_CHECKLIST.md |
 
+> B1 and B5 were built and merged together as one milestone at the user's
+> request (B5's admin console is almost entirely governance-adjacent
+> surface — see docs/PROGRESS.md). The table above is left as originally
+> planned; this note just records that the two didn't ship in week order.
+
 ## B8 release checklist
 - The offline bundle installs on a clean machine with no internet.
 - A backup and restore drill of Postgres, files, and the manifest has been run, and the restore time recorded.
