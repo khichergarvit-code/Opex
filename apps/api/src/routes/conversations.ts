@@ -7,6 +7,8 @@ import type { Db } from '../db/client.js';
 import { conversations, messages, projectMembers, projects, traces } from '../db/schema/index.js';
 import type { Env } from '../env.js';
 import { getWorkingMemory, type WorkingMemoryTurn } from '../memory/working.js';
+import { buildMemoryBlock } from '../memory/longterm.js';
+import { renderProjectNotesBlock } from '../memory/projectNotes.js';
 import type { ModelGateway, SpanWriter } from '../models/gateway.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
@@ -203,6 +205,25 @@ export function createConversationsRouter(
     }
     const memoryTurns = toChatTurns(memoryResult.summary, memoryResult.recentTurns);
 
+    // B2 long-term memory: injected as labeled blocks in the user turn
+    // (never the system prompt — invariant #5), regardless of which agent
+    // handles the message. Project notes are always included; semantic/
+    // episodic only when the router asked for them.
+    const [project] = await db.select().from(projects).where(eq(projects.id, conversation.projectId)).limit(1);
+    const { block: longTermMemoryBlock, injected: injectedMemories } = await buildMemoryBlock(
+      { db, gateway, spanWriter, user, traceId: trace.id },
+      { workspaceId: conversation.workspaceId, projectId: conversation.projectId, query: parsed.data.content, needsMemory: routeDecision.needs.memory },
+    );
+    const projectNotesBlock = project ? renderProjectNotesBlock(project.notesMd) : null;
+    for (const m of injectedMemories) {
+      sendEvent(res, { type: 'memory_used', data: { id: m.id, kind: m.type, score: m.score } });
+    }
+    if (projectNotesBlock) {
+      sendEvent(res, { type: 'memory_used', data: { id: conversation.projectId, kind: 'project' } });
+    }
+    const memoryPrefix = [projectNotesBlock, longTermMemoryBlock].filter(Boolean).join('\n\n');
+    const userContent = memoryPrefix ? `${memoryPrefix}\n\n${parsed.data.content}` : parsed.data.content;
+
     let assistantContent = '';
     let traceStatus: 'ok' | 'error' = 'ok';
     let citations: Array<{ marker: number; documentId: string; filename: string; page: number; bbox: unknown }> = [];
@@ -224,10 +245,19 @@ export function createConversationsRouter(
         assistantContent = docQa.noSupportAnswer;
         sendEvent(res, { type: 'token', data: { delta: assistantContent } });
       } else {
+        // Memory blocks prepend to the augmented user turn itself, not
+        // docQa's `question` param — that stays the bare question since
+        // it also drives the retrieval query (buildDocQaPrompt uses it
+        // for both search() and the displayed "Question: ..." text).
+        const docQaMessages = [...docQa.messages];
+        const lastTurn = docQaMessages[docQaMessages.length - 1];
+        if (memoryPrefix && lastTurn) {
+          docQaMessages[docQaMessages.length - 1] = { ...lastTurn, content: `${memoryPrefix}\n\n${lastTurn.content}` };
+        }
         try {
           for await (const delta of gateway.chatStream({
             role: 'general',
-            messages: [{ role: 'system', content: docQa.systemPrompt }, ...docQa.messages],
+            messages: [{ role: 'system', content: docQa.systemPrompt }, ...docQaMessages],
             user,
             traceId: trace.id,
           })) {
@@ -249,7 +279,11 @@ export function createConversationsRouter(
           });
         }
       }
-    } else if (routeDecision.agent === 'vision' || routeDecision.agent === 'analysis') {
+    } else if (routeDecision.agent !== 'general') {
+      // Agent-agnostic: vision/analysis/code/research, and any
+      // admin-created custom agent (B5's POST /admin/agents) — all go
+      // through the same executor loop, gated only by whether loadAgent
+      // finds an enabled row for that name.
       const agentConfig = await loadAgent(db, routeDecision.agent);
       if (!agentConfig) {
         traceStatus = 'error';
@@ -269,7 +303,7 @@ export function createConversationsRouter(
             {
               agent: agentConfig,
               systemPrompt,
-              messages: [...memoryTurns, { role: 'user', content: parsed.data.content }],
+              messages: [...memoryTurns, { role: 'user', content: userContent }],
               user,
               traceId: trace.id,
               conversationId: conversation.id,
@@ -308,7 +342,7 @@ export function createConversationsRouter(
       try {
         for await (const delta of gateway.chatStream({
           role: 'general',
-          messages: [{ role: 'system', content: systemPrompt }, ...memoryTurns, { role: 'user', content: parsed.data.content }],
+          messages: [{ role: 'system', content: systemPrompt }, ...memoryTurns, { role: 'user', content: userContent }],
           user,
           traceId: trace.id,
         })) {

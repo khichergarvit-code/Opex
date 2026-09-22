@@ -104,6 +104,16 @@ export const verifyEventSchema = z.object({
 });
 export type VerifyEvent = z.infer<typeof verifyEventSchema>;
 
+export const memoryUsedEventSchema = z.object({
+  type: z.literal('memory_used'),
+  data: z.object({
+    id: z.string().uuid(),
+    kind: z.enum(['episodic', 'semantic', 'project']),
+    score: z.number().optional(), // absent for project notes (no scoring)
+  }),
+});
+export type MemoryUsedEvent = z.infer<typeof memoryUsedEventSchema>;
+
 export const sseEventSchema = z.discriminatedUnion('type', [
   statusEventSchema,
   tokenEventSchema,
@@ -114,6 +124,7 @@ export const sseEventSchema = z.discriminatedUnion('type', [
   toolCallEventSchema,
   toolResultEventSchema,
   verifyEventSchema,
+  memoryUsedEventSchema,
 ]);
 
 export type SseEvent = z.infer<typeof sseEventSchema>;
