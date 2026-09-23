@@ -17,6 +17,8 @@ import { runExecutor } from '../orchestrator/executor.js';
 import { route as routeMessage } from '../orchestrator/router.js';
 import { verifyCitations, verifyCodeTask } from '../orchestrator/verifier.js';
 import { answerWithVerification } from '../orchestrator/reviseLoop.js';
+import { planTask } from '../orchestrator/planner.js';
+import { runPlan } from '../orchestrator/scheduler.js';
 import { buildDocQaPrompt, extractCitedMarkers, projectHasReadyDocuments } from './docQa.js';
 
 const CHAT_SYSTEM_PROMPT_PATH = new URL('../prompts/chat-system.md', import.meta.url);
@@ -233,7 +235,54 @@ export function createConversationsRouter(
     // finalization block entirely rather than overwrite that status.
     let pausedForApproval = false;
 
-    if (routeDecision.agent === 'doc_qa') {
+    if (routeDecision.complexity === 'multi_step') {
+      try {
+        const plan = await planTask({ gateway, user, traceId: trace.id }, parsed.data.content);
+        sendEvent(res, {
+          type: 'plan',
+          data: { steps: plan.steps.map((s) => ({ id: s.id, agent: s.agent, goal: s.goal, inputsFrom: s.inputsFrom })) },
+        });
+        assistantContent = await runPlan(
+          {
+            db,
+            gateway,
+            spanWriter,
+            sandboxRunnerUrl: env.SANDBOX_RUNNER_URL,
+            sandboxSharedSecret: env.SANDBOX_SHARED_SECRET,
+            dataDir: env.DATA_DIR,
+            user,
+            traceId: trace.id,
+            conversationId: conversation.id,
+            workspaceId: conversation.workspaceId,
+            projectId: conversation.projectId,
+            taskClassification: 0,
+          },
+          plan,
+          userContent,
+          {
+            onStepStart: (step) => sendEvent(res, { type: 'step_start', data: { stepId: step.id, agent: step.agent, goal: step.goal } }),
+            onToolCall: (e) => sendEvent(res, { type: 'tool_call', data: { toolName: e.toolName, callId: e.callId, args: e.args ?? {} } }),
+            onToolResult: (e) =>
+              sendEvent(res, {
+                type: 'tool_result',
+                data: {
+                  callId: e.callId,
+                  status: e.result?.ok ? 'ok' : 'error',
+                  summary: e.result?.summary ?? '',
+                  artifactIds: e.result?.artifactIds ?? [],
+                },
+              }),
+          },
+        );
+        sendEvent(res, { type: 'token', data: { delta: assistantContent } });
+      } catch (err) {
+        traceStatus = 'error';
+        sendEvent(res, {
+          type: 'error',
+          data: { message: err instanceof Error ? err.message : 'model call failed' },
+        });
+      }
+    } else if (routeDecision.agent === 'doc_qa') {
       const docQa = await buildDocQaPrompt({
         db,
         gateway,

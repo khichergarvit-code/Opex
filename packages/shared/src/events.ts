@@ -118,6 +118,31 @@ export const memoryUsedEventSchema = z.object({
 });
 export type MemoryUsedEvent = z.infer<typeof memoryUsedEventSchema>;
 
+export const planStepSchema = z.object({
+  id: z.string(),
+  agent: z.string(),
+  goal: z.string(),
+  inputsFrom: z.array(z.string()),
+});
+
+export const planEventSchema = z.object({
+  type: z.literal('plan'),
+  data: z.object({
+    steps: z.array(planStepSchema),
+  }),
+});
+export type PlanEvent = z.infer<typeof planEventSchema>;
+
+export const stepStartEventSchema = z.object({
+  type: z.literal('step_start'),
+  data: z.object({
+    stepId: z.string(),
+    agent: z.string(),
+    goal: z.string(),
+  }),
+});
+export type StepStartEvent = z.infer<typeof stepStartEventSchema>;
+
 export const approvalRequiredEventSchema = z.object({
   type: z.literal('approval_required'),
   data: z.object({
@@ -141,6 +166,8 @@ export const sseEventSchema = z.discriminatedUnion('type', [
   verifyEventSchema,
   memoryUsedEventSchema,
   approvalRequiredEventSchema,
+  planEventSchema,
+  stepStartEventSchema,
 ]);
 
 export type SseEvent = z.infer<typeof sseEventSchema>;

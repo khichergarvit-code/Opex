@@ -10,6 +10,8 @@ const EVENT_LABELS: Partial<Record<SseEvent['type'], string>> = {
   error: 'Error',
   memory_used: 'Memory used',
   approval_required: 'Approval required',
+  plan: 'Plan',
+  step_start: 'Step started',
 };
 
 function describeEvent(event: SseEvent): string {
@@ -32,6 +34,10 @@ function describeEvent(event: SseEvent): string {
       return event.data.message;
     case 'approval_required':
       return `${event.data.toolName}: ${event.data.reason}`;
+    case 'plan':
+      return event.data.steps.map((s) => `${s.id}:${s.agent}`).join(' → ');
+    case 'step_start':
+      return `${event.data.stepId} (${event.data.agent}): ${event.data.goal}`;
     default:
       return '';
   }
