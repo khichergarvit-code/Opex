@@ -1,12 +1,18 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from sandbox_runner.docker_exec import FileInput, run_in_sandbox
+import pytest
+
+from sandbox_runner import docker_exec
+from sandbox_runner.docker_exec import FileInput, InvalidProjectIdError, run_in_sandbox
 
 
-def _fake_client(container: MagicMock) -> MagicMock:
+def _fake_client(container: MagicMock, runtimes: dict | None = None) -> MagicMock:
     client = MagicMock()
     client.containers.create.return_value = container
+    # Matches this dev machine's real `docker info` (only runc registered)
+    # unless a test explicitly wants to simulate runsc being available.
+    client.info.return_value = {"Runtimes": runtimes if runtimes is not None else {"runc": {}}}
     return client
 
 
@@ -45,6 +51,28 @@ def test_container_is_created_with_the_exact_hardening_flags() -> None:
     assert kwargs["user"] == "10001"
     assert kwargs["image"] == "opex/sandbox-python:latest"
     assert container.remove.called
+    # This dev machine only registers runc — never hard-requires gVisor.
+    assert "runtime" not in kwargs
+
+
+def test_uses_runsc_when_the_docker_daemon_reports_it_available() -> None:
+    container = MagicMock()
+    container.wait.return_value = {"StatusCode": 0}
+    container.logs.return_value = _logs_json(
+        {"exit_code": 0, "stdout": "", "stderr": "", "timed_out": False, "files": []}
+    )
+    client = _fake_client(container, runtimes={"runc": {}, "runsc": {"path": "/usr/bin/runsc"}})
+
+    with patch("docker.from_env", return_value=client):
+        run_in_sandbox(image="img", code="pass", command=None, files=[], timeout_s=10)
+
+    assert client.containers.create.call_args.kwargs["runtime"] == "runsc"
+
+
+def test_resolve_runtime_degrades_gracefully_when_info_call_fails() -> None:
+    client = MagicMock()
+    client.info.side_effect = Exception("daemon unreachable")
+    assert docker_exec._resolve_runtime(client) is None
 
 
 def test_raises_when_neither_code_nor_command_given() -> None:
@@ -136,3 +164,81 @@ def test_malformed_bootstrap_output_is_reported_not_raised() -> None:
 
     assert result.exit_code == -1
     assert "raw logs" in result.stderr
+
+
+def test_persist_mounts_the_projects_own_directory(tmp_path, monkeypatch) -> None:
+    # This container's own view and the host's view happen to coincide
+    # here (both point at tmp_path) — the real, differing case is covered
+    # by test_persist_uses_the_host_path_not_the_containers_own_view below.
+    monkeypatch.setattr(docker_exec, "PERSIST_BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(docker_exec, "PERSIST_HOST_BASE_DIR", str(tmp_path))
+    container = MagicMock()
+    container.wait.return_value = {"StatusCode": 0}
+    container.logs.return_value = _logs_json(
+        {"exit_code": 0, "stdout": "", "stderr": "", "timed_out": False, "files": []}
+    )
+    client = _fake_client(container)
+    project_id = "11111111-1111-1111-1111-111111111111"
+
+    with patch("docker.from_env", return_value=client):
+        run_in_sandbox(
+            image="img", code="pass", command=None, files=[], timeout_s=10, persist=True, project_id=project_id
+        )
+
+    volumes = client.containers.create.call_args.kwargs["volumes"]
+    expected_host_path = str(tmp_path / project_id)
+    assert volumes == {expected_host_path: {"bind": "/persist", "mode": "rw"}}
+    assert (tmp_path / project_id).is_dir()
+
+
+def test_persist_uses_the_host_path_not_the_containers_own_view(tmp_path, monkeypatch) -> None:
+    # Docker-outside-of-Docker: the bind-mount source docker-py sends must
+    # be the path as the *host* daemon sees it, not sandbox-runner's own
+    # container-internal view — even when the directory needs creating
+    # via that container-internal view first.
+    monkeypatch.setattr(docker_exec, "PERSIST_BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(docker_exec, "PERSIST_HOST_BASE_DIR", "/Users/dev/opex/data/projects")
+    container = MagicMock()
+    container.wait.return_value = {"StatusCode": 0}
+    container.logs.return_value = _logs_json(
+        {"exit_code": 0, "stdout": "", "stderr": "", "timed_out": False, "files": []}
+    )
+    client = _fake_client(container)
+    project_id = "11111111-1111-1111-1111-111111111111"
+
+    with patch("docker.from_env", return_value=client):
+        run_in_sandbox(
+            image="img", code="pass", command=None, files=[], timeout_s=10, persist=True, project_id=project_id
+        )
+
+    volumes = client.containers.create.call_args.kwargs["volumes"]
+    assert volumes == {f"/Users/dev/opex/data/projects/{project_id}": {"bind": "/persist", "mode": "rw"}}
+    # Still created for real, via this container's own (different) view.
+    assert (tmp_path / project_id).is_dir()
+
+
+def test_persist_rejects_a_non_uuid_project_id(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(docker_exec, "PERSIST_BASE_DIR", str(tmp_path))
+    with pytest.raises(InvalidProjectIdError):
+        run_in_sandbox(
+            image="img", code="pass", command=None, files=[], timeout_s=10, persist=True, project_id="../../etc"
+        )
+
+
+def test_persist_requires_a_project_id() -> None:
+    with pytest.raises(ValueError):
+        run_in_sandbox(image="img", code="pass", command=None, files=[], timeout_s=10, persist=True, project_id=None)
+
+
+def test_no_persist_means_no_extra_volumes() -> None:
+    container = MagicMock()
+    container.wait.return_value = {"StatusCode": 0}
+    container.logs.return_value = _logs_json(
+        {"exit_code": 0, "stdout": "", "stderr": "", "timed_out": False, "files": []}
+    )
+    client = _fake_client(container)
+
+    with patch("docker.from_env", return_value=client):
+        run_in_sandbox(image="img", code="pass", command=None, files=[], timeout_s=10)
+
+    assert client.containers.create.call_args.kwargs["volumes"] == {}

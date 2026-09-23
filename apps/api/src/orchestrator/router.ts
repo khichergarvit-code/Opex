@@ -15,7 +15,10 @@ const ROUTE_DECISION_SCHEMA = {
         type: 'object',
         properties: {
           documents: { type: 'boolean' },
-          memory: { type: 'array', items: { type: 'string' } },
+          // B2: which long-term memory types to inject, if any. Project
+          // notes are always injected regardless (memory.md: "always,
+          // inside that project") — not a router decision.
+          memory: { type: 'array', items: { type: 'string', enum: ['semantic', 'episodic'] } },
           tools: { type: 'array', items: { type: 'string' } },
         },
         required: ['documents', 'memory', 'tools'],
@@ -39,7 +42,7 @@ const routerResponseSchema = z.object({
   agent: z.enum(['general', 'doc_qa', 'vision', 'analysis', 'code', 'research']),
   needs: z.object({
     documents: z.boolean(),
-    memory: z.array(z.string()),
+    memory: z.array(z.enum(['semantic', 'episodic'])),
     tools: z.array(z.string()),
   }),
   reason: z.string(),
@@ -153,12 +156,44 @@ Q: "what's 12 times 8?"
 A: {"task_type":"chat","complexity":"simple","agent":"general","needs":{"documents":false,"memory":[],"tools":[]},"reason":"a plain arithmetic question, not a document lookup"}
 `.trim();
 
+// Found via a live end-to-end memory demo: the base prompt's one-sentence
+// instruction alone did not reliably set needs.memory even for a message
+// that explicitly says "based on what I told you earlier" — llm-small
+// needs a concrete example of this exact pattern, same lesson as
+// DOC_QA_FEW_SHOTS above. Shown regardless of hasReadyDocuments, since
+// memory recall isn't document-dependent.
+const MEMORY_FEW_SHOT = `
+Example (referencing a past preference/decision):
+Q: "What units do I prefer for torque values, based on what I told you earlier?"
+A: {"task_type":"chat","complexity":"simple","agent":"general","needs":{"documents":false,"memory":["semantic","episodic"],"tools":[]},"reason":"asks the assistant to recall a preference stated earlier"}
+`.trim();
+
+// Found via a live check (route-debug, repeated trials): without an
+// example, llm-small essentially never produced complexity:"multi_step",
+// even for a message with two clearly separable sub-tasks. The negative
+// example guards against the same overcorrection DOC_QA_FEW_SHOTS had to
+// fix — a message that's just one task phrased in two sentences must stay
+// "simple".
+const MULTI_STEP_FEW_SHOT = `
+Example (two genuinely separable sub-tasks, one feeding the other):
+Q: "First find the torque spec for the discharge flange bolts, then explain what that number means for a new technician."
+A: {"task_type":"doc_qa","complexity":"multi_step","agent":"doc_qa","needs":{"documents":true,"memory":[],"tools":["doc_search"]},"reason":"two separable sub-tasks: find a spec, then explain it"}
+Example (one task, not multi_step even though it has two sentences):
+Q: "What is the torque spec for the discharge flange bolts? Please cite the page."
+A: {"task_type":"doc_qa","complexity":"simple","agent":"doc_qa","needs":{"documents":true,"memory":[],"tools":["doc_search"]},"reason":"a single factual lookup, citing is not a separate sub-task"}
+`.trim();
+
 function buildRouterSystemPrompt(hasReadyDocuments: boolean): string {
   const base =
     'Classify the user message into task_type/complexity/agent/needs/reason per the JSON schema. ' +
     'agent must be one of: general, doc_qa, vision, analysis, code, research. ' +
     'reason must be 20 words or fewer and must describe the classification decision itself — ' +
-    'never restate the schema, and never say things like "description of task".';
+    'never restate the schema, and never say things like "description of task". ' +
+    'Include "semantic" or "episodic" in needs.memory if the user references a past preference, ' +
+    'decision, or something said in an earlier conversation. ' +
+    'complexity is "multi_step" ONLY when the request has two or more genuinely separable ' +
+    'sub-tasks (e.g. find X, then use X to do Y) — most requests are "simple", even long or ' +
+    `multi-sentence ones.\n\n${MEMORY_FEW_SHOT}\n\n${MULTI_STEP_FEW_SHOT}`;
   if (!hasReadyDocuments) {
     return `${base}\n\nThis project has NO ready ingested documents yet. Do not route to doc_qa.`;
   }

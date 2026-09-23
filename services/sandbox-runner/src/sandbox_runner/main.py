@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from .allowlist import UnknownImageError, resolve_image
 from .auth import require_shared_secret
-from .docker_exec import FileInput, FileOutput, run_in_sandbox
+from .docker_exec import FileInput, FileOutput, InvalidProjectIdError, run_in_sandbox
 
 app = FastAPI(title="opex-sandbox-runner")
 
@@ -35,6 +35,7 @@ class RunRequest(BaseModel):
     files: list[FileInputModel] = Field(default_factory=list)
     timeout_s: int = Field(default=15, ge=1, le=120)
     persist: bool = False
+    project_id: str | None = None
 
 
 class RunResponse(BaseModel):
@@ -54,13 +55,12 @@ def health() -> dict[str, str]:
 
 @app.post("/run", response_model=RunResponse, dependencies=[Depends(require_shared_secret)])
 def run(req: RunRequest) -> RunResponse:
-    # persist=true needs B4's approval flow, which doesn't exist yet — hard
-    # deny rather than silently no-op-allow (see the plan's Open Question #11).
-    if req.persist:
-        raise HTTPException(
-            status_code=403,
-            detail="persist=true requires the B4 approval flow, which is not implemented yet",
-        )
+    # B4: the approval gate already happened one layer up in executor.ts
+    # (needsApproval pauses any persist=true call before it ever reaches
+    # here) — this service trusts the already-authenticated caller once
+    # the flag arrives, per tools.md's approvals flow.
+    if req.persist and not req.project_id:
+        raise HTTPException(status_code=400, detail="project_id is required when persist=true")
     if req.code is None and req.command is None:
         raise HTTPException(status_code=400, detail="either code or command must be provided")
 
@@ -69,13 +69,18 @@ def run(req: RunRequest) -> RunResponse:
     except UnknownImageError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    result = run_in_sandbox(
-        image=image,
-        code=req.code,
-        command=req.command,
-        files=[FileInput(path=f.path, content_base64=f.content_base64) for f in req.files],
-        timeout_s=req.timeout_s,
-    )
+    try:
+        result = run_in_sandbox(
+            image=image,
+            code=req.code,
+            command=req.command,
+            files=[FileInput(path=f.path, content_base64=f.content_base64) for f in req.files],
+            timeout_s=req.timeout_s,
+            persist=req.persist,
+            project_id=req.project_id,
+        )
+    except InvalidProjectIdError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RunResponse(
         exit_code=result.exit_code,
         stdout=result.stdout,

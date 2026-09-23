@@ -4,6 +4,10 @@ import { createDb } from './db/client.js';
 import { runMigrations } from './db/migrate.js';
 import { loadEnv } from './env.js';
 import { verifyAndLoadManifest } from './models/manifest.js';
+import { ModelGateway } from './models/gateway.js';
+import { createDbSpanWriter } from './spans/writeSpan.js';
+import { startMemoryScheduler } from './memory/scheduler.js';
+import { startApprovalTimeoutSweep } from './orchestrator/approvalSweep.js';
 
 async function main() {
   const env = loadEnv();
@@ -21,6 +25,24 @@ async function main() {
   const app = createApp(db, env);
   app.listen(env.PORT, () => {
     console.log(`OpeX API listening on :${env.PORT}`);
+  });
+
+  // B2: extraction from idle conversations + nightly TTL purge, in-process
+  // (see memory/scheduler.ts's doc comment for why this isn't a new
+  // worker container).
+  const spanWriter = createDbSpanWriter(db);
+  const gateway = new ModelGateway({ db, spanWriter });
+  startMemoryScheduler(db, gateway, spanWriter);
+
+  // B4: pending-past-timeout approvals count as denied (tools.md), same
+  // in-process interval pattern as the memory scheduler above.
+  startApprovalTimeoutSweep({
+    db,
+    gateway,
+    spanWriter,
+    sandboxRunnerUrl: env.SANDBOX_RUNNER_URL,
+    sandboxSharedSecret: env.SANDBOX_SHARED_SECRET,
+    dataDir: env.DATA_DIR,
   });
 }
 

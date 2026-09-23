@@ -50,7 +50,17 @@ export class ApiClient {
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(`POST ${path} failed: ${res.status} ${await res.text()}`);
-    return (await res.json()) as T;
+    if (res.status === 204) return undefined as T;
+    const text = await res.text();
+    return (text ? JSON.parse(text) : undefined) as T;
+  }
+
+  async delete(path: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}${path}`, {
+      method: 'DELETE',
+      headers: { cookie: this.cookie, 'x-csrf-token': this.csrfToken },
+    });
+    if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status} ${await res.text()}`);
   }
 
   /** Posts a chat message and returns the full raw SSE response text. */

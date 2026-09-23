@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { verifyCitations } from './verifier.js';
+import { verifyCitations, verifyCodeTask } from './verifier.js';
 
 describe('verifyCitations', () => {
   it('passes when every citation marker is valid', () => {
@@ -18,5 +18,25 @@ describe('verifyCitations', () => {
     const result = verifyCitations('I found no supporting documents.', new Set());
     expect(result.ok).toBe(true);
     expect(result.uncitedClaims).toBe(0);
+  });
+});
+
+describe('verifyCodeTask', () => {
+  it('passes trivially when no tool calls were made', () => {
+    const result = verifyCodeTask([]);
+    expect(result.ok).toBe(true);
+    expect(result.confidence).toBe('high');
+  });
+
+  it('passes when every tool call succeeded', () => {
+    const result = verifyCodeTask([{ ok: true, artifactIds: [] }, { ok: true, artifactIds: ['a1'] }]);
+    expect(result.ok).toBe(true);
+    expect(result.confidence).toBe('high');
+  });
+
+  it('fails when any tool call did not succeed', () => {
+    const result = verifyCodeTask([{ ok: true, artifactIds: [] }, { ok: false, artifactIds: [] }]);
+    expect(result.ok).toBe(false);
+    expect(result.confidence).toBe('low');
   });
 });

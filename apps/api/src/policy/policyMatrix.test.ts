@@ -97,6 +97,9 @@ const MATRIX: Row[] = [
   { role: 'employee', action: 'admin:memory:read', expected: false },
   { role: 'workspace_admin', action: 'admin:memory:purge', expected: true },
   { role: 'employee', action: 'admin:memory:purge', expected: false },
+  { role: 'employee', action: 'approval:decide', ctx: { approvalRequesterId: 'u1' }, expected: true },
+  { role: 'workspace_admin', action: 'approval:decide', ctx: { approvalRequesterId: 'someone-else' }, expected: true },
+  { role: 'employee', action: 'approval:decide', ctx: { approvalRequesterId: 'someone-else' }, expected: false },
   { role: 'workspace_admin', action: 'admin:feedback:triage', expected: true },
   { role: 'employee', action: 'admin:feedback:triage', expected: false },
   { role: 'workspace_admin', action: 'admin:system:read', expected: true },
@@ -124,7 +127,7 @@ describe('can() — unified policy matrix', () => {
       'access_request:create', 'access_request:approve', 'access_grant:read', 'user:create',
       'user:disable', 'group:manage', 'admin:policies:read', 'admin:policies:write',
       'admin:models:manage', 'admin:agents:manage', 'admin:memory:read', 'admin:memory:purge',
-      'admin:feedback:triage', 'admin:system:read', 'admin:conversation:read', 'admin:audit:read',
+      'approval:decide', 'admin:feedback:triage', 'admin:system:read', 'admin:conversation:read', 'admin:audit:read',
     ];
     for (const action of allActions) {
       expect(covered.has(action)).toBe(true);

@@ -1,6 +1,7 @@
 import type {
   AccessRequest,
   AdminUser,
+  Approval,
   ApiDocument,
   ApiGroup,
   CreateGroupRequest,
@@ -198,6 +199,29 @@ export async function decideAccessRequest(
   return request<AccessRequest>(`/access-requests/${id}/decide`, {
     method: 'POST',
     body: JSON.stringify({ decision, expiresAt }),
+  });
+}
+
+export async function fetchPendingApprovals(): Promise<Approval[]> {
+  return request<Approval[]>('/approvals/pending');
+}
+
+export async function fetchAdminApprovals(status?: string): Promise<Approval[]> {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+  return request<Approval[]>(`/admin/approvals${qs}`);
+}
+
+export interface DecideApprovalResult {
+  approvalId: string;
+  status: 'ok' | 'error' | 'approval_required';
+  messageId?: string;
+  answer?: string;
+}
+
+export async function decideApproval(id: string, decision: 'approved' | 'denied'): Promise<DecideApprovalResult> {
+  return request<DecideApprovalResult>(`/approvals/${id}/decide`, {
+    method: 'POST',
+    body: JSON.stringify({ decision }),
   });
 }
 

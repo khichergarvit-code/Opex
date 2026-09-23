@@ -18,6 +18,11 @@ export const policyRulesSchema = z.object({
   // all local — this list is empty until B6, but can()'s tool:invoke case
   // already reads it (invariant #10's code path, built now, used later).
   egressCapableTools: z.array(z.string()).default([]),
+  // B2: per-workspace TTL for long-term memory, enforced by a nightly
+  // purge (memory/scheduler.ts). null = never expires for that type.
+  memoryTtlDays: z
+    .object({ episodic: z.number().nullable(), semantic: z.number().nullable() })
+    .default({ episodic: 90, semantic: 180 }),
 });
 export type PolicyRules = z.infer<typeof policyRulesSchema>;
 
@@ -32,4 +37,5 @@ export const DEFAULT_POLICY_RULES: PolicyRules = {
   uploadLimitMb: 50,
   webAccess: false,
   egressCapableTools: [],
+  memoryTtlDays: { episodic: 90, semantic: 180 },
 };

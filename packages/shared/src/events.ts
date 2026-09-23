@@ -100,9 +100,59 @@ export const verifyEventSchema = z.object({
   data: z.object({
     ok: z.boolean(),
     uncitedClaims: z.number().int(),
+    // B3b: set for doc_qa's groundedness revise loop and the code-task
+    // check; absent from any other verify emitter (backward compatible).
+    confidence: z.enum(['high', 'low']).optional(),
+    revisions: z.number().int().optional(),
   }),
 });
 export type VerifyEvent = z.infer<typeof verifyEventSchema>;
+
+export const memoryUsedEventSchema = z.object({
+  type: z.literal('memory_used'),
+  data: z.object({
+    id: z.string().uuid(),
+    kind: z.enum(['episodic', 'semantic', 'project']),
+    score: z.number().optional(), // absent for project notes (no scoring)
+  }),
+});
+export type MemoryUsedEvent = z.infer<typeof memoryUsedEventSchema>;
+
+export const planStepSchema = z.object({
+  id: z.string(),
+  agent: z.string(),
+  goal: z.string(),
+  inputsFrom: z.array(z.string()),
+});
+
+export const planEventSchema = z.object({
+  type: z.literal('plan'),
+  data: z.object({
+    steps: z.array(planStepSchema),
+  }),
+});
+export type PlanEvent = z.infer<typeof planEventSchema>;
+
+export const stepStartEventSchema = z.object({
+  type: z.literal('step_start'),
+  data: z.object({
+    stepId: z.string(),
+    agent: z.string(),
+    goal: z.string(),
+  }),
+});
+export type StepStartEvent = z.infer<typeof stepStartEventSchema>;
+
+export const approvalRequiredEventSchema = z.object({
+  type: z.literal('approval_required'),
+  data: z.object({
+    approvalId: z.string().uuid(),
+    toolName: z.string(),
+    args: z.record(z.string(), z.unknown()),
+    reason: z.string(),
+  }),
+});
+export type ApprovalRequiredEvent = z.infer<typeof approvalRequiredEventSchema>;
 
 export const sseEventSchema = z.discriminatedUnion('type', [
   statusEventSchema,
@@ -114,6 +164,10 @@ export const sseEventSchema = z.discriminatedUnion('type', [
   toolCallEventSchema,
   toolResultEventSchema,
   verifyEventSchema,
+  memoryUsedEventSchema,
+  approvalRequiredEventSchema,
+  planEventSchema,
+  stepStartEventSchema,
 ]);
 
 export type SseEvent = z.infer<typeof sseEventSchema>;

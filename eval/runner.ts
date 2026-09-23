@@ -6,6 +6,8 @@ import { runRetrievalSuite, type RetrievalSuiteResult } from './suites/retrieval
 import { runAclLeakSuite, type AclLeakSuiteResult } from './suites/aclLeak.js';
 import { runAnswersSuite, type AnswersSuiteResult } from './suites/answers.js';
 import { runRouterSuite, type RouterSuiteResult } from './suites/router.js';
+import { runMemorySuite, type MemorySuiteResult } from './suites/memory.js';
+import { runGroundednessSuite, type GroundednessSuiteResult } from './suites/groundedness.js';
 
 const RESULTS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'results');
 const BASE_URL = process.env.EVAL_API_URL ?? 'http://localhost:3000';
@@ -16,6 +18,8 @@ function renderMarkdown(
   aclLeak: AclLeakSuiteResult,
   answers: AnswersSuiteResult,
   router: RouterSuiteResult,
+  memory: MemorySuiteResult,
+  groundedness: GroundednessSuiteResult,
 ): string {
   const lines: string[] = [];
   lines.push(`# Eval report — ${date}`);
@@ -29,6 +33,8 @@ function renderMarkdown(
   lines.push(`| acl-leak | leak count | ${aclLeak.leakCount} | **must be 0** |`);
   lines.push(`| answers | keyword accuracy | ${(answers.accuracy * 100).toFixed(1)}% | baseline in A2 |`);
   lines.push(`| router | accuracy | ${(router.accuracy * 100).toFixed(1)}% | baseline in A3 (≥0.85 from B3) |`);
+  lines.push(`| memory | cases passed | ${memory.passCount}/${memory.rows.length} | all 3 must pass (B2) |`);
+  lines.push(`| groundedness | cases passed | ${groundedness.passCount}/${groundedness.rows.length} | both must pass (B3b) |`);
   lines.push('');
 
   lines.push('## retrieval — recall@5 / MRR');
@@ -79,6 +85,32 @@ function renderMarkdown(
   }
   lines.push('');
 
+  lines.push('## memory');
+  lines.push('');
+  lines.push(memory.passCount === memory.rows.length ? '**PASS — all cases passed.**' : `**FAIL — ${memory.rows.length - memory.passCount} case(s) failed.**`);
+  lines.push('');
+  lines.push('| case | passed | detail |');
+  lines.push('|---|---|---|');
+  for (const row of memory.rows) {
+    lines.push(`| ${row.case} | ${row.passed ? '✅' : '❌'} | ${row.detail.replace(/\|/g, '\\|').replace(/\n/g, ' ')} |`);
+  }
+  lines.push('');
+
+  lines.push('## groundedness');
+  lines.push('');
+  lines.push(
+    groundedness.passCount === groundedness.rows.length
+      ? '**PASS — all cases passed.**'
+      : `**FAIL — ${groundedness.rows.length - groundedness.passCount} case(s) failed.**`,
+  );
+  lines.push('');
+  lines.push('| case | passed | detail |');
+  lines.push('|---|---|---|');
+  for (const row of groundedness.rows) {
+    lines.push(`| ${row.case} | ${row.passed ? '✅' : '❌'} | ${row.detail.replace(/\|/g, '\\|').replace(/\n/g, ' ')} |`);
+  }
+  lines.push('');
+
   return lines.join('\n');
 }
 
@@ -103,8 +135,16 @@ async function main() {
   const router = await runRouterSuite(setup);
   console.log(`  accuracy=${(router.accuracy * 100).toFixed(1)}%`);
 
+  console.log('Running memory suite...');
+  const memory = await runMemorySuite(setup);
+  console.log(`  cases passed=${memory.passCount}/${memory.rows.length}`);
+
+  console.log('Running groundedness suite...');
+  const groundedness = await runGroundednessSuite(setup);
+  console.log(`  cases passed=${groundedness.passCount}/${groundedness.rows.length}`);
+
   const date = new Date().toISOString().slice(0, 10);
-  const markdown = renderMarkdown(date, retrieval, aclLeak, answers, router);
+  const markdown = renderMarkdown(date, retrieval, aclLeak, answers, router, memory, groundedness);
   await mkdir(RESULTS_DIR, { recursive: true });
   const outPath = path.join(RESULTS_DIR, `${date}.md`);
   await writeFile(outPath, markdown);
@@ -112,6 +152,14 @@ async function main() {
 
   if (aclLeak.leakCount > 0) {
     console.error(`\nFAIL: acl-leak suite found ${aclLeak.leakCount} leak(s) — this must be 0.`);
+    process.exit(1);
+  }
+  if (memory.passCount < memory.rows.length) {
+    console.error(`\nFAIL: memory suite found ${memory.rows.length - memory.passCount} failing case(s).`);
+    process.exit(1);
+  }
+  if (groundedness.passCount < groundedness.rows.length) {
+    console.error(`\nFAIL: groundedness suite found ${groundedness.rows.length - groundedness.passCount} failing case(s).`);
     process.exit(1);
   }
 }

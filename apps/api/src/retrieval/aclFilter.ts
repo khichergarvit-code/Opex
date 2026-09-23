@@ -8,7 +8,7 @@ import type { SearchParams } from './types.js';
  * array value, not N values). Build the Postgres array literal ourselves
  * and pass it as a single string parameter, cast on the Postgres side.
  */
-function uuidArrayLiteral(ids: string[]): string {
+export function uuidArrayLiteral(ids: string[]): string {
   return `{${ids.join(',')}}`;
 }
 

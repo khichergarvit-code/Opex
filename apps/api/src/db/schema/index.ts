@@ -16,4 +16,6 @@ export * from './agents.js';
 export * from './accessGrants.js';
 export * from './accessRequests.js';
 export * from './feedback.js';
+export * from './memories.js';
 export * from './artifacts.js';
+export * from './approvals.js';

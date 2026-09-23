@@ -135,6 +135,33 @@ export function can(
       return { allowed: false, reason: 'user administration requires super_admin or workspace_admin' };
     }
 
+    // B2: a user may always delete their own memory (memory.md: "Users
+    // can view, edit, and delete their own memories") — admins can
+    // purge anyone's.
+    case 'admin:memory:purge': {
+      if (ctx.memoryOwnerId !== undefined && ctx.memoryOwnerId === user.id) {
+        return { allowed: true };
+      }
+      if (user.role === 'super_admin' || user.role === 'workspace_admin') {
+        return { allowed: true };
+      }
+      return { allowed: false, reason: 'can only delete your own memory, or requires super_admin/workspace_admin' };
+    }
+
+    // B4: the user who originally triggered the paused call may decide it
+    // themselves (matches the natural in-chat UX — approving your own
+    // agent's action), or an admin may (oversight). Both allowed, a
+    // stated design decision, not an oversight-only gate.
+    case 'approval:decide': {
+      if (ctx.approvalRequesterId !== undefined && ctx.approvalRequesterId === user.id) {
+        return { allowed: true };
+      }
+      if (user.role === 'super_admin' || user.role === 'workspace_admin') {
+        return { allowed: true };
+      }
+      return { allowed: false, reason: 'can only decide your own approval, or requires super_admin/workspace_admin' };
+    }
+
     case 'admin:traces:read':
     case 'admin:usage:read':
     case 'access_request:approve':
@@ -146,7 +173,6 @@ export function can(
     case 'admin:models:manage':
     case 'admin:agents:manage':
     case 'admin:memory:read':
-    case 'admin:memory:purge':
     case 'admin:feedback:triage':
     case 'admin:system:read':
     case 'admin:conversation:read':

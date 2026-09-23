@@ -125,6 +125,30 @@ export type AccessRequest = z.infer<typeof accessRequestSchema>;
 export const userStatusSchema = z.enum(['active', 'disabled']);
 export type UserStatus = z.infer<typeof userStatusSchema>;
 
+export const decideApprovalSchema = z.object({
+  decision: z.enum(['approved', 'denied']),
+});
+export type DecideApprovalRequest = z.infer<typeof decideApprovalSchema>;
+
+export const approvalStatusSchema = z.enum(['pending', 'approved', 'denied']);
+export type ApprovalStatus = z.infer<typeof approvalStatusSchema>;
+
+export const approvalSchema = z.object({
+  id: z.string().uuid(),
+  traceId: z.string().uuid(),
+  conversationId: z.string().uuid(),
+  requesterId: z.string().uuid(),
+  agentName: z.string(),
+  toolName: z.string(),
+  args: z.record(z.string(), z.unknown()),
+  reason: z.string(),
+  status: approvalStatusSchema,
+  decidedBy: z.string().uuid().nullable(),
+  decidedAt: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type Approval = z.infer<typeof approvalSchema>;
+
 export const createUserRequestSchema = z.object({
   email: z.string().email(),
   name: z.string().min(1),

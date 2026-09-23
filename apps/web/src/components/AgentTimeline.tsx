@@ -8,6 +8,10 @@ const EVENT_LABELS: Partial<Record<SseEvent['type'], string>> = {
   verify: 'Verified',
   done: 'Done',
   error: 'Error',
+  memory_used: 'Memory used',
+  approval_required: 'Approval required',
+  plan: 'Plan',
+  step_start: 'Step started',
 };
 
 function describeEvent(event: SseEvent): string {
@@ -24,8 +28,16 @@ function describeEvent(event: SseEvent): string {
       return event.data.ok ? 'all citations verified' : `${event.data.uncitedClaims} uncited claim(s)`;
     case 'status':
       return `${event.data.state}: ${event.data.model}`;
+    case 'memory_used':
+      return `${event.data.kind}${event.data.score !== undefined ? ` (score ${event.data.score.toFixed(2)})` : ''}`;
     case 'error':
       return event.data.message;
+    case 'approval_required':
+      return `${event.data.toolName}: ${event.data.reason}`;
+    case 'plan':
+      return event.data.steps.map((s) => `${s.id}:${s.agent}`).join(' → ');
+    case 'step_start':
+      return `${event.data.stepId} (${event.data.agent}): ${event.data.goal}`;
     default:
       return '';
   }

@@ -18,6 +18,10 @@ export const conversations = pgTable('conversations', {
   // Working memory's rolling summary (A3) — folded from older turns once
   // history exceeds the working-memory budget threshold.
   workingSummary: text('working_summary'),
+  // B2: set once this conversation's long-term memory has been extracted,
+  // so the scheduler doesn't re-extract from the same idle conversation
+  // repeatedly (memory/scheduler.ts only extracts when null or stale).
+  memoryExtractedAt: timestamp('memory_extracted_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

@@ -7,13 +7,18 @@ import type { Db } from '../db/client.js';
 import { conversations, messages, projectMembers, projects, traces } from '../db/schema/index.js';
 import type { Env } from '../env.js';
 import { getWorkingMemory, type WorkingMemoryTurn } from '../memory/working.js';
+import { buildMemoryBlock } from '../memory/longterm.js';
+import { renderProjectNotesBlock } from '../memory/projectNotes.js';
 import type { ModelGateway, SpanWriter } from '../models/gateway.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
 import { loadAgent, loadAgentSystemPrompt } from '../orchestrator/agents.js';
 import { runExecutor } from '../orchestrator/executor.js';
 import { route as routeMessage } from '../orchestrator/router.js';
-import { verifyCitations } from '../orchestrator/verifier.js';
+import { verifyCitations, verifyCodeTask } from '../orchestrator/verifier.js';
+import { answerWithVerification } from '../orchestrator/reviseLoop.js';
+import { planTask } from '../orchestrator/planner.js';
+import { runPlan } from '../orchestrator/scheduler.js';
 import { buildDocQaPrompt, extractCitedMarkers, projectHasReadyDocuments } from './docQa.js';
 
 const CHAT_SYSTEM_PROMPT_PATH = new URL('../prompts/chat-system.md', import.meta.url);
@@ -203,11 +208,81 @@ export function createConversationsRouter(
     }
     const memoryTurns = toChatTurns(memoryResult.summary, memoryResult.recentTurns);
 
+    // B2 long-term memory: injected as labeled blocks in the user turn
+    // (never the system prompt — invariant #5), regardless of which agent
+    // handles the message. Project notes are always included; semantic/
+    // episodic only when the router asked for them.
+    const [project] = await db.select().from(projects).where(eq(projects.id, conversation.projectId)).limit(1);
+    const { block: longTermMemoryBlock, injected: injectedMemories } = await buildMemoryBlock(
+      { db, gateway, spanWriter, user, traceId: trace.id },
+      { workspaceId: conversation.workspaceId, projectId: conversation.projectId, query: parsed.data.content, needsMemory: routeDecision.needs.memory },
+    );
+    const projectNotesBlock = project ? renderProjectNotesBlock(project.notesMd) : null;
+    for (const m of injectedMemories) {
+      sendEvent(res, { type: 'memory_used', data: { id: m.id, kind: m.type, score: m.score } });
+    }
+    if (projectNotesBlock) {
+      sendEvent(res, { type: 'memory_used', data: { id: conversation.projectId, kind: 'project' } });
+    }
+    const memoryPrefix = [projectNotesBlock, longTermMemoryBlock].filter(Boolean).join('\n\n');
+    const userContent = memoryPrefix ? `${memoryPrefix}\n\n${parsed.data.content}` : parsed.data.content;
+
     let assistantContent = '';
     let traceStatus: 'ok' | 'error' = 'ok';
     let citations: Array<{ marker: number; documentId: string; filename: string; page: number; bbox: unknown }> = [];
+    // B4: a paused tool call already set traces.status='awaiting_approval'
+    // and left no assistant message to insert — skip the normal
+    // finalization block entirely rather than overwrite that status.
+    let pausedForApproval = false;
 
-    if (routeDecision.agent === 'doc_qa') {
+    if (routeDecision.complexity === 'multi_step') {
+      try {
+        const plan = await planTask({ gateway, user, traceId: trace.id }, parsed.data.content);
+        sendEvent(res, {
+          type: 'plan',
+          data: { steps: plan.steps.map((s) => ({ id: s.id, agent: s.agent, goal: s.goal, inputsFrom: s.inputsFrom })) },
+        });
+        assistantContent = await runPlan(
+          {
+            db,
+            gateway,
+            spanWriter,
+            sandboxRunnerUrl: env.SANDBOX_RUNNER_URL,
+            sandboxSharedSecret: env.SANDBOX_SHARED_SECRET,
+            dataDir: env.DATA_DIR,
+            user,
+            traceId: trace.id,
+            conversationId: conversation.id,
+            workspaceId: conversation.workspaceId,
+            projectId: conversation.projectId,
+            taskClassification: 0,
+          },
+          plan,
+          userContent,
+          {
+            onStepStart: (step) => sendEvent(res, { type: 'step_start', data: { stepId: step.id, agent: step.agent, goal: step.goal } }),
+            onToolCall: (e) => sendEvent(res, { type: 'tool_call', data: { toolName: e.toolName, callId: e.callId, args: e.args ?? {} } }),
+            onToolResult: (e) =>
+              sendEvent(res, {
+                type: 'tool_result',
+                data: {
+                  callId: e.callId,
+                  status: e.result?.ok ? 'ok' : 'error',
+                  summary: e.result?.summary ?? '',
+                  artifactIds: e.result?.artifactIds ?? [],
+                },
+              }),
+          },
+        );
+        sendEvent(res, { type: 'token', data: { delta: assistantContent } });
+      } catch (err) {
+        traceStatus = 'error';
+        sendEvent(res, {
+          type: 'error',
+          data: { message: err instanceof Error ? err.message : 'model call failed' },
+        });
+      }
+    } else if (routeDecision.agent === 'doc_qa') {
       const docQa = await buildDocQaPrompt({
         db,
         gateway,
@@ -224,23 +299,46 @@ export function createConversationsRouter(
         assistantContent = docQa.noSupportAnswer;
         sendEvent(res, { type: 'token', data: { delta: assistantContent } });
       } else {
+        // Memory blocks prepend to the augmented user turn itself, not
+        // docQa's `question` param — that stays the bare question since
+        // it also drives the retrieval query (buildDocQaPrompt uses it
+        // for both search() and the displayed "Question: ..." text).
+        const docQaMessages = [...docQa.messages];
+        const lastTurn = docQaMessages[docQaMessages.length - 1];
+        if (memoryPrefix && lastTurn) {
+          docQaMessages[docQaMessages.length - 1] = { ...lastTurn, content: `${memoryPrefix}\n\n${lastTurn.content}` };
+        }
         try {
-          for await (const delta of gateway.chatStream({
-            role: 'general',
-            messages: [{ role: 'system', content: docQa.systemPrompt }, ...docQa.messages],
-            user,
-            traceId: trace.id,
-          })) {
-            assistantContent += delta;
-            sendEvent(res, { type: 'token', data: { delta } });
-          }
+          const validMarkers = new Set(docQa.citationMap.map((c) => c.marker));
+          // Non-streaming throughout: the revise loop needs the complete
+          // answer before groundedness checking can run. The final
+          // accepted string is sent as a single token event once
+          // verification finishes, not token-by-token as it's generated.
+          const verification = await answerWithVerification(
+            { gateway, user, traceId: trace.id },
+            docQa.systemPrompt,
+            docQaMessages,
+            docQa.citedChunks,
+            validMarkers,
+          );
+          assistantContent = verification.answer;
+          sendEvent(res, { type: 'token', data: { delta: assistantContent } });
+
           const citedMarkers = new Set(extractCitedMarkers(assistantContent));
           citations = docQa.citationMap.filter((c) => citedMarkers.has(c.marker));
           for (const citation of citations) {
             sendEvent(res, { type: 'citation', data: citation as CitationEvent['data'] });
           }
-          const verifyResult = verifyCitations(assistantContent, new Set(docQa.citationMap.map((c) => c.marker)));
-          sendEvent(res, { type: 'verify', data: verifyResult });
+          const legacyCheck = verifyCitations(assistantContent, validMarkers);
+          sendEvent(res, {
+            type: 'verify',
+            data: {
+              ok: verification.confidence === 'high',
+              uncitedClaims: legacyCheck.uncitedClaims,
+              confidence: verification.confidence,
+              revisions: verification.revisions,
+            },
+          });
         } catch (err) {
           traceStatus = 'error';
           sendEvent(res, {
@@ -249,7 +347,11 @@ export function createConversationsRouter(
           });
         }
       }
-    } else if (routeDecision.agent === 'vision' || routeDecision.agent === 'analysis') {
+    } else if (routeDecision.agent !== 'general') {
+      // Agent-agnostic: vision/analysis/code/research, and any
+      // admin-created custom agent (B5's POST /admin/agents) — all go
+      // through the same executor loop, gated only by whether loadAgent
+      // finds an enabled row for that name.
       const agentConfig = await loadAgent(db, routeDecision.agent);
       if (!agentConfig) {
         traceStatus = 'error';
@@ -257,7 +359,8 @@ export function createConversationsRouter(
       } else {
         try {
           const systemPrompt = await loadAgentSystemPrompt(agentConfig);
-          const executorResult = await runExecutor(
+          const observedToolResults: Array<{ ok: boolean; artifactIds: string[] }> = [];
+          const executorOutcome = await runExecutor(
             {
               db,
               gateway,
@@ -269,7 +372,7 @@ export function createConversationsRouter(
             {
               agent: agentConfig,
               systemPrompt,
-              messages: [...memoryTurns, { role: 'user', content: parsed.data.content }],
+              messages: [...memoryTurns, { role: 'user', content: userContent }],
               user,
               traceId: trace.id,
               conversationId: conversation.id,
@@ -281,7 +384,8 @@ export function createConversationsRouter(
               // exists. Documented as Debt.
               taskClassification: 0,
               onToolCall: (e) => sendEvent(res, { type: 'tool_call', data: { toolName: e.toolName, callId: e.callId, args: e.args ?? {} } }),
-              onToolResult: (e) =>
+              onToolResult: (e) => {
+                observedToolResults.push({ ok: e.result?.ok ?? false, artifactIds: e.result?.artifactIds ?? [] });
                 sendEvent(res, {
                   type: 'tool_result',
                   data: {
@@ -290,11 +394,32 @@ export function createConversationsRouter(
                     summary: e.result?.summary ?? '',
                     artifactIds: e.result?.artifactIds ?? [],
                   },
-                }),
+                });
+              },
             },
           );
-          assistantContent = executorResult.answer;
-          sendEvent(res, { type: 'token', data: { delta: assistantContent } });
+          if (executorOutcome.status === 'approval_required') {
+            pausedForApproval = true;
+            sendEvent(res, {
+              type: 'approval_required',
+              data: {
+                approvalId: executorOutcome.approvalId,
+                toolName: executorOutcome.toolName,
+                args: executorOutcome.args,
+                reason: executorOutcome.reason,
+              },
+            });
+          } else {
+            assistantContent = executorOutcome.answer;
+            sendEvent(res, { type: 'token', data: { delta: assistantContent } });
+            // B3b: a small, detect-only check (no retry loop) — did the
+            // tool calls this answer relies on actually succeed.
+            const codeCheck = verifyCodeTask(observedToolResults);
+            sendEvent(res, {
+              type: 'verify',
+              data: { ok: codeCheck.ok, uncitedClaims: 0, confidence: codeCheck.confidence, revisions: 0 },
+            });
+          }
         } catch (err) {
           traceStatus = 'error';
           sendEvent(res, {
@@ -308,7 +433,7 @@ export function createConversationsRouter(
       try {
         for await (const delta of gateway.chatStream({
           role: 'general',
-          messages: [{ role: 'system', content: systemPrompt }, ...memoryTurns, { role: 'user', content: parsed.data.content }],
+          messages: [{ role: 'system', content: systemPrompt }, ...memoryTurns, { role: 'user', content: userContent }],
           user,
           traceId: trace.id,
         })) {
@@ -324,28 +449,30 @@ export function createConversationsRouter(
       }
     }
 
-    let assistantMessageId = '';
-    if (traceStatus === 'ok') {
-      const [assistantRow] = await db
-        .insert(messages)
-        .values({
-          conversationId: conversation.id,
-          role: 'assistant',
-          content: assistantContent,
-          traceId: trace.id,
-          citations,
-        })
-        .returning();
-      assistantMessageId = assistantRow?.id ?? '';
-    }
+    if (!pausedForApproval) {
+      let assistantMessageId = '';
+      if (traceStatus === 'ok') {
+        const [assistantRow] = await db
+          .insert(messages)
+          .values({
+            conversationId: conversation.id,
+            role: 'assistant',
+            content: assistantContent,
+            traceId: trace.id,
+            citations,
+          })
+          .returning();
+        assistantMessageId = assistantRow?.id ?? '';
+      }
 
-    await db
-      .update(traces)
-      .set({ status: traceStatus, endedAt: new Date() })
-      .where(eq(traces.id, trace.id));
+      await db
+        .update(traces)
+        .set({ status: traceStatus, endedAt: new Date() })
+        .where(eq(traces.id, trace.id));
 
-    if (traceStatus === 'ok') {
-      sendEvent(res, { type: 'done', data: { messageId: assistantMessageId, traceId: trace.id } });
+      if (traceStatus === 'ok') {
+        sendEvent(res, { type: 'done', data: { messageId: assistantMessageId, traceId: trace.id } });
+      }
     }
     res.end();
   });

@@ -93,3 +93,39 @@ def test_fork_bomb_is_contained_by_pids_limit() -> None:
     # pids_limit=128 should make fork() start failing with EAGAIN/BlockingIOError
     # well before the sandbox or host is meaningfully impacted.
     assert result.exit_code != 0
+
+
+def test_memory_bomb_is_contained_by_mem_limit() -> None:
+    # A real allocation well past mem_limit=1g, not a mocked OOM — the
+    # kernel's cgroup OOM killer should terminate the process before it
+    # can grow unbounded.
+    code = "x = bytearray(4 * 1024 * 1024 * 1024)\nprint('REACHED', len(x))\n"
+    result = run_in_sandbox(image=IMAGE, code=code, command=None, files=[], timeout_s=15)
+    assert result.exit_code != 0
+    assert "REACHED" not in result.stdout
+
+
+def test_real_infinite_loop_is_stopped_by_the_real_timeout() -> None:
+    # A genuine `while True: pass`, not the mocked-TimeoutError version —
+    # the bootstrap's own subprocess.run(timeout=timeout_s) must actually
+    # kill it, not just report a timeout that never really happened.
+    code = "while True:\n    pass\n"
+    result = run_in_sandbox(image=IMAGE, code=code, command=None, files=[], timeout_s=3)
+    assert result.timed_out is True
+    assert result.exit_code != 0
+
+
+def test_symlink_input_file_path_cannot_escape_work() -> None:
+    # A ".." component in an input file's path must never let the write
+    # land outside /work, even though read_only=True would also catch a
+    # write to most such destinations — this is the bootstrap's own
+    # os.path.realpath containment check, checked directly.
+    result = run_in_sandbox(
+        image=IMAGE,
+        code="print('should not run')",
+        command=None,
+        files=[FileInput(path="../../etc/escaped.txt", content_base64=base64.b64encode(b"pwned").decode())],
+        timeout_s=15,
+    )
+    assert result.exit_code != 0
+    assert "escapes /work" in result.stderr
