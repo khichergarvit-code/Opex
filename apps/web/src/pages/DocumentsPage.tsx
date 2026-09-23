@@ -1,43 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ApiDocument, Project } from '@opex/shared';
+import type { ApiDocument, Classification, Project } from '@opex/shared';
 import { ApiError, createAccessRequest, fetchDocuments, uploadDocument } from '../lib/api';
+import { Button } from '../components/ui/Button';
+import { Card } from '../components/ui/Card';
+import { PageHeader } from '../components/ui/PageHeader';
+import { EmptyState } from '../components/ui/EmptyState';
+import { StatusPill, type PillTone } from '../components/ui/Badge';
+import { ClassificationBanner } from '../components/ui/ClassificationBanner';
 
 const CLASSIFICATION_LABELS = ['Public', 'Internal', 'Confidential', 'Restricted'];
-const CLASSIFICATION_COLORS = ['#dcfce7', '#dbeafe', '#fef3c7', '#fee2e2'];
+const CLASSIFICATION_TONES: PillTone[] = ['neutral', 'info', 'warning', 'danger'];
 
-function ClassificationBadge({ level }: { level: number }) {
-  return (
-    <span
-      style={{
-        background: CLASSIFICATION_COLORS[level] ?? '#e5e7eb',
-        borderRadius: 4,
-        padding: '2px 8px',
-        fontSize: 12,
-        fontWeight: 600,
-      }}
-    >
-      {CLASSIFICATION_LABELS[level] ?? 'Unknown'}
-    </span>
-  );
-}
+const STATUS_TONES: Record<ApiDocument['status'], PillTone> = {
+  queued: 'neutral',
+  processing: 'warning',
+  ready: 'success',
+  failed: 'danger',
+};
 
-function StatusBadge({ status }: { status: ApiDocument['status'] }) {
-  const colors: Record<ApiDocument['status'], string> = {
-    queued: '#e5e7eb',
-    processing: '#fef3c7',
-    ready: '#dcfce7',
-    failed: '#fee2e2',
-  };
-  return (
-    <span
-      style={{ background: colors[status], borderRadius: 4, padding: '2px 8px', fontSize: 12 }}
-    >
-      {status}
-    </span>
-  );
-}
-
-function DocumentRow({ doc, onOpen }: { doc: ApiDocument; onOpen: (id: string) => void }) {
+function DocumentCard({ doc, onOpen }: { doc: ApiDocument; onOpen: (id: string) => void }) {
   const [live, setLive] = useState(doc);
 
   useEffect(() => {
@@ -57,34 +38,32 @@ function DocumentRow({ doc, onOpen }: { doc: ApiDocument; onOpen: (id: string) =
   }, [doc.id, doc.status]);
 
   return (
-    <tr>
-      <td style={{ padding: '8px 12px' }}>
+    <Card>
+      <div className="flex items-start justify-between gap-2">
         <button
           onClick={() => onOpen(doc.id)}
           disabled={live.status !== 'ready'}
-          style={{ background: 'none', border: 'none', color: '#2563eb', cursor: live.status === 'ready' ? 'pointer' : 'default', padding: 0, font: 'inherit' }}
+          className="text-left text-sm font-medium text-gray-900 hover:text-accent-600 disabled:cursor-default disabled:text-gray-400"
         >
           {live.filename}
         </button>
-      </td>
-      <td style={{ padding: '8px 12px' }}>
-        <ClassificationBadge level={live.classification} />
-      </td>
-      <td style={{ padding: '8px 12px' }}>
-        <StatusBadge status={live.status} />
+        <StatusPill tone={CLASSIFICATION_TONES[live.classification] ?? 'neutral'}>
+          {CLASSIFICATION_LABELS[live.classification] ?? 'Unknown'}
+        </StatusPill>
+      </div>
+      <div className="mt-2 flex items-center gap-2 text-xs text-gray-400">
+        <StatusPill tone={STATUS_TONES[live.status]}>{live.status}</StatusPill>
         {live.status === 'processing' && live.pageCount ? (
-          <span style={{ marginLeft: 8, fontSize: 12, color: '#6b7280' }}>
+          <span>
             {live.pagesDone}/{live.pageCount} pages
           </span>
         ) : null}
-      </td>
-      <td style={{ padding: '8px 12px', fontSize: 12, color: '#6b7280' }}>
-        {(live.sizeBytes / 1024).toFixed(0)} KB
-      </td>
-      <td style={{ padding: '8px 12px' }}>
+        <span>{(live.sizeBytes / 1024).toFixed(0)} KB</span>
+      </div>
+      <div className="mt-3">
         <RequestAccessButton documentId={doc.id} />
-      </td>
-    </tr>
+      </div>
+    </Card>
   );
 }
 
@@ -104,28 +83,28 @@ function RequestAccessButton({ documentId }: { documentId: string }) {
     }
   }
 
-  if (status === 'sent') return <span style={{ fontSize: 12, color: '#16a34a' }}>Requested</span>;
+  if (status === 'sent') return <StatusPill tone="success">Requested</StatusPill>;
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} style={{ fontSize: 12 }}>
+      <Button size="sm" onClick={() => setOpen(true)}>
         Request access
-      </button>
+      </Button>
     );
   }
 
   return (
-    <span style={{ display: 'flex', gap: 4 }}>
+    <div className="flex gap-2">
       <input
         placeholder="reason"
         value={reason}
         onChange={(e) => setReason(e.target.value)}
-        style={{ fontSize: 12, width: 140 }}
+        className="w-36 rounded-lg border border-gray-200 px-2 py-1 text-xs"
       />
-      <button onClick={submit} style={{ fontSize: 12 }}>
+      <Button size="sm" variant="primary" onClick={submit}>
         Send
-      </button>
-    </span>
+      </Button>
+    </div>
   );
 }
 
@@ -169,42 +148,41 @@ export function DocumentsPage({
     }
   }
 
+  const highestClassification = docs.reduce<Classification>((max, d) => (d.classification > max ? (d.classification as Classification) : max), 0);
+
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: 16, fontFamily: 'sans-serif' }}>
-      <h2>Documents — {project.name}</h2>
+    <div>
+      {docs.length > 0 && <ClassificationBanner level={highestClassification} />}
+      <div className="mx-auto max-w-4xl p-6">
+      <PageHeader
+        title={`Documents — ${project.name}`}
+        actions={
+          <label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.docx,.pptx,.xlsx,.csv,.html,.png,.jpg,.jpeg,.tiff,.webp"
+              onChange={handleFileChange}
+              disabled={uploading}
+              className="text-sm"
+            />
+            {uploading && <span className="ml-2 text-sm text-gray-400">Uploading…</span>}
+          </label>
+        }
+      />
 
-      <div style={{ marginBottom: 16 }}>
-        <label>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.docx,.pptx,.xlsx,.csv,.html,.png,.jpg,.jpeg,.tiff,.webp"
-            onChange={handleFileChange}
-            disabled={uploading}
-          />
-        </label>
-        {uploading && <span style={{ marginLeft: 8 }}>Uploading…</span>}
-      </div>
+      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
 
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr style={{ textAlign: 'left', borderBottom: '1px solid #e5e7eb' }}>
-            <th style={{ padding: '8px 12px' }}>Filename</th>
-            <th style={{ padding: '8px 12px' }}>Classification</th>
-            <th style={{ padding: '8px 12px' }}>Status</th>
-            <th style={{ padding: '8px 12px' }}>Size</th>
-            <th style={{ padding: '8px 12px' }}></th>
-          </tr>
-        </thead>
-        <tbody>
+      {docs.length === 0 ? (
+        <EmptyState title="No documents yet" description="Upload a document to get started." />
+      ) : (
+        <div className="grid grid-cols-2 gap-4">
           {docs.map((doc) => (
-            <DocumentRow key={doc.id} doc={doc} onOpen={onOpenDocument} />
+            <DocumentCard key={doc.id} doc={doc} onOpen={onOpenDocument} />
           ))}
-        </tbody>
-      </table>
-      {docs.length === 0 && <p style={{ color: '#6b7280' }}>No documents yet.</p>}
+        </div>
+      )}
+      </div>
     </div>
   );
 }

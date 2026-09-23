@@ -1,4 +1,7 @@
 import type { ApprovalRequiredEvent } from '@opex/shared';
+import { Button } from './ui/Button';
+import { Card } from './ui/Card';
+import { StatusPill } from './ui/Badge';
 
 /**
  * Inline chat card for a paused tool call (B4) — the reveal-then-submit
@@ -17,19 +20,23 @@ export function ApprovalPrompt({
   deciding: boolean;
 }) {
   return (
-    <div style={{ border: '1px solid #f59e0b', background: '#fffbeb', borderRadius: 6, padding: 10, fontSize: 13, marginTop: 8 }}>
-      <div>
-        Wants to run <code>{event.toolName}</code>: <code>{JSON.stringify(event.args)}</code>
+    <Card className="border-warning-600/20 bg-warning-50">
+      <div className="mb-2">
+        <StatusPill tone="warning">Approval needed</StatusPill>
       </div>
-      <div style={{ color: '#92400e', marginTop: 4 }}>{event.reason}</div>
-      <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-        <button disabled={deciding} onClick={onApprove}>
+      <p className="text-sm text-gray-800">
+        Wants to run <code className="rounded bg-white px-1 py-0.5">{event.toolName}</code>:{' '}
+        <code className="rounded bg-white px-1 py-0.5">{JSON.stringify(event.args)}</code>
+      </p>
+      <p className="mt-1 text-sm text-warning-700">{event.reason}</p>
+      <div className="mt-3 flex gap-2">
+        <Button variant="primary" disabled={deciding} onClick={onApprove}>
           Approve
-        </button>
-        <button disabled={deciding} onClick={onDeny}>
+        </Button>
+        <Button variant="danger" disabled={deciding} onClick={onDeny}>
           Deny
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 }

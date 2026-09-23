@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { AdminUser, Role } from '@opex/shared';
 import { ApiError, createAdminUser, fetchAdminUsers, setAdminUserStatus } from '../../lib/api';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { StatusPill } from '../../components/ui/Badge';
+import { DataTable } from '../../components/ui/DataTable';
 
-export function UsersPage({ onBack }: { onBack: () => void }) {
+export function UsersPage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<AdminUser[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState('');
@@ -43,68 +48,86 @@ export function UsersPage({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: 16, fontFamily: 'sans-serif' }}>
-      <button onClick={onBack} style={{ marginBottom: 12 }}>
-        ← Back
-      </button>
-      <h2>Users</h2>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+    <div>
+      <PageHeader title="Users" description="Create and manage OpeX accounts." />
+      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
 
-      <form onSubmit={handleCreate} style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        <input placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <input placeholder="name" value={name} onChange={(e) => setName(e.target.value)} required />
-        <input
-          placeholder="password (min 12 chars)"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        <select value={role} onChange={(e) => setRole(e.target.value as Role)}>
-          <option value="employee">employee</option>
-          <option value="workspace_admin">workspace_admin</option>
-          <option value="super_admin">super_admin</option>
-        </select>
-        <select value={clearance} onChange={(e) => setClearance(Number(e.target.value))}>
-          <option value={0}>0 Public</option>
-          <option value={1}>1 Internal</option>
-          <option value={2}>2 Confidential</option>
-          <option value={3}>3 Restricted</option>
-        </select>
-        <button type="submit">Create user</button>
-      </form>
+      <Card className="mb-4">
+        <form onSubmit={handleCreate} className="flex flex-wrap gap-2">
+          <input
+            placeholder="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm"
+          />
+          <input
+            placeholder="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm"
+          />
+          <input
+            placeholder="password (min 12 chars)"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm"
+          />
+          <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm">
+            <option value="employee">employee</option>
+            <option value="workspace_admin">workspace_admin</option>
+            <option value="super_admin">super_admin</option>
+          </select>
+          <select
+            value={clearance}
+            onChange={(e) => setClearance(Number(e.target.value))}
+            className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm"
+          >
+            <option value={0}>0 Public</option>
+            <option value={1}>1 Internal</option>
+            <option value={2}>2 Confidential</option>
+            <option value={3}>3 Restricted</option>
+          </select>
+          <Button type="submit" variant="primary">
+            Create user
+          </Button>
+        </form>
+      </Card>
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-        <thead>
-          <tr style={{ textAlign: 'left', borderBottom: '1px solid #e5e7eb' }}>
-            <th style={{ padding: '6px 10px' }}>Email</th>
-            <th style={{ padding: '6px 10px' }}>Name</th>
-            <th style={{ padding: '6px 10px' }}>Role</th>
-            <th style={{ padding: '6px 10px' }}>Clearance</th>
-            <th style={{ padding: '6px 10px' }}>Status</th>
-            <th style={{ padding: '6px 10px' }}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-              <td style={{ padding: '6px 10px' }}>{r.email}</td>
-              <td style={{ padding: '6px 10px' }}>{r.name}</td>
-              <td style={{ padding: '6px 10px' }}>{r.role}</td>
-              <td style={{ padding: '6px 10px' }}>{r.clearance}</td>
-              <td style={{ padding: '6px 10px' }}>{r.status}</td>
-              <td style={{ padding: '6px 10px' }}>
-                {r.status === 'active' ? (
-                  <button onClick={() => toggle(r.id, 'disabled')}>Disable</button>
+      <Card>
+        <DataTable
+          emptyMessage="No users yet"
+          rows={rows}
+          columns={[
+            { key: 'email', label: 'Email' },
+            { key: 'name', label: 'Name' },
+            { key: 'role', label: 'Role' },
+            { key: 'clearance', label: 'Clearance' },
+            {
+              key: 'status',
+              label: 'Status',
+              render: (r) => <StatusPill tone={r.status === 'active' ? 'success' : 'neutral'}>{r.status}</StatusPill>,
+            },
+            {
+              key: 'actions',
+              label: '',
+              render: (r) =>
+                r.status === 'active' ? (
+                  <Button size="sm" onClick={() => toggle(r.id, 'disabled')}>
+                    Disable
+                  </Button>
                 ) : (
-                  <button onClick={() => toggle(r.id, 'active')}>Enable</button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {rows.length === 0 && <p style={{ color: '#6b7280' }}>No users yet.</p>}
+                  <Button size="sm" onClick={() => toggle(r.id, 'active')}>
+                    Enable
+                  </Button>
+                ),
+            },
+          ]}
+        />
+      </Card>
     </div>
   );
 }

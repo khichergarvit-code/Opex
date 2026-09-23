@@ -247,3 +247,17 @@ export async function uploadDocument(projectId: string, file: File): Promise<Api
   }
   return (await res.json()) as ApiDocument;
 }
+
+export interface MyMemoryRow {
+  id: string;
+  type: 'semantic' | 'episodic';
+  scope: 'user' | 'project' | 'workspace';
+  text: string;
+  confidence: number;
+  classification: number;
+  createdAt: string;
+}
+
+export async function fetchMyMemories(): Promise<MyMemoryRow[]> {
+  return request<MyMemoryRow[]>('/memory/mine');
+}

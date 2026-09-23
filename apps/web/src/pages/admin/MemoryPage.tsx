@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ApiError, request } from '../../lib/api';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { DataTable } from '../../components/ui/DataTable';
 
 interface AdminMemoryRow {
   id: string;
@@ -23,7 +27,7 @@ interface LongTermMemoryRow {
   createdAt: string;
 }
 
-export function MemoryPage({ onBack }: { onBack: () => void }) {
+export function MemoryPage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<AdminMemoryRow[]>([]);
   const [longTerm, setLongTerm] = useState<LongTermMemoryRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -79,80 +83,87 @@ export function MemoryPage({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: 16, fontFamily: 'sans-serif' }}>
-      <button onClick={onBack} style={{ marginBottom: 12 }}>
-        ← Back
-      </button>
-      <h2>Memory</h2>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+    <div>
+      <PageHeader
+        title="Memory (all users)"
+        description="Admin, workspace-wide view of every user's long-term and working memory. Each user's own read-only view is 'What OpeX remembers' in their sidebar."
+      />
+      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
 
-      <h3>Long-term memory (B2 — episodic/semantic)</h3>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>
-        <thead>
-          <tr style={{ textAlign: 'left', borderBottom: '1px solid #e5e7eb' }}>
-            <th style={{ padding: '6px 10px' }}>User</th>
-            <th style={{ padding: '6px 10px' }}>Type</th>
-            <th style={{ padding: '6px 10px' }}>Scope</th>
-            <th style={{ padding: '6px 10px' }}>Text</th>
-            <th style={{ padding: '6px 10px' }}>Confidence</th>
-            <th style={{ padding: '6px 10px' }}>Class.</th>
-            <th style={{ padding: '6px 10px' }}>Source</th>
-            <th style={{ padding: '6px 10px' }}>Accessed</th>
-            <th style={{ padding: '6px 10px' }}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {longTerm.map((m) => (
-            <tr key={m.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-              <td style={{ padding: '6px 10px' }}>{m.userEmail}</td>
-              <td style={{ padding: '6px 10px' }}>{m.type}</td>
-              <td style={{ padding: '6px 10px' }}>{m.scope}</td>
-              <td style={{ padding: '6px 10px' }}>{m.text}</td>
-              <td style={{ padding: '6px 10px' }}>{m.confidence.toFixed(2)}</td>
-              <td style={{ padding: '6px 10px' }}>{m.classification}</td>
-              <td style={{ padding: '6px 10px' }}>{m.sourceKind}</td>
-              <td style={{ padding: '6px 10px' }}>{m.accessCount}</td>
-              <td style={{ padding: '6px 10px' }}>
-                <button onClick={() => deleteMemory(m.id)}>Delete</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {longTerm.length === 0 && <p style={{ color: '#6b7280' }}>No long-term memories yet.</p>}
+      <Card className="mb-6">
+        <h3 className="mb-3 text-sm font-semibold text-gray-900">Long-term memory (episodic / semantic)</h3>
+        <DataTable
+          emptyMessage="No long-term memories yet"
+          rows={longTerm}
+          columns={[
+            { key: 'userEmail', label: 'User' },
+            { key: 'type', label: 'Type' },
+            { key: 'scope', label: 'Scope' },
+            { key: 'text', label: 'Text', render: (m) => <span className="line-clamp-2 max-w-sm">{m.text}</span> },
+            { key: 'confidence', label: 'Confidence', render: (m) => m.confidence.toFixed(2) },
+            { key: 'classification', label: 'Class.' },
+            { key: 'sourceKind', label: 'Source' },
+            { key: 'accessCount', label: 'Accessed' },
+            {
+              key: 'actions',
+              label: '',
+              render: (m) => (
+                <Button size="sm" variant="danger" onClick={() => deleteMemory(m.id)}>
+                  Delete
+                </Button>
+              ),
+            },
+          ]}
+        />
 
-      <h4>Set TTL (days; blank = never expires)</h4>
-      <form onSubmit={saveTtl} style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <input placeholder="workspace id" value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)} required />
-        <input placeholder="episodic days" value={episodicDays} onChange={(e) => setEpisodicDays(e.target.value)} />
-        <input placeholder="semantic days" value={semanticDays} onChange={(e) => setSemanticDays(e.target.value)} />
-        <button type="submit">Save TTL</button>
-      </form>
+        <h4 className="mb-2 mt-6 text-sm font-medium text-gray-700">Set TTL (days; blank = never expires)</h4>
+        <form onSubmit={saveTtl} className="flex flex-wrap gap-2">
+          <input
+            placeholder="workspace id"
+            value={workspaceId}
+            onChange={(e) => setWorkspaceId(e.target.value)}
+            required
+            className="rounded-lg border border-gray-200 px-2 py-1 text-sm"
+          />
+          <input
+            placeholder="episodic days"
+            value={episodicDays}
+            onChange={(e) => setEpisodicDays(e.target.value)}
+            className="w-32 rounded-lg border border-gray-200 px-2 py-1 text-sm"
+          />
+          <input
+            placeholder="semantic days"
+            value={semanticDays}
+            onChange={(e) => setSemanticDays(e.target.value)}
+            className="w-32 rounded-lg border border-gray-200 px-2 py-1 text-sm"
+          />
+          <Button type="submit" variant="primary" size="sm">
+            Save TTL
+          </Button>
+        </form>
+      </Card>
 
-      <h3>Working memory (A3 — per-conversation rolling summary)</h3>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-        <thead>
-          <tr style={{ textAlign: 'left', borderBottom: '1px solid #e5e7eb' }}>
-            <th style={{ padding: '6px 10px' }}>User</th>
-            <th style={{ padding: '6px 10px' }}>Summary length (chars)</th>
-            <th style={{ padding: '6px 10px' }}>Updated</th>
-            <th style={{ padding: '6px 10px' }}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-              <td style={{ padding: '6px 10px' }}>{r.userEmail}</td>
-              <td style={{ padding: '6px 10px' }}>{r.summaryLength}</td>
-              <td style={{ padding: '6px 10px' }}>{r.updatedAt}</td>
-              <td style={{ padding: '6px 10px' }}>
-                <button onClick={() => purge(r.id)}>Purge</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {rows.length === 0 && <p style={{ color: '#6b7280' }}>No working-memory summaries yet.</p>}
+      <Card>
+        <h3 className="mb-3 text-sm font-semibold text-gray-900">Working memory (per-conversation rolling summary)</h3>
+        <DataTable
+          emptyMessage="No working-memory summaries yet"
+          rows={rows}
+          columns={[
+            { key: 'userEmail', label: 'User' },
+            { key: 'summaryLength', label: 'Summary length (chars)' },
+            { key: 'updatedAt', label: 'Updated' },
+            {
+              key: 'actions',
+              label: '',
+              render: (r) => (
+                <Button size="sm" onClick={() => purge(r.id)}>
+                  Purge
+                </Button>
+              ),
+            },
+          ]}
+        />
+      </Card>
     </div>
   );
 }

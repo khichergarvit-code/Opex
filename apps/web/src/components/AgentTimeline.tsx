@@ -1,4 +1,5 @@
 import type { SseEvent } from '@opex/shared';
+import { EmptyState } from './ui/EmptyState';
 
 const EVENT_LABELS: Partial<Record<SseEvent['type'], string>> = {
   route: 'Routed',
@@ -43,18 +44,35 @@ function describeEvent(event: SseEvent): string {
   }
 }
 
-/** Built purely from the SSE stream already flowing through lib/sse.ts — no separate backend endpoint. */
-export function AgentTimeline({ events }: { events: SseEvent[] }) {
-  const visible = events.filter((e) => e.type !== 'token');
-  if (visible.length === 0) {
-    return <p style={{ color: '#6b7280', fontSize: 12 }}>No timeline events yet — send a message.</p>;
+function StepIcon({ isLast, streaming, isError }: { isLast: boolean; streaming: boolean; isError: boolean }) {
+  if (isError) {
+    return <span className="flex h-4 w-4 items-center justify-center rounded-full bg-danger-600 text-[10px] text-white">!</span>;
+  }
+  if (isLast && streaming) {
+    return <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" aria-hidden="true" />;
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13 }}>
+    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-success-600 text-[10px] text-white" aria-hidden="true">
+      ✓
+    </span>
+  );
+}
+
+/** Built purely from the SSE stream already flowing through lib/sse.ts — no separate backend endpoint. */
+export function AgentTimeline({ events, streaming = false }: { events: SseEvent[]; streaming?: boolean }) {
+  const visible = events.filter((e) => e.type !== 'token');
+  if (visible.length === 0) {
+    return <EmptyState title="No activity yet" description="Send a message to see agent steps here." />;
+  }
+  return (
+    <div className="flex flex-col gap-3">
       {visible.map((event, i) => (
-        <div key={i} style={{ display: 'flex', gap: 8, borderLeft: '2px solid #e5e7eb', paddingLeft: 8 }}>
-          <strong style={{ minWidth: 90 }}>{EVENT_LABELS[event.type] ?? event.type}</strong>
-          <span style={{ color: '#374151' }}>{describeEvent(event)}</span>
+        <div key={i} className="flex gap-2.5">
+          <StepIcon isLast={i === visible.length - 1} streaming={streaming} isError={event.type === 'error'} />
+          <div className="min-w-0 flex-1 border-l-2 border-gray-100 pb-2 pl-3 -mt-0.5">
+            <p className="text-xs font-semibold text-gray-700">{EVENT_LABELS[event.type] ?? event.type}</p>
+            <p className="text-xs text-gray-500">{describeEvent(event)}</p>
+          </div>
         </div>
       ))}
     </div>

@@ -18,41 +18,41 @@ a real `docker-socket-proxy`; the escape suite (10 real-Docker tests)
 is green. 192 API tests green (up from 148). Full `pnpm eval`
 regeneration deferred to a follow-up pass.
 
+**Frontend redesign (Tailwind + `motion`) is done.** All 19 pages
+restyled on shared `components/ui/` primitives; new self-scoped
+`GET /memory/mine` verified live vs. two seeded users (disjoint rows,
+no cross-user leak); found/fixed a real gap: `nginx.conf` lacked
+`/approvals`+`/memory` proxies.
+
 ## Decisions
-- Memory: every injected memory goes in a labeled user-turn block,
-  never the system prompt, regardless of provenance (invariant #5).
-  Extraction/purge is an in-process interval, not a new container.
-- B4: the requester or an admin may decide an approval.
-  `persist=true` mounts a per-project host directory — live testing
-  found sandbox-runner's bind-mount source must be the real *host*
-  path, not its own container-internal view (Docker-outside-of-Docker),
-  fixed with a second env var used only for the mount source.
-  `docker-socket-proxy` allowlists only `CONTAINERS`+`POST`
-  (+`INFO` for the next milestone's runtime probe).
-- B3: groundedness fails toward the old deterministic marker-presence
-  check on a parse failure, not toward maximal distrust. The revise
-  loop is 3 attempts, non-streaming (confirmed with the user as the
-  accepted latency cost). Independent tool calls in a batch run via
-  `Promise.allSettled`; the batch still pauses on the first
-  approval-required call, deferring any others. The scheduler runs in
-  waves; each executor-routed step gets its own trace, so a step's
-  approval pause can't fight the top-level turn's finalization.
-- Router: added few-shots for `needs.memory` and `complexity:multi_step`
-  — the same schema-echoing/never-picks-this-value lesson already fixed
-  once for doc_qa, now three instances of the identical failure mode.
+- Memory: every injected memory goes in a labeled user-turn block, never
+  the system prompt (invariant #5); extraction/purge is an in-process interval.
+- B4: the requester or an admin may decide an approval. `persist=true`
+  mounts a per-project host directory — sandbox-runner's bind-mount
+  source must be the real *host* path, not its container-internal view
+  (Docker-outside-of-Docker), fixed via a second, mount-only env var.
+  `docker-socket-proxy` allowlists only `CONTAINERS`+`POST` (+`INFO`
+  for the next milestone's runtime probe).
+- B3: groundedness fails toward the old marker-presence check on a
+  parse failure, not toward maximal distrust. Revise loop: 3 attempts,
+  non-streaming (accepted latency cost). Batch tool calls run via
+  `Promise.allSettled` but still pause on the first approval-required
+  call. The scheduler runs in waves; each step gets its own trace so
+  an approval pause can't fight the top-level turn's finalization.
+- Router: added few-shots for `needs.memory`/`complexity:multi_step` —
+  same schema-echoing lesson already fixed once for doc_qa.
 
 ## Debt
-- Router non-determinism now spans three fields (`agent`, `needs.memory`,
-  `complexity`) — confirmed live, identical prompts sometimes classify
-  differently. `eval/suites/memory.ts` retries up to 6x. One open,
-  unexplained case: `/route-debug` got 3/3 `multi_step` for a prompt
-  that 3 real chat attempts classified `simple` every time.
-- A plan step that pauses for approval gets no plan-level checkpoint —
-  its real approval row stays pending/times out on its own trace; the
-  synthesis proceeds with a visible, explained gap instead of waiting.
-- `agents.memoryPolicy` (jsonb) unused. `runtime=runsc` wired but inert
-  (only `runc` registered here). `pnpm eval`'s full 7-suite regeneration
-  hasn't re-run since B2–B4 landed; each suite was verified in isolation.
+- Router non-determinism spans `agent`/`needs.memory`/`complexity` —
+  identical prompts sometimes classify differently. One open case:
+  `/route-debug` got 3/3 `multi_step` for a prompt 3 real chats
+  classified `simple` every time.
+- A plan step pausing for approval gets no plan-level checkpoint; its
+  row stays pending/times out on its own trace while synthesis
+  proceeds with a visible, explained gap.
+- `agents.memoryPolicy` (jsonb) unused. `runtime=runsc` inert (only
+  `runc` registered). Full 7-suite `pnpm eval` hasn't re-run since
+  B2–B4; each suite was verified in isolation.
 
 ## Open questions
 - Real production GPU box specs. Tesseract's Hindi OCR on a

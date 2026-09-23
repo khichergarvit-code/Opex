@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
 import { ApiError, request } from '../../lib/api';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { StatusPill } from '../../components/ui/Badge';
+import { DataTable } from '../../components/ui/DataTable';
 
 interface AdminModelRow {
   id: string;
@@ -14,7 +19,7 @@ interface AdminModelRow {
   vramLive: string;
 }
 
-export function ModelsPage({ onBack }: { onBack: () => void }) {
+export function ModelsPage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<AdminModelRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,42 +41,33 @@ export function ModelsPage({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: 16, fontFamily: 'sans-serif' }}>
-      <button onClick={onBack} style={{ marginBottom: 12 }}>
-        ← Back
-      </button>
-      <h2>Models and tools</h2>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+    <div>
+      <PageHeader title="Models and tools" description="Status, VRAM, license and origin, and an enable toggle." />
+      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-        <thead>
-          <tr style={{ textAlign: 'left', borderBottom: '1px solid #e5e7eb' }}>
-            <th style={{ padding: '6px 10px' }}>Id</th>
-            <th style={{ padding: '6px 10px' }}>Role</th>
-            <th style={{ padding: '6px 10px' }}>Status</th>
-            <th style={{ padding: '6px 10px' }}>VRAM (configured)</th>
-            <th style={{ padding: '6px 10px' }}>License</th>
-            <th style={{ padding: '6px 10px' }}>Origin</th>
-            <th style={{ padding: '6px 10px' }}>Enabled</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-              <td style={{ padding: '6px 10px' }}>{r.id}</td>
-              <td style={{ padding: '6px 10px' }}>{r.role}</td>
-              <td style={{ padding: '6px 10px', color: r.status === 'up' ? '#16a34a' : '#dc2626' }}>{r.status}</td>
-              <td style={{ padding: '6px 10px' }}>{r.vramMb ?? '—'} MB ({r.vramLive})</td>
-              <td style={{ padding: '6px 10px' }}>{r.license}</td>
-              <td style={{ padding: '6px 10px' }}>{r.origin}</td>
-              <td style={{ padding: '6px 10px' }}>
-                <button onClick={() => toggleEnabled(r.id, !r.enabled)}>{r.enabled ? 'Disable' : 'Enable'}</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {rows.length === 0 && <p style={{ color: '#6b7280' }}>No models configured.</p>}
+      <Card>
+        <DataTable
+          emptyMessage="No models configured"
+          rows={rows}
+          columns={[
+            { key: 'id', label: 'Id' },
+            { key: 'role', label: 'Role' },
+            { key: 'status', label: 'Status', render: (r) => <StatusPill tone={r.status === 'up' ? 'success' : 'danger'}>{r.status}</StatusPill> },
+            { key: 'vram', label: 'VRAM (configured)', render: (r) => `${r.vramMb ?? '—'} MB (${r.vramLive})` },
+            { key: 'license', label: 'License' },
+            { key: 'origin', label: 'Origin' },
+            {
+              key: 'enabled',
+              label: '',
+              render: (r) => (
+                <Button size="sm" onClick={() => toggleEnabled(r.id, !r.enabled)}>
+                  {r.enabled ? 'Disable' : 'Enable'}
+                </Button>
+              ),
+            },
+          ]}
+        />
+      </Card>
     </div>
   );
 }

@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ApiError, request } from '../../lib/api';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { StatusPill } from '../../components/ui/Badge';
 
 interface AdminAgentRow {
   id: string;
@@ -11,7 +15,7 @@ interface AdminAgentRow {
   enabled: boolean;
 }
 
-export function AgentsPage({ onBack }: { onBack: () => void }) {
+export function AgentsPage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<AdminAgentRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,68 +85,103 @@ export function AgentsPage({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: 16, fontFamily: 'sans-serif' }}>
-      <button onClick={onBack} style={{ marginBottom: 12 }}>
-        ← Back
-      </button>
-      <h2>Agents</h2>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+    <div>
+      <PageHeader title="Agents" description="Prompt versions, a diff view, and a test chat." />
+      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
 
-      {[...byName.entries()].map(([agentName, versions]) => (
-        <div key={agentName} style={{ marginBottom: 12 }}>
-          <strong>{agentName}</strong>
-          <ul style={{ fontSize: 13 }}>
-            {versions.map((v) => (
-              <li key={v.id}>
-                v{v.version} — {v.description} ({v.modelRole}, {v.enabled ? 'enabled' : 'disabled'}){' '}
-                <button onClick={() => loadDiff(agentName, v.version, 'a')}>load as A</button>{' '}
-                <button onClick={() => loadDiff(agentName, v.version, 'b')}>load as B</button>{' '}
-                <button
-                  onClick={() => {
-                    setTestAgentId(v.id);
-                  }}
-                >
-                  test-chat this version
-                </button>
-              </li>
-            ))}
-          </ul>
+      <div className="flex flex-col gap-3">
+        {[...byName.entries()].map(([agentName, versions]) => (
+          <Card key={agentName}>
+            <p className="mb-2 font-medium text-gray-900">{agentName}</p>
+            <ul className="flex flex-col gap-1.5 text-sm">
+              {versions.map((v) => (
+                <li key={v.id} className="flex flex-wrap items-center gap-2">
+                  <span>
+                    v{v.version} — {v.description} ({v.modelRole})
+                  </span>
+                  <StatusPill tone={v.enabled ? 'success' : 'neutral'}>{v.enabled ? 'enabled' : 'disabled'}</StatusPill>
+                  <Button size="sm" onClick={() => loadDiff(agentName, v.version, 'a')}>
+                    load as A
+                  </Button>
+                  <Button size="sm" onClick={() => loadDiff(agentName, v.version, 'b')}>
+                    load as B
+                  </Button>
+                  <Button size="sm" onClick={() => setTestAgentId(v.id)}>
+                    test-chat this version
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        ))}
+      </div>
+
+      <Card className="mt-6">
+        <h3 className="mb-3 text-sm font-semibold text-gray-900">Diff</h3>
+        <div className="flex gap-3">
+          <pre className="flex-1 overflow-x-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-2 text-xs">{diffA}</pre>
+          <pre className="flex-1 overflow-x-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-2 text-xs">{diffB}</pre>
         </div>
-      ))}
+      </Card>
 
-      <h3>Diff</h3>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <pre style={{ flex: 1, fontSize: 11, background: '#f9fafb', padding: 8, whiteSpace: 'pre-wrap' }}>{diffA}</pre>
-        <pre style={{ flex: 1, fontSize: 11, background: '#f9fafb', padding: 8, whiteSpace: 'pre-wrap' }}>{diffB}</pre>
-      </div>
+      <Card className="mt-6">
+        <h3 className="mb-3 text-sm font-semibold text-gray-900">Test chat</h3>
+        <div className="flex gap-2">
+          <input
+            placeholder="agent id"
+            value={testAgentId}
+            onChange={(e) => setTestAgentId(e.target.value)}
+            className="w-72 rounded-lg border border-gray-200 px-2 py-1 text-sm"
+          />
+          <input
+            placeholder="message"
+            value={testMessage}
+            onChange={(e) => setTestMessage(e.target.value)}
+            className="flex-1 rounded-lg border border-gray-200 px-2 py-1 text-sm"
+          />
+          <Button variant="primary" size="sm" onClick={runTestChat}>
+            Run
+          </Button>
+        </div>
+        {testResult && <p className="mt-3 rounded-lg bg-gray-50 p-2 text-sm">{testResult}</p>}
+      </Card>
 
-      <h3>Test chat</h3>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <input placeholder="agent id" value={testAgentId} onChange={(e) => setTestAgentId(e.target.value)} style={{ width: 300 }} />
-        <input placeholder="message" value={testMessage} onChange={(e) => setTestMessage(e.target.value)} style={{ flex: 1 }} />
-        <button onClick={runTestChat}>Run</button>
-      </div>
-      {testResult && <p style={{ background: '#f3f4f6', padding: 8, marginTop: 8 }}>{testResult}</p>}
-
-      <h3>New version</h3>
-      <form onSubmit={createVersion} style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 500 }}>
-        <input placeholder="agent name (e.g. doc_qa)" value={name} onChange={(e) => setName(e.target.value)} required />
-        <input placeholder="description" value={description} onChange={(e) => setDescription(e.target.value)} required />
-        <select value={modelRole} onChange={(e) => setModelRole(e.target.value)}>
-          <option value="general">general</option>
-          <option value="router">router</option>
-          <option value="coder">coder</option>
-          <option value="vision">vision</option>
-        </select>
-        <textarea
-          placeholder="system prompt content"
-          value={promptContent}
-          onChange={(e) => setPromptContent(e.target.value)}
-          rows={6}
-          required
-        />
-        <button type="submit">Create new version</button>
-      </form>
+      <Card className="mt-6 max-w-lg">
+        <h3 className="mb-3 text-sm font-semibold text-gray-900">New version</h3>
+        <form onSubmit={createVersion} className="flex flex-col gap-2">
+          <input
+            placeholder="agent name (e.g. doc_qa)"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm"
+          />
+          <input
+            placeholder="description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            required
+            className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm"
+          />
+          <select value={modelRole} onChange={(e) => setModelRole(e.target.value)} className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm">
+            <option value="general">general</option>
+            <option value="router">router</option>
+            <option value="coder">coder</option>
+            <option value="vision">vision</option>
+          </select>
+          <textarea
+            placeholder="system prompt content"
+            value={promptContent}
+            onChange={(e) => setPromptContent(e.target.value)}
+            rows={6}
+            required
+            className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm"
+          />
+          <Button type="submit" variant="primary">
+            Create new version
+          </Button>
+        </form>
+      </Card>
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ApiDocument, Bbox } from '@opex/shared';
+import type { ApiDocument, Bbox, Classification } from '@opex/shared';
 import { ApiError, fetchDocument } from '../lib/api';
 import { loadPdfPage, renderPageToCanvas } from '../lib/pdf';
+import { Button } from '../components/ui/Button';
+import { ClassificationBanner } from '../components/ui/ClassificationBanner';
 
 export interface ViewerTarget {
   documentId: string;
@@ -57,30 +59,33 @@ export function DocumentViewerPage({ target, onBack }: { target: ViewerTarget; o
   }, [doc, pageNumber, target.bbox, target.page]);
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: 16, fontFamily: 'sans-serif' }}>
-      <button onClick={onBack} style={{ marginBottom: 12 }}>
-        ← Back
-      </button>
-      {doc && <h2>{doc.filename}</h2>}
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+    <div>
+      {doc && <ClassificationBanner level={doc.classification as Classification} />}
+      <div className="mx-auto max-w-4xl p-6">
+        <Button variant="ghost" onClick={onBack} className="mb-3">
+          ← Back
+        </Button>
+        {doc && <h2 className="text-lg font-semibold text-gray-900">{doc.filename}</h2>}
+        {error && <p className="text-sm text-danger-600">{error}</p>}
 
-      {doc && doc.pageCount && (
-        <div style={{ marginBottom: 12 }}>
-          <button disabled={pageNumber <= 1} onClick={() => setPageNumber((p) => p - 1)}>
-            Prev
-          </button>
-          <span style={{ margin: '0 8px' }}>
-            Page {pageNumber} / {doc.pageCount}
-          </span>
-          <button disabled={pageNumber >= doc.pageCount} onClick={() => setPageNumber((p) => p + 1)}>
-            Next
-          </button>
+        {doc && doc.pageCount && (
+          <div className="my-3 flex items-center gap-2">
+            <Button size="sm" disabled={pageNumber <= 1} onClick={() => setPageNumber((p) => p - 1)}>
+              Prev
+            </Button>
+            <span className="text-sm text-gray-500">
+              Page {pageNumber} / {doc.pageCount}
+            </span>
+            <Button size="sm" disabled={pageNumber >= doc.pageCount} onClick={() => setPageNumber((p) => p + 1)}>
+              Next
+            </Button>
+          </div>
+        )}
+
+        <div className="relative inline-block rounded-xl border border-gray-100 shadow-card">
+          <canvas ref={canvasRef} />
+          {highlightStyle && <div style={highlightStyle} />}
         </div>
-      )}
-
-      <div style={{ position: 'relative', display: 'inline-block', border: '1px solid #e5e7eb' }}>
-        <canvas ref={canvasRef} />
-        {highlightStyle && <div style={highlightStyle} />}
       </div>
     </div>
   );

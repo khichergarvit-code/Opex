@@ -20,6 +20,7 @@ export async function streamMessage(
   conversationId: string,
   content: string,
   handlers: StreamMessageHandlers,
+  signal?: AbortSignal,
 ): Promise<void> {
   await fetchEventSource(`/conversations/${conversationId}/messages`, {
     method: 'POST',
@@ -29,6 +30,7 @@ export async function streamMessage(
     },
     credentials: 'same-origin',
     body: JSON.stringify({ content }),
+    signal,
     onmessage(ev) {
       if (!ev.event) return;
       const data = JSON.parse(ev.data || '{}');
