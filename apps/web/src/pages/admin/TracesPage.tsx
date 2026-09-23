@@ -10,14 +10,17 @@ const STATUSES = ['', 'ok', 'error'];
 
 export function TracesPage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<AdminSpanRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [kind, setKind] = useState('');
   const [status, setStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setError(null);
     fetchAdminLogs({ kind: kind || undefined, status: status || undefined })
       .then(setRows)
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load logs'));
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load logs'))
+      .finally(() => setLoading(false));
   }, [kind, status]);
 
   return (
@@ -55,6 +58,8 @@ export function TracesPage({ onBack: _onBack }: { onBack: () => void }) {
       <Card>
         <DataTable
           emptyMessage="No spans recorded yet"
+          loading={loading}
+          error={error}
           rows={rows}
           columns={[
             { key: 'time', label: 'Time', render: (r) => new Date(r.createdAt).toLocaleTimeString() },

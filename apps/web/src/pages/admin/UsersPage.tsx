@@ -9,6 +9,7 @@ import { DataTable } from '../../components/ui/DataTable';
 
 export function UsersPage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<AdminUser[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
@@ -17,9 +18,11 @@ export function UsersPage({ onBack: _onBack }: { onBack: () => void }) {
   const [clearance, setClearance] = useState(1);
 
   function reload() {
+    setError(null);
     fetchAdminUsers()
       .then(setRows)
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load users'));
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load users'))
+      .finally(() => setLoading(false));
   }
 
   useEffect(reload, []);
@@ -100,6 +103,8 @@ export function UsersPage({ onBack: _onBack }: { onBack: () => void }) {
       <Card>
         <DataTable
           emptyMessage="No users yet"
+          loading={loading}
+          error={error}
           rows={rows}
           columns={[
             { key: 'email', label: 'Email' },

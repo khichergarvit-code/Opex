@@ -8,12 +8,15 @@ import { EmptyState } from '../../components/ui/EmptyState';
 
 export function ApprovalsPage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<Approval[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   function reload() {
+    setError(null);
     fetchAdminApprovals('pending')
       .then(setRows)
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load approvals'));
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load approvals'))
+      .finally(() => setLoading(false));
   }
 
   useEffect(reload, []);
@@ -32,8 +35,10 @@ export function ApprovalsPage({ onBack: _onBack }: { onBack: () => void }) {
       <PageHeader title="Approvals" description="Paused tool calls awaiting a decision (B4). A timeout auto-denies these." />
       {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
 
-      {rows.length === 0 ? (
-        <EmptyState title="No pending approvals" />
+      {loading ? (
+        <p className="text-sm text-gray-400">Loading…</p>
+      ) : rows.length === 0 ? (
+        error ? null : <EmptyState title="No pending approvals" />
       ) : (
         <div className="flex flex-col gap-3">
           {rows.map((r) => (

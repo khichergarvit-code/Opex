@@ -6,12 +6,14 @@ import { DataTable } from '../../components/ui/DataTable';
 
 export function UsagePage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<AdminUsageRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAdminUsage()
       .then(setRows)
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load usage'));
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load usage'))
+      .finally(() => setLoading(false));
   }, []);
 
   return (
@@ -25,6 +27,8 @@ export function UsagePage({ onBack: _onBack }: { onBack: () => void }) {
       <Card>
         <DataTable
           emptyMessage="No usage recorded yet"
+          loading={loading}
+          error={error}
           rows={rows.map((r, i) => ({ ...r, id: `${r.userId}-${r.model}-${r.day}-${i}` }))}
           columns={[
             { key: 'day', label: 'Day' },

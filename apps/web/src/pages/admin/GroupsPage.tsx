@@ -15,6 +15,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 
 export function GroupsPage({ onBack: _onBack }: { onBack: () => void }) {
   const [groups, setGroups] = useState<ApiGroup[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(true);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -22,9 +23,11 @@ export function GroupsPage({ onBack: _onBack }: { onBack: () => void }) {
   const [addUserId, setAddUserId] = useState('');
 
   function reload() {
+    setError(null);
     fetchAdminGroups()
       .then(setGroups)
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load groups'));
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load groups'))
+      .finally(() => setGroupsLoading(false));
     fetchAdminUsers()
       .then(setUsers)
       .catch(() => {});
@@ -86,8 +89,10 @@ export function GroupsPage({ onBack: _onBack }: { onBack: () => void }) {
         </form>
       </Card>
 
-      {groups.length === 0 ? (
-        <EmptyState title="No groups yet" />
+      {groupsLoading ? (
+        <p className="text-sm text-gray-400">Loading…</p>
+      ) : groups.length === 0 ? (
+        error ? null : <EmptyState title="No groups yet" />
       ) : (
         <div className="flex flex-col gap-3">
           {groups.map((g) => (

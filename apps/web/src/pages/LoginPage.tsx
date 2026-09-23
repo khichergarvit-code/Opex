@@ -4,6 +4,7 @@ import type { MeResponse } from '@opex/shared';
 import { ApiError, login } from '../lib/api';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { navigate } from '../lib/router';
 
 const BLOBS = [
   { className: 'h-72 w-72 bg-accent-300 -left-20 -top-16', duration: 20 },
@@ -49,6 +50,14 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: (user: MeResponse) => vo
         />
       ))}
 
+      <button
+        type="button"
+        onClick={() => navigate({ name: 'landing' })}
+        className="absolute left-4 top-4 z-10 rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-white/70"
+      >
+        ← Back to home
+      </button>
+
       <Card className="relative z-10 w-full max-w-sm">
         <div className="mb-6 flex items-center gap-2">
           <div className="h-8 w-8 rounded-full bg-accent-500" aria-hidden="true" />
@@ -62,6 +71,7 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: (user: MeResponse) => vo
             <span className="text-sm font-medium text-gray-700">Email</span>
             <input
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -72,6 +82,7 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: (user: MeResponse) => vo
             <span className="text-sm font-medium text-gray-700">Password</span>
             <input
               type="password"
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required

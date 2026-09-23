@@ -3,6 +3,8 @@ import type { Classification, Role } from '@opex/shared';
 export interface AuthedUser {
   id: string;
   email: string;
+  /** Not needed for any policy decision — optional so call sites that build a synthetic AuthedUser for can() don't need it. */
+  name?: string;
   role: Role;
   clearance: Classification;
   status: 'active' | 'disabled';

@@ -61,10 +61,20 @@ export function MessageList({
               )}
               {onFeedback && (
                 <div className="flex gap-1">
-                  <button onClick={() => onFeedback(m.id, 'thumbs_up')} title="Good answer" className="rounded px-1 hover:bg-gray-100">
+                  <button
+                    onClick={() => onFeedback(m.id, 'thumbs_up')}
+                    title="Good answer"
+                    aria-label="Good answer"
+                    className="rounded px-1 hover:bg-gray-100"
+                  >
                     👍
                   </button>
-                  <button onClick={() => onFeedback(m.id, 'thumbs_down')} title="Bad answer" className="rounded px-1 hover:bg-gray-100">
+                  <button
+                    onClick={() => onFeedback(m.id, 'thumbs_down')}
+                    title="Bad answer"
+                    aria-label="Bad answer"
+                    className="rounded px-1 hover:bg-gray-100"
+                  >
                     👎
                   </button>
                 </div>

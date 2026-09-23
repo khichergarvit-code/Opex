@@ -26,6 +26,7 @@ export function SystemPage({ onBack: _onBack }: { onBack: () => void }) {
     <div>
       <PageHeader title="System" description="Live disk, GPU, and job-queue status. Anything not reported by the host shows as N/A." />
       {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
+      {!data && !error && <p className="text-sm text-gray-400">Loading…</p>}
 
       {data && (
         <>

@@ -14,6 +14,7 @@ export function ConversationViewerPage({ onBack: _onBack }: { onBack: () => void
   const [conversations, setConversations] = useState<AdminConversationRow[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [messages, setMessages] = useState<AdminMessageRow[]>([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -24,9 +25,15 @@ export function ConversationViewerPage({ onBack: _onBack }: { onBack: () => void
 
   useEffect(() => {
     if (!selected) return;
+    // Clear the previous conversation's messages immediately — otherwise
+    // switching to a different (possibly empty) conversation briefly shows
+    // the old one's messages until the new fetch resolves.
+    setMessages([]);
+    setMessagesLoading(true);
     fetchAdminConversationMessages(selected)
       .then(setMessages)
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load messages'));
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load messages'))
+      .finally(() => setMessagesLoading(false));
   }, [selected]);
 
   return (
@@ -69,7 +76,8 @@ export function ConversationViewerPage({ onBack: _onBack }: { onBack: () => void
               {m.content}
             </div>
           ))}
-          {selected && messages.length === 0 && <EmptyState title="No messages" />}
+          {selected && messagesLoading && <p className="text-sm text-gray-400">Loading…</p>}
+          {selected && !messagesLoading && messages.length === 0 && <EmptyState title="No messages" />}
         </div>
       </div>
     </div>

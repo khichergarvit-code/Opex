@@ -15,12 +15,17 @@ const EVENT_LABELS: Partial<Record<SseEvent['type'], string>> = {
   step_start: 'Step started',
 };
 
+const MAX_ARGS_PREVIEW = 200;
+
 function describeEvent(event: SseEvent): string {
   switch (event.type) {
     case 'route':
       return `${event.data.taskType} → ${event.data.agent} agent (${event.data.reason})`;
-    case 'tool_call':
-      return `${event.data.toolName}(${JSON.stringify(event.data.args)})`;
+    case 'tool_call': {
+      const argsText = JSON.stringify(event.data.args);
+      const preview = argsText.length > MAX_ARGS_PREVIEW ? `${argsText.slice(0, MAX_ARGS_PREVIEW)}…` : argsText;
+      return `${event.data.toolName}(${preview})`;
+    }
     case 'tool_result':
       return `${event.data.status}: ${event.data.summary}`;
     case 'citation':

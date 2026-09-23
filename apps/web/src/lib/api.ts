@@ -4,6 +4,7 @@ import type {
   Approval,
   ApiDocument,
   ApiGroup,
+  Citation,
   CreateGroupRequest,
   CreateUserRequest,
   LoginRequest,
@@ -61,8 +62,45 @@ export async function logout(): Promise<void> {
   csrfToken = null;
 }
 
+/**
+ * Restores an existing session on page load (e.g. after a browser
+ * refresh) — the httpOnly session cookie survives a reload even though
+ * all in-memory JS state, including csrfToken, does not. Throws
+ * ApiError(401) if there's no valid session, same as any other call.
+ */
+export async function fetchMe(): Promise<MeResponse> {
+  const result = await request<MeResponse & { csrfToken: string }>('/me');
+  setCsrfToken(result.csrfToken);
+  return result;
+}
+
 export async function fetchProjects(): Promise<Project[]> {
   return request<Project[]>('/projects');
+}
+
+export interface ConversationSummary {
+  id: string;
+  projectId: string;
+  title: string | null;
+  updatedAt: string;
+}
+
+export interface StoredMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  citations: Citation[];
+  createdAt: string;
+}
+
+export async function fetchConversations(projectId?: string): Promise<ConversationSummary[]> {
+  return request(`/conversations${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`);
+}
+
+export async function fetchConversation(
+  id: string,
+): Promise<{ conversation: { id: string; projectId: string }; messages: StoredMessage[] }> {
+  return request(`/conversations/${id}`);
 }
 
 export async function createConversation(projectId: string): Promise<{ id: string }> {

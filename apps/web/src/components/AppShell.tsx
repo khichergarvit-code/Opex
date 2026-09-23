@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { MeResponse } from '@opex/shared';
 import { Avatar } from './ui/Avatar';
 import { Button } from './ui/Button';
+import { navigate } from '../lib/router';
 import { SidebarNav, SidebarNavItem, SidebarSection } from './ui/SidebarNav';
 
 const AI_TOOLS_SECTION: Array<{ key: string; label: string }> = [
@@ -34,7 +35,6 @@ export function AppShell({
   user,
   activeKey,
   isAdmin,
-  onNavigate,
   onNewChat,
   onLoggedOut,
   children,
@@ -42,27 +42,54 @@ export function AppShell({
   user: MeResponse;
   activeKey: string;
   isAdmin: boolean;
-  onNavigate: (key: string) => void;
   onNewChat: () => void;
   onLoggedOut: () => void;
   children: ReactNode;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  function onNavigate(key: string) {
+    setMenuOpen(false);
+    if (key === 'chat') navigate({ name: 'chat' });
+    else if (key === 'documents') navigate({ name: 'documents' });
+    else if (key === 'my-memories') navigate({ name: 'memories' });
+    else navigate({ name: 'admin', section: key });
+  }
+
   return (
-    <div className="flex h-screen bg-gray-50">
-      <aside className="flex w-60 shrink-0 flex-col border-r border-gray-100 bg-white">
+    <div className="flex h-screen flex-col bg-gray-50 md:flex-row">
+      <header className="flex items-center justify-between border-b border-gray-100 bg-white px-4 py-3 md:hidden">
+        <div className="flex items-center gap-2">
+          <div className="h-6 w-6 rounded-full bg-accent-500" aria-hidden="true" />
+          <span className="font-semibold text-gray-900">OpeX</span>
+        </div>
+        <button
+          type="button"
+          aria-label="Toggle navigation menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((v) => !v)}
+          className="rounded-lg px-2 py-1 text-lg text-gray-600 hover:bg-gray-100"
+        >
+          {menuOpen ? '✕' : '☰'}
+        </button>
+      </header>
+      <aside
+        className={`${menuOpen ? 'flex' : 'hidden'} w-full shrink-0 flex-col border-r border-gray-100 bg-white md:flex md:w-60 max-md:absolute max-md:inset-x-0 max-md:top-[53px] max-md:bottom-0 max-md:z-30`}
+      >
         <div className="flex items-center gap-2 px-4 py-4">
           <div className="h-7 w-7 rounded-full bg-accent-500" aria-hidden="true" />
           <span className="text-base font-semibold text-gray-900">OpeX</span>
         </div>
 
         <div className="px-3">
-          <Button variant="primary" className="w-full" onClick={onNewChat}>
+          <Button variant="primary" className="w-full" onClick={() => { setMenuOpen(false); onNewChat(); }}>
             + New chat
           </Button>
         </div>
 
         <SidebarNav>
           <SidebarSection>
+            <SidebarNavItem label="Chat" active={activeKey === 'chat'} onClick={() => onNavigate('chat')} />
             <SidebarNavItem label="Documents" active={activeKey === 'documents'} onClick={() => onNavigate('documents')} />
           </SidebarSection>
 
@@ -97,7 +124,7 @@ export function AppShell({
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto">{children}</main>
+      <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
     </div>
   );
 }

@@ -116,15 +116,19 @@ export function DocumentsPage({
   onOpenDocument: (documentId: string) => void;
 }) {
   const [docs, setDocs] = useState<ApiDocument[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function refresh() {
+    setError(null);
     try {
       setDocs(await fetchDocuments(project.id));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'failed to load documents');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -173,10 +177,12 @@ export function DocumentsPage({
 
       {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
 
-      {docs.length === 0 ? (
-        <EmptyState title="No documents yet" description="Upload a document to get started." />
+      {loading ? (
+        <p className="text-sm text-gray-400">Loading…</p>
+      ) : docs.length === 0 ? (
+        error ? null : <EmptyState title="No documents yet" description="Upload a document to get started." />
       ) : (
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {docs.map((doc) => (
             <DocumentCard key={doc.id} doc={doc} onOpen={onOpenDocument} />
           ))}

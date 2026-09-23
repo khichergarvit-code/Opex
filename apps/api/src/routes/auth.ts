@@ -89,11 +89,17 @@ export function createAuthRouter(db: Db): Router {
 
   router.get('/me', requireAuth(db), (req, res) => {
     const user = req.user!;
+    // issueCsrfToken is idempotent (reuses the session's existing token if
+    // set) — this lets the frontend restore a mutating-request-capable
+    // session on page load, not just read-only state.
+    const csrfToken = issueCsrfToken(req);
     res.json({
       id: user.id,
       email: user.email,
+      name: user.name,
       role: user.role,
       clearance: user.clearance,
+      csrfToken,
     });
   });
 

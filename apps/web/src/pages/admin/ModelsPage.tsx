@@ -21,12 +21,15 @@ interface AdminModelRow {
 
 export function ModelsPage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<AdminModelRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   function reload() {
+    setError(null);
     request<AdminModelRow[]>('/admin/models')
       .then(setRows)
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load models'));
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load models'))
+      .finally(() => setLoading(false));
   }
 
   useEffect(reload, []);
@@ -48,6 +51,8 @@ export function ModelsPage({ onBack: _onBack }: { onBack: () => void }) {
       <Card>
         <DataTable
           emptyMessage="No models configured"
+          loading={loading}
+          error={error}
           rows={rows}
           columns={[
             { key: 'id', label: 'Id' },

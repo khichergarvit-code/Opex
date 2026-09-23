@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ApprovalRequiredEvent, Bbox, Citation, MeResponse, Project, SseEvent } from '@opex/shared';
-import { createConversation, decideApproval, fetchProjects, submitFeedback } from '../lib/api';
+import {
+  createConversation,
+  decideApproval,
+  fetchConversation,
+  fetchConversations,
+  fetchProjects,
+  submitFeedback,
+  type ConversationSummary,
+} from '../lib/api';
+import { navigate } from '../lib/router';
 import { streamMessage } from '../lib/sse';
 import { AppShell } from '../components/AppShell';
 import { Composer } from '../components/Composer';
@@ -9,30 +18,36 @@ import { AgentTimeline } from '../components/AgentTimeline';
 import { ArtifactsPanel, type DisplayArtifact } from '../components/ArtifactsPanel';
 import { ApprovalPrompt } from '../components/ApprovalPrompt';
 import { Card } from '../components/ui/Card';
-import type { AdminSection } from './admin/AdminLayout';
+
+const STATUS_LABELS: Record<string, string> = {
+  cold_start: 'Warming up the model',
+  model_swap: 'Switching models',
+};
+
+function humanizeStatus(state: string): string {
+  return STATUS_LABELS[state] ?? state;
+}
 
 export function ChatPage({
   user,
+  conversationId,
   isAdmin,
   onLoggedOut,
   onActiveProjectChange,
   onOpenDocuments,
-  onOpenMyMemories,
   onOpenCitation,
-  onOpenAdmin,
 }: {
   user: MeResponse;
+  /** From the URL (#/chat/:id) — chats live in Postgres, so any of them can be reopened. */
+  conversationId?: string;
   isAdmin: boolean;
   onLoggedOut: () => void;
   onActiveProjectChange: (project: Project) => void;
   onOpenDocuments: () => void;
-  onOpenMyMemories: () => void;
   onOpenCitation: (documentId: string, page: number, bbox: Bbox) => void;
-  onOpenAdmin: (section: AdminSection) => void;
 }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<string>('');
-  const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -45,14 +60,19 @@ export function ChatPage({
   const [elapsedMs, setElapsedMs] = useState(0);
   const assistantIdRef = useRef<string>('');
   const abortRef = useRef<AbortController | null>(null);
+  const skipLoadForRef = useRef<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [history, setHistory] = useState<ConversationSummary[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     fetchProjects().then((rows) => {
       setProjects(rows);
-      if (rows[0]) setProjectId(rows[0].id);
+      setProjectId((current) => current || rows[0]?.id || '');
     });
     return () => {
+      if (pollRef.current !== null) clearInterval(pollRef.current);
       if (elapsedTimerRef.current !== null) clearInterval(elapsedTimerRef.current);
       abortRef.current?.abort();
     };
@@ -61,27 +81,92 @@ export function ChatPage({
   useEffect(() => {
     const project = projects.find((p) => p.id === projectId);
     if (project) onActiveProjectChange(project);
-    // Reset conversation when switching projects — a conversation belongs to one project.
-    setConversationId(null);
-    setMessages([]);
-    setTimelineEvents([]);
-    setArtifacts([]);
-    setLastRoutedAgent(null);
   }, [projectId, projects]);
 
-  function startNewChat() {
-    setConversationId(null);
+  function refreshHistory() {
+    if (!projectId) return;
+    fetchConversations(projectId)
+      .then(setHistory)
+      .catch(() => {});
+  }
+
+  useEffect(refreshHistory, [projectId]);
+
+  function resetChatState() {
+    abortRef.current?.abort();
+    if (pollRef.current !== null) clearInterval(pollRef.current);
     setMessages([]);
     setTimelineEvents([]);
     setArtifacts([]);
     setLastRoutedAgent(null);
     setPendingApproval(null);
+    setStatus(null);
+    setStreaming(false);
   }
+
+  function startNewChat() {
+    resetChatState();
+    setShowHistory(false);
+    navigate({ name: 'chat' });
+  }
+
+  // Load a stored chat from Postgres whenever the URL's conversation id
+  // changes (reopen from history, refresh, back/forward). A chat created by
+  // the first send is skipped — its messages are already on screen.
+  useEffect(() => {
+    const skip = skipLoadForRef.current;
+    if (skip !== conversationId) skipLoadForRef.current = null;
+    if (!conversationId) {
+      if (!skip) resetChatState();
+      return;
+    }
+    if (skip === conversationId) return;
+    let cancelled = false;
+    resetChatState();
+
+    const load = (): Promise<boolean> =>
+      fetchConversation(conversationId)
+        .then(({ conversation, messages: stored }) => {
+          if (cancelled) return true;
+          setProjectId(conversation.projectId);
+          const visible = stored.filter((m) => m.role !== 'system');
+          setMessages(visible.map((m) => ({ id: m.id, role: m.role as 'user' | 'assistant', content: m.content, citations: m.citations ?? [] })));
+          const last = visible[visible.length - 1];
+          return !last || last.role === 'assistant';
+        })
+        .catch(() => {
+          if (!cancelled) setStatus('could not load this chat');
+          return true;
+        });
+
+    load().then((settled) => {
+      if (settled || cancelled) return;
+      // The server keeps generating after the browser leaves, then saves the
+      // answer — poll until it lands.
+      setStatus('OpeX is still working on your last message…');
+      let tries = 0;
+      pollRef.current = setInterval(() => {
+        tries += 1;
+        load().then((done) => {
+          if (done || tries > 100) {
+            if (pollRef.current !== null) clearInterval(pollRef.current);
+            setStatus(null);
+            refreshHistory();
+          }
+        });
+      }, 3000);
+    });
+    return () => {
+      cancelled = true;
+      if (pollRef.current !== null) clearInterval(pollRef.current);
+    };
+  }, [conversationId]);
 
   async function ensureConversation(): Promise<string> {
     if (conversationId) return conversationId;
     const conv = await createConversation(projectId);
-    setConversationId(conv.id);
+    skipLoadForRef.current = conv.id;
+    navigate({ name: 'chat', conversationId: conv.id }, { replace: true });
     return conv.id;
   }
 
@@ -157,7 +242,7 @@ export function ChatPage({
             ),
           );
         },
-        onStatus: (state, model) => setStatus(`${state}: ${model}`),
+        onStatus: (state, model) => setStatus(`${humanizeStatus(state)}… (${model})`),
         onCitation: (citation: Citation) => {
           setMessages((prev) =>
             prev.map((m) =>
@@ -178,6 +263,7 @@ export function ChatPage({
           setStreaming(false);
           setStatus(null);
           stopElapsedTimer();
+          refreshHistory();
         },
         onError: (message) => {
           setStreaming(false);
@@ -260,18 +346,16 @@ export function ChatPage({
       isAdmin={isAdmin}
       onNewChat={startNewChat}
       onLoggedOut={onLoggedOut}
-      onNavigate={(key) => {
-        if (key === 'documents') return onOpenDocuments();
-        if (key === 'my-memories') return onOpenMyMemories();
-        onOpenAdmin(key as AdminSection);
-      }}
     >
-      <div className="mx-auto flex h-full max-w-5xl gap-6 p-6">
+      <div className="mx-auto flex h-full max-w-5xl flex-col gap-6 p-4 md:flex-row md:p-6">
         <div className="flex flex-1 flex-col">
           <div className="mb-4 flex items-center justify-between">
             <select
               value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
+              onChange={(e) => {
+                setProjectId(e.target.value);
+                startNewChat();
+              }}
               className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm"
             >
               {projects.map((p) => (
@@ -280,6 +364,36 @@ export function ChatPage({
                 </option>
               ))}
             </select>
+            <div className="relative">
+              <button
+                onClick={() => setShowHistory((v) => !v)}
+                aria-expanded={showHistory}
+                className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                History
+              </button>
+              {showHistory && (
+                <div className="absolute left-0 top-full z-20 mt-1 max-h-80 w-72 overflow-y-auto rounded-xl border border-gray-100 bg-white p-1 shadow-lg">
+                  {history.length === 0 ? (
+                    <p className="px-3 py-2 text-sm text-gray-400">No saved chats yet.</p>
+                  ) : (
+                    history.map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => {
+                          setShowHistory(false);
+                          navigate({ name: 'chat', conversationId: c.id });
+                        }}
+                        className={`block w-full truncate rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 ${c.id === conversationId ? 'bg-accent-50 font-medium text-accent-700' : 'text-gray-700'}`}
+                      >
+                        {c.title || 'Untitled chat'}
+                        <span className="block text-xs font-normal text-gray-400">{new Date(c.updatedAt).toLocaleString()}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
             <button
               onClick={() => setShowTimeline((v) => !v)}
               className="text-sm font-medium text-accent-600 hover:text-accent-700"
@@ -298,8 +412,13 @@ export function ChatPage({
               </div>
               <div className="w-full max-w-xl">
                 <Composer disabled={!projectId} onSend={handleSend} />
+                {!projectId && projects.length === 0 && (
+                  <p className="mt-2 text-center text-xs text-gray-400">
+                    You're not a member of any project yet — ask an admin to add you to one.
+                  </p>
+                )}
               </div>
-              <div className="grid w-full max-w-xl grid-cols-2 gap-3">
+              <div className="grid w-full max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
                 {suggestionTiles.map((tile) => (
                   <button
                     key={tile.title}
@@ -350,7 +469,7 @@ export function ChatPage({
         </div>
 
         {showTimeline && (
-          <div className="w-80 shrink-0 overflow-y-auto">
+          <div className="w-full shrink-0 overflow-y-auto md:w-80">
             <Card>
               <p className="mb-3 text-sm font-semibold text-gray-900">Activity Run</p>
               <AgentTimeline events={timelineEvents} streaming={streaming} />

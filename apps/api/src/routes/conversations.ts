@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { Router, type Response } from 'express';
 import type { CitationEvent, SseEvent } from '@opex/shared';
 import { createConversationRequestSchema, postMessageRequestSchema } from '@opex/shared';
@@ -92,6 +92,26 @@ export function createConversationsRouter(
     res.status(201).json(row);
   });
 
+  // The caller's own chat history — persisted in Postgres, so it survives
+  // refreshes, navigation and restarts. Untitled chats fall back to their
+  // first user message.
+  router.get('/conversations', requireAuth(db), async (req, res) => {
+    const user = req.user!;
+    const projectId = typeof req.query.projectId === 'string' ? req.query.projectId : undefined;
+    const rows = await db
+      .select({
+        id: conversations.id,
+        projectId: conversations.projectId,
+        title: sql<string | null>`coalesce(${conversations.title}, (select left(m.content, 80) from messages m where m.conversation_id = "conversations"."id" and m.role = 'user' order by m.created_at asc limit 1))`,
+        updatedAt: conversations.updatedAt,
+      })
+      .from(conversations)
+      .where(projectId ? and(eq(conversations.userId, user.id), eq(conversations.projectId, projectId)) : eq(conversations.userId, user.id))
+      .orderBy(desc(conversations.updatedAt))
+      .limit(50);
+    res.json(rows);
+  });
+
   router.get('/conversations/:id', requireAuth(db), async (req, res) => {
     const user = req.user!;
     const rows = await db
@@ -100,7 +120,7 @@ export function createConversationsRouter(
       .where(eq(conversations.id, req.params.id as string))
       .limit(1);
     const conversation = rows[0];
-    if (!conversation) {
+    if (!conversation || conversation.userId !== user.id) {
       res.status(404).json({ error: 'not found' });
       return;
     }
@@ -116,7 +136,8 @@ export function createConversationsRouter(
     const history = await db
       .select()
       .from(messages)
-      .where(eq(messages.conversationId, conversation.id));
+      .where(eq(messages.conversationId, conversation.id))
+      .orderBy(asc(messages.createdAt));
     res.json({ conversation, messages: history });
   });
 
@@ -157,6 +178,7 @@ export function createConversationsRouter(
       content: parsed.data.content,
       traceId: trace.id,
     });
+    await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, conversation.id));
 
     res.writeHead(200, {
       'content-type': 'text/event-stream',
@@ -167,7 +189,8 @@ export function createConversationsRouter(
     const history = await db
       .select()
       .from(messages)
-      .where(eq(messages.conversationId, conversation.id));
+      .where(eq(messages.conversationId, conversation.id))
+      .orderBy(asc(messages.createdAt));
     // The just-inserted user row is last; prior turns exclude it since each
     // path below rebuilds the latest turn itself (doc_qa attaches chunks,
     // the executor path attaches nothing extra).
@@ -463,6 +486,7 @@ export function createConversationsRouter(
           })
           .returning();
         assistantMessageId = assistantRow?.id ?? '';
+        await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, conversation.id));
       }
 
       await db

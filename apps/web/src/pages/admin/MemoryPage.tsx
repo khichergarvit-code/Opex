@@ -29,7 +29,9 @@ interface LongTermMemoryRow {
 
 export function MemoryPage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<AdminMemoryRow[]>([]);
+  const [rowsLoading, setRowsLoading] = useState(true);
   const [longTerm, setLongTerm] = useState<LongTermMemoryRow[]>([]);
+  const [longTermLoading, setLongTermLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [workspaceId, setWorkspaceId] = useState('');
   const [episodicDays, setEpisodicDays] = useState('90');
@@ -38,10 +40,12 @@ export function MemoryPage({ onBack: _onBack }: { onBack: () => void }) {
   function reload() {
     request<AdminMemoryRow[]>('/admin/memory')
       .then(setRows)
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load memory'));
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load memory'))
+      .finally(() => setRowsLoading(false));
     request<LongTermMemoryRow[]>('/admin/memory/long-term')
       .then(setLongTerm)
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load long-term memory'));
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load long-term memory'))
+      .finally(() => setLongTermLoading(false));
   }
 
   useEffect(reload, []);
@@ -94,6 +98,8 @@ export function MemoryPage({ onBack: _onBack }: { onBack: () => void }) {
         <h3 className="mb-3 text-sm font-semibold text-gray-900">Long-term memory (episodic / semantic)</h3>
         <DataTable
           emptyMessage="No long-term memories yet"
+          loading={longTermLoading}
+          error={error}
           rows={longTerm}
           columns={[
             { key: 'userEmail', label: 'User' },
@@ -147,6 +153,8 @@ export function MemoryPage({ onBack: _onBack }: { onBack: () => void }) {
         <h3 className="mb-3 text-sm font-semibold text-gray-900">Working memory (per-conversation rolling summary)</h3>
         <DataTable
           emptyMessage="No working-memory summaries yet"
+          loading={rowsLoading}
+          error={error}
           rows={rows}
           columns={[
             { key: 'userEmail', label: 'User' },

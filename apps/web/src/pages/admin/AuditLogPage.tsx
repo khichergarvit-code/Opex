@@ -6,12 +6,14 @@ import { DataTable } from '../../components/ui/DataTable';
 
 export function AuditLogPage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<AdminAuditRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAdminAudit()
       .then(setRows)
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load audit log'));
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load audit log'))
+      .finally(() => setLoading(false));
   }, []);
 
   return (
@@ -22,6 +24,8 @@ export function AuditLogPage({ onBack: _onBack }: { onBack: () => void }) {
       <Card>
         <DataTable
           emptyMessage="No audit entries yet"
+          loading={loading}
+          error={error}
           rows={rows}
           columns={[
             { key: 'ts', label: 'Time' },

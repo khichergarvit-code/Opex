@@ -34,16 +34,12 @@ export type AdminSection =
 export function AdminLayout({
   user,
   section,
-  onSectionChange,
   onBack,
-  onOpenMyMemories,
   onLoggedOut,
 }: {
   user: MeResponse;
   section: AdminSection;
-  onSectionChange: (section: AdminSection) => void;
   onBack: () => void;
-  onOpenMyMemories: () => void;
   onLoggedOut: () => void;
 }) {
   return (
@@ -51,17 +47,6 @@ export function AdminLayout({
       user={user}
       activeKey={section}
       isAdmin
-      onNavigate={(key) => {
-        if (key === 'documents') {
-          onBack();
-          return;
-        }
-        if (key === 'my-memories') {
-          onOpenMyMemories();
-          return;
-        }
-        onSectionChange(key as AdminSection);
-      }}
       onNewChat={onBack}
       onLoggedOut={onLoggedOut}
     >

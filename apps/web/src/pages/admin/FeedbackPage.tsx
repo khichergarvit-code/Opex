@@ -19,14 +19,17 @@ interface AdminFeedbackRow {
 
 export function FeedbackPage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<AdminFeedbackRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tagDrafts, setTagDrafts] = useState<Record<string, string>>({});
   const [keywordDrafts, setKeywordDrafts] = useState<Record<string, string>>({});
 
   function reload() {
+    setError(null);
     request<AdminFeedbackRow[]>('/admin/feedback?rating=thumbs_down')
       .then(setRows)
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load feedback'));
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load feedback'))
+      .finally(() => setLoading(false));
   }
 
   useEffect(reload, []);
@@ -61,8 +64,10 @@ export function FeedbackPage({ onBack: _onBack }: { onBack: () => void }) {
       <PageHeader title="Feedback triage" description="Thumbs-down feedback, for root-cause tagging and eval export." />
       {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
 
-      {rows.length === 0 ? (
-        <EmptyState title="No thumbs-down feedback yet" />
+      {loading ? (
+        <p className="text-sm text-gray-400">Loading…</p>
+      ) : rows.length === 0 ? (
+        error ? null : <EmptyState title="No thumbs-down feedback yet" />
       ) : (
         <div className="flex flex-col gap-3">
           {rows.map((r) => (

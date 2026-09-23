@@ -29,6 +29,7 @@ export function requireAuth(db: Db) {
     req.user = {
       id: row.id,
       email: row.email,
+      name: row.name,
       role: row.role,
       clearance: row.clearance as AuthedUser['clearance'],
       status: row.status,

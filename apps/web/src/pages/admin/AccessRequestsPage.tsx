@@ -8,13 +8,16 @@ import { EmptyState } from '../../components/ui/EmptyState';
 
 export function AccessRequestsPage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<AccessRequest[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expiryDrafts, setExpiryDrafts] = useState<Record<string, string>>({});
 
   function reload() {
+    setError(null);
     fetchAdminAccessRequests('pending')
       .then(setRows)
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load access requests'));
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load access requests'))
+      .finally(() => setLoading(false));
   }
 
   useEffect(reload, []);
@@ -35,8 +38,10 @@ export function AccessRequestsPage({ onBack: _onBack }: { onBack: () => void }) 
       <PageHeader title="Access requests" description="A user has requested access to a document above their default clearance." />
       {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
 
-      {rows.length === 0 ? (
-        <EmptyState title="No pending requests" />
+      {loading ? (
+        <p className="text-sm text-gray-400">Loading…</p>
+      ) : rows.length === 0 ? (
+        error ? null : <EmptyState title="No pending requests" />
       ) : (
         <div className="flex flex-col gap-3">
           {rows.map((r) => (
