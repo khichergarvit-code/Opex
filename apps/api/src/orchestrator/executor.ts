@@ -232,54 +232,76 @@ async function pauseForApproval(
   return row.id;
 }
 
+interface PreparedCall {
+  call: LlamaToolCall;
+  args: Record<string, unknown>;
+  decision: PolicyDecision;
+  requiresApproval: boolean;
+}
+
+function prepareCall(ctx: LoopCtx, call: LlamaToolCall): PreparedCall {
+  let args: Record<string, unknown> = {};
+  try {
+    args = JSON.parse(call.arguments) as Record<string, unknown>;
+  } catch {
+    // leave args empty — the tool's own validation will report the problem
+  }
+  const decision = can(ctx.user, 'tool:invoke', {
+    toolName: call.name,
+    agentToolAllowlist: ctx.agent.toolAllowlist,
+    taskClassification: ctx.taskClassification as 0 | 1 | 2 | 3,
+  });
+  return { call, args, decision, requiresApproval: decision.allowed && needsApproval(ctx.agent, call.name, args) };
+}
+
 /**
- * Processes calls[startIndex..] in order, pushing a 'tool' result message
- * for each. Stops and returns an approval_required outcome the moment one
- * needs approval (leaving it and everything after it out of `messages`,
- * captured instead in the returned outcome's approvalId's checkpoint).
+ * B3c: every call in the batch that doesn't need a human runs
+ * concurrently (each pushes its own tool_call_id-tagged result, so
+ * there's no ordering requirement to serialize them just because they
+ * arrived in the same model turn). If any call in the batch needs
+ * approval, the batch still pauses on the first one — orthogonal to
+ * whether its siblings already ran concurrently — deferring any other
+ * approval-required calls into the checkpoint, handled one at a time on
+ * resume.
  */
 async function processToolCalls(
   deps: ExecutorDeps,
   ctx: LoopCtx,
   state: LoopState,
   calls: LlamaToolCall[],
-  startIndex: number,
   callbacks: ExecutorCallbacks,
 ): Promise<ExecutorOutcomeApprovalRequired | null> {
-  for (let i = startIndex; i < calls.length; i++) {
-    const call = calls[i]!;
+  if (calls.length === 0) return null;
+
+  const prepared = calls.map((call) => prepareCall(ctx, call));
+  for (const p of prepared) {
     state.toolCallCount++;
-    let args: Record<string, unknown> = {};
-    try {
-      args = JSON.parse(call.arguments) as Record<string, unknown>;
-    } catch {
-      // leave args empty — the tool's own validation will report the problem
-    }
-
-    callbacks.onToolCall?.({ toolName: call.name, callId: call.id, args });
-
-    const decision = can(ctx.user, 'tool:invoke', {
-      toolName: call.name,
-      agentToolAllowlist: ctx.agent.toolAllowlist,
-      taskClassification: ctx.taskClassification as 0 | 1 | 2 | 3,
-    });
-
-    if (decision.allowed && needsApproval(ctx.agent, call.name, args)) {
-      const approvalId = await pauseForApproval(deps, ctx, state, call, args, calls.slice(i + 1));
-      return {
-        status: 'approval_required',
-        approvalId,
-        toolName: call.name,
-        args,
-        reason: describeApprovalReason(ctx.agent, call.name, args),
-      };
-    }
-
-    const toolResult = await executeOrDeny(deps, ctx, call, args, decision);
-    callbacks.onToolResult?.({ toolName: call.name, callId: call.id, args, result: toolResult });
-    state.messages.push({ role: 'tool', tool_call_id: call.id, content: toolResult.summary });
+    callbacks.onToolCall?.({ toolName: p.call.name, callId: p.call.id, args: p.args });
   }
-  return null;
+
+  const runNow = prepared.filter((p) => !p.requiresApproval);
+
+  await Promise.allSettled(
+    runNow.map(async (p) => {
+      const toolResult = await executeOrDeny(deps, ctx, p.call, p.args, p.decision);
+      callbacks.onToolResult?.({ toolName: p.call.name, callId: p.call.id, args: p.args, result: toolResult });
+      state.messages.push({ role: 'tool', tool_call_id: p.call.id, content: toolResult.summary });
+    }),
+  );
+
+  const firstApprovalIndex = prepared.findIndex((p) => p.requiresApproval);
+  if (firstApprovalIndex === -1) return null;
+
+  const pending = prepared[firstApprovalIndex]!;
+  const otherApprovalCalls = prepared.filter((p) => p !== pending && p.requiresApproval).map((p) => p.call);
+  const approvalId = await pauseForApproval(deps, ctx, state, pending.call, pending.args, otherApprovalCalls);
+  return {
+    status: 'approval_required',
+    approvalId,
+    toolName: pending.call.name,
+    args: pending.args,
+    reason: describeApprovalReason(ctx.agent, pending.call.name, pending.args),
+  };
 }
 
 /** Settles the one call a human just decided on — never re-pauses on it. */
@@ -361,7 +383,7 @@ async function continueLoop(
       })),
     });
 
-    const outcome = await processToolCalls(deps, ctx, state, result.toolCalls, 0, callbacks);
+    const outcome = await processToolCalls(deps, ctx, state, result.toolCalls, callbacks);
     if (outcome) return outcome;
 
     state.iteration++;
@@ -422,7 +444,7 @@ export async function resumeExecutor(
 
   await settlePendingCall(deps, ctx, state, checkpoint.pendingCall, decision, input);
 
-  const outcome = await processToolCalls(deps, ctx, state, checkpoint.remainingCalls, 0, input);
+  const outcome = await processToolCalls(deps, ctx, state, checkpoint.remainingCalls, input);
   if (outcome) return outcome;
 
   state.iteration++;

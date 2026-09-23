@@ -225,6 +225,53 @@ describe('runExecutor', () => {
     expect(inserted).toHaveLength(1);
     expect(inserted[0]?.toolName).toBe('code_exec');
   });
+
+  it('runs a safe call and pauses on the first approval-required one, deferring a second approval-required call', async () => {
+    const inserted: Array<Record<string, unknown>> = [];
+    const db = {
+      insert: () => ({
+        values: (v: Record<string, unknown>) => {
+          inserted.push(v);
+          return { returning: () => Promise.resolve([{ id: 'approval1' }]) };
+        },
+      }),
+      update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
+    };
+    const chat = vi.fn().mockResolvedValueOnce({
+      content: '',
+      tokensIn: 1,
+      tokensOut: 1,
+      toolCalls: [
+        { id: 'call-approve-1', name: 'code_exec', arguments: '{"code":"pass"}' },
+        { id: 'call-approve-2', name: 'make_chart', arguments: '{}' },
+      ],
+    });
+
+    const toolResults: Array<{ callId: string }> = [];
+    const result = await runExecutor(
+      { db: db as never, gateway: { chat } as never, spanWriter: { writeSpan: vi.fn() }, sandboxRunnerUrl: 'x', sandboxSharedSecret: 'x', dataDir: '/data' },
+      {
+        agent: agent({ toolAllowlist: ['code_exec', 'make_chart'], requiresApprovalTools: ['code_exec', 'make_chart'] }),
+        systemPrompt: 'sys',
+        messages: [{ role: 'user', content: 'run both' }],
+        user: user(),
+        traceId: 't1',
+        conversationId: 'c1',
+        workspaceId: 'w1',
+        projectId: 'p1',
+        taskClassification: 0,
+        onToolResult: (e) => toolResults.push(e),
+      },
+    );
+
+    expect(result.status).toBe('approval_required');
+    if (result.status !== 'approval_required') throw new Error('unreachable');
+    // Pauses on the first one; the second is deferred, not skipped or run.
+    expect(result.toolName).toBe('code_exec');
+    expect(toolResults).toHaveLength(0);
+    const checkpoint = inserted[0]?.executorCheckpoint as { remainingCalls: Array<{ name: string }> };
+    expect(checkpoint.remainingCalls).toEqual([{ id: 'call-approve-2', name: 'make_chart', arguments: '{}' }]);
+  });
 });
 
 describe('resumeExecutor', () => {
