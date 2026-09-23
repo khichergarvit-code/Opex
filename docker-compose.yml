@@ -3,9 +3,9 @@ networks:
     driver: bridge
   core:
     internal: true
-  # Forward-compatible placeholder for B4's docker-socket-proxy — in A3,
-  # sandbox-runner reaches the Docker socket via a direct bind mount, not
-  # through this network (see the sandbox-runner service below).
+  # B4: sandbox-runner reaches the Docker API only through
+  # docker-socket-proxy on this network — no direct socket bind mount
+  # (invariant #8).
   sock:
     internal: true
 
@@ -174,6 +174,28 @@ services:
       postgres:
         condition: service_healthy
 
+  # B4: the only Docker-socket touchpoint in the system (invariant #8) —
+  # a read-only bind mount of the real socket, allowlisted to only the
+  # Docker API calls docker_exec.py actually makes (container create/
+  # start/wait/logs/kill/remove). Images/networks/volumes/exec/swarm all
+  # denied by omission — the proxy is deny-by-default.
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    networks:
+      - sock
+    environment:
+      CONTAINERS: "1"
+      POST: "1"
+      IMAGES: "0"
+      NETWORKS: "0"
+      VOLUMES: "0"
+      EXEC: "0"
+      SWARM: "0"
+      SYSTEM: "0"
+      INFO: "1" # enabled ahead of the next milestone's runtime=runsc detection (client.info())
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
   sandbox-runner:
     build:
       context: .
@@ -184,10 +206,25 @@ services:
     environment:
       <<: *offline-env
       SANDBOX_SHARED_SECRET: ${SANDBOX_SHARED_SECRET:-dev_only_change_me}
+      # docker-py's docker.from_env() reads this automatically — no code
+      # change needed to point it at the proxy instead of a local socket.
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+      PERSIST_BASE_DIR: /data/projects
+      # Docker-outside-of-Docker: sandbox-runner's persist=true bind-mounts
+      # this directory into a *sibling* container it asks the real daemon
+      # to create — that daemon resolves the mount source against the
+      # host's filesystem, not sandbox-runner's own container-internal
+      # /data view, even though both cover the same subtree. ${PWD} is the
+      # shell's cwd when `docker compose` is invoked — this repo's own
+      # convention (./data, ./models, etc.) already assumes that's the
+      # repo root, same assumption as everywhere else in this file.
+      PERSIST_HOST_BASE_DIR: ${PWD}/data/projects
     volumes:
-      # The only Docker-socket user in the system (invariant #8) — a direct
-      # bind mount for A3; docker-socket-proxy is B4.
-      - /var/run/docker.sock:/var/run/docker.sock
+      # Shares the same host ./data api/ingest already mount — persist=true
+      # writes land under /data/projects/<projectId>, visible to both.
+      - ./data:/data
+    depends_on:
+      - docker-socket-proxy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
       interval: 5s

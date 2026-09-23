@@ -22,11 +22,45 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+import re
 from dataclasses import dataclass, field
 
 import docker
 
 MAX_OUTPUT_BYTES = 64 * 1024
+
+# B4: persist=true mounts a per-project directory here, never a raw
+# caller-supplied host path (tools.md: "persist=true mounts the project
+# volume"). Shares the same host ./data mount api/ingest already use.
+#
+# Docker-outside-of-Docker note: sandbox-runner talks to the *real* Docker
+# daemon (via docker-socket-proxy) to create a *sibling* container, not a
+# child of itself. A bind-mount source in that request is resolved by the
+# daemon against the host's filesystem, not against sandbox-runner's own
+# container-internal view of it — even though both views happen to share
+# the same subtree via sandbox-runner's own ./data bind mount. So this
+# needs two paths: PERSIST_BASE_DIR (this container's own view, used to
+# actually create the directory) and PERSIST_HOST_BASE_DIR (the same
+# directory's real host-side path, used only as the bind-mount source).
+PERSIST_BASE_DIR = os.environ.get("PERSIST_BASE_DIR", "/data/projects")
+PERSIST_HOST_BASE_DIR = os.environ.get("PERSIST_HOST_BASE_DIR", PERSIST_BASE_DIR)
+
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
+
+
+class InvalidProjectIdError(ValueError):
+    pass
+
+
+def _resolve_persist_path(project_id: str) -> str:
+    """Validates project_id is UUID-shaped (never trusts it as a raw path
+    component), creates the directory via this container's own view of
+    it, and returns the equivalent HOST-side path for the bind mount."""
+    if not _UUID_RE.match(project_id):
+        raise InvalidProjectIdError(f"invalid project_id: {project_id!r}")
+    os.makedirs(os.path.join(PERSIST_BASE_DIR, project_id), exist_ok=True)
+    return os.path.join(PERSIST_HOST_BASE_DIR, project_id)
 
 _BOOTSTRAP_SCRIPT = r"""
 import base64, json, os, subprocess, sys
@@ -132,11 +166,19 @@ def run_in_sandbox(
     command: list[str] | None,
     files: list[FileInput],
     timeout_s: int,
+    persist: bool = False,
+    project_id: str | None = None,
 ) -> RunResult:
     if code is None and command is None:
         raise ValueError("either code or command must be provided")
 
     client = docker.from_env()
+
+    volumes: dict[str, dict[str, str]] = {}
+    if persist:
+        if not project_id:
+            raise ValueError("project_id is required when persist=true")
+        volumes[_resolve_persist_path(project_id)] = {"bind": "/persist", "mode": "rw"}
 
     payload = {
         "input_files": [{"path": f.path, "content_base64": f.content_base64} for f in files],
@@ -155,6 +197,7 @@ def run_in_sandbox(
         # ownership, which the non-root --user 10001 process can't write
         # into (confirmed empirically) — 1777 matches /tmp's usual mode.
         tmpfs={"/work": "size=256m,mode=1777"},
+        volumes=volumes,
         mem_limit="1g",
         nano_cpus=1_000_000_000,
         pids_limit=128,

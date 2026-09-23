@@ -12,6 +12,10 @@ export interface SandboxRunRequest {
   command?: string[];
   files?: SandboxFileInput[];
   timeoutS?: number;
+  /** B4: mounts the project's persisted data volume at /persist — only ever reached via executor.ts's approval gate. */
+  persist?: boolean;
+  /** Required when persist is true — the caller-known project this run belongs to. */
+  projectId?: string;
 }
 export interface SandboxRunResult {
   exitCode: number;
@@ -24,9 +28,11 @@ export interface SandboxRunResult {
 }
 
 /**
- * Calls sandbox-runner's POST /run. persist is never sent — code_exec/
- * make_chart never request it (see the plan's Open Question #11: A3 hard-
- * denies persist=true, there's no approval flow to gate it yet).
+ * Calls sandbox-runner's POST /run. B4: persist=true is now a real,
+ * approval-gated feature — the gate already happened one layer up in
+ * executor.ts (needsApproval pauses any persist=true call), so
+ * sandbox-runner trusts the already-authenticated caller once the flag
+ * reaches it, per tools.md's approvals flow.
  */
 export async function callSandbox(
   baseUrl: string,
@@ -42,7 +48,8 @@ export async function callSandbox(
       command: req.command,
       files: (req.files ?? []).map((f) => ({ path: f.path, content_base64: f.contentBase64 })),
       timeout_s: req.timeoutS ?? 15,
-      persist: false,
+      persist: req.persist ?? false,
+      project_id: req.projectId,
     }),
   });
   if (!res.ok) {
