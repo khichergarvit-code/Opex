@@ -3,6 +3,7 @@ import { UsagePage } from './UsagePage';
 import { UsersPage } from './UsersPage';
 import { GroupsPage } from './GroupsPage';
 import { AccessRequestsPage } from './AccessRequestsPage';
+import { ApprovalsPage } from './ApprovalsPage';
 import { ConversationViewerPage } from './ConversationViewerPage';
 import { AuditLogPage } from './AuditLogPage';
 import { ModelsPage } from './ModelsPage';
@@ -18,6 +19,7 @@ export type AdminSection =
   | 'users'
   | 'groups'
   | 'access-requests'
+  | 'approvals'
   | 'conversations'
   | 'audit-log'
   | 'models'
@@ -33,6 +35,7 @@ const SECTIONS: Array<{ key: AdminSection; label: string }> = [
   { key: 'users', label: 'Users' },
   { key: 'groups', label: 'Groups' },
   { key: 'access-requests', label: 'Access requests' },
+  { key: 'approvals', label: 'Approvals' },
   { key: 'conversations', label: 'Conversations' },
   { key: 'audit-log', label: 'Audit log' },
   { key: 'models', label: 'Models' },
@@ -80,6 +83,7 @@ export function AdminLayout({
         {section === 'users' && <UsersPage onBack={onBack} />}
         {section === 'groups' && <GroupsPage onBack={onBack} />}
         {section === 'access-requests' && <AccessRequestsPage onBack={onBack} />}
+        {section === 'approvals' && <ApprovalsPage onBack={onBack} />}
         {section === 'conversations' && <ConversationViewerPage onBack={onBack} />}
         {section === 'audit-log' && <AuditLogPage onBack={onBack} />}
         {section === 'models' && <ModelsPage onBack={onBack} />}

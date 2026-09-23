@@ -7,6 +7,7 @@ import { verifyAndLoadManifest } from './models/manifest.js';
 import { ModelGateway } from './models/gateway.js';
 import { createDbSpanWriter } from './spans/writeSpan.js';
 import { startMemoryScheduler } from './memory/scheduler.js';
+import { startApprovalTimeoutSweep } from './orchestrator/approvalSweep.js';
 
 async function main() {
   const env = loadEnv();
@@ -32,6 +33,17 @@ async function main() {
   const spanWriter = createDbSpanWriter(db);
   const gateway = new ModelGateway({ db, spanWriter });
   startMemoryScheduler(db, gateway, spanWriter);
+
+  // B4: pending-past-timeout approvals count as denied (tools.md), same
+  // in-process interval pattern as the memory scheduler above.
+  startApprovalTimeoutSweep({
+    db,
+    gateway,
+    spanWriter,
+    sandboxRunnerUrl: env.SANDBOX_RUNNER_URL,
+    sandboxSharedSecret: env.SANDBOX_SHARED_SECRET,
+    dataDir: env.DATA_DIR,
+  });
 }
 
 main().catch((err) => {

@@ -15,6 +15,7 @@ import { createAdminRouter } from './routes/admin.js';
 import { createArtifactsRouter } from './routes/artifacts.js';
 import { createRouterDebugRouter } from './routes/routerDebug.js';
 import { createAccessRequestsRouter } from './routes/accessRequests.js';
+import { createApprovalsRouter } from './routes/approvals.js';
 import { createAdminUsersRouter } from './routes/adminUsers.js';
 import { createAdminGroupsRouter } from './routes/adminGroups.js';
 import { createAdminModelsRouter } from './routes/adminModels.js';
@@ -46,6 +47,7 @@ export function createApp(db: Db, env: Env): Express {
   app.use(createArtifactsRouter(db, env.DATA_DIR));
   app.use(createRouterDebugRouter(db, gateway));
   app.use(createAccessRequestsRouter(db, auditWriter));
+  app.use(createApprovalsRouter(db, gateway, spanWriter, auditWriter, env));
   app.use(createAdminUsersRouter(db, auditWriter));
   app.use(createAdminGroupsRouter(db, auditWriter));
   app.use(createAdminModelsRouter(db, auditWriter));

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Bbox, Citation, MeResponse, Project, SseEvent } from '@opex/shared';
-import { createConversation, fetchProjects, logout, submitFeedback } from '../lib/api';
+import type { ApprovalRequiredEvent, Bbox, Citation, MeResponse, Project, SseEvent } from '@opex/shared';
+import { createConversation, decideApproval, fetchProjects, logout, submitFeedback } from '../lib/api';
 import { streamMessage } from '../lib/sse';
 import { Composer } from '../components/Composer';
 import { MessageList, type DisplayMessage } from '../components/MessageList';
 import { AgentTimeline } from '../components/AgentTimeline';
 import { ArtifactsPanel, type DisplayArtifact } from '../components/ArtifactsPanel';
+import { ApprovalPrompt } from '../components/ApprovalPrompt';
 import type { AdminSection } from './admin/AdminLayout';
 
 export function ChatPage({
@@ -32,6 +33,8 @@ export function ChatPage({
   const [timelineEvents, setTimelineEvents] = useState<SseEvent[]>([]);
   const [artifacts, setArtifacts] = useState<DisplayArtifact[]>([]);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [pendingApproval, setPendingApproval] = useState<ApprovalRequiredEvent['data'] | null>(null);
+  const [decidingApproval, setDecidingApproval] = useState(false);
   const assistantIdRef = useRef<string>('');
 
   useEffect(() => {
@@ -71,6 +74,7 @@ export function ChatPage({
     setStreaming(true);
     setStatus(null);
     setTimelineEvents([]);
+    setPendingApproval(null);
 
     await streamMessage(convId, content, {
       onEvent: (event) => {
@@ -78,6 +82,13 @@ export function ChatPage({
         if (event.type === 'tool_result') {
           const newArtifacts = event.data.artifactIds.map((id) => ({ id, toolName: 'tool' }));
           if (newArtifacts.length > 0) setArtifacts((prev) => [...prev, ...newArtifacts]);
+        }
+        if (event.type === 'approval_required') {
+          // The SSE stream ends right after this (conversations.ts skips
+          // the normal done/error finalization while paused) — stop
+          // treating the composer as busy so the approval card can act.
+          setPendingApproval(event.data);
+          setStreaming(false);
         }
       },
       onToken: (delta) => {
@@ -113,6 +124,35 @@ export function ChatPage({
         setStatus(`error: ${message}`);
       },
     });
+  }
+
+  async function handleApprovalDecision(decision: 'approved' | 'denied') {
+    if (!pendingApproval) return;
+    setDecidingApproval(true);
+    try {
+      const result = await decideApproval(pendingApproval.approvalId, decision);
+      if (result.status === 'ok') {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantIdRef.current
+              ? { ...m, content: result.answer ?? m.content, id: result.messageId ?? m.id }
+              : m,
+          ),
+        );
+      } else if (result.status === 'approval_required') {
+        // A different tool call in the same batch also needs approval —
+        // not modeled inline; the admin/requester decides it from the
+        // Approvals page instead of a second nested card here.
+        setStatus('another approval is now required — see the Approvals page');
+      } else {
+        setStatus('the resumed task failed — see admin traces for details');
+      }
+    } catch {
+      setStatus('failed to submit the decision');
+    } finally {
+      setDecidingApproval(false);
+      setPendingApproval(null);
+    }
   }
 
   return (
@@ -161,9 +201,17 @@ export function ChatPage({
             }}
           />
           {status && <p style={{ color: '#6b7280', fontSize: 12 }}>{status}</p>}
+          {pendingApproval && (
+            <ApprovalPrompt
+              event={pendingApproval}
+              deciding={decidingApproval}
+              onApprove={() => handleApprovalDecision('approved')}
+              onDeny={() => handleApprovalDecision('denied')}
+            />
+          )}
 
           <div style={{ marginTop: 16 }}>
-            <Composer disabled={streaming || !projectId} onSend={handleSend} />
+            <Composer disabled={streaming || !projectId || Boolean(pendingApproval)} onSend={handleSend} />
           </div>
         </div>
 

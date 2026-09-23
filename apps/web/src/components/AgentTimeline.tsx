@@ -9,6 +9,7 @@ const EVENT_LABELS: Partial<Record<SseEvent['type'], string>> = {
   done: 'Done',
   error: 'Error',
   memory_used: 'Memory used',
+  approval_required: 'Approval required',
 };
 
 function describeEvent(event: SseEvent): string {
@@ -29,6 +30,8 @@ function describeEvent(event: SseEvent): string {
       return `${event.data.kind}${event.data.score !== undefined ? ` (score ${event.data.score.toFixed(2)})` : ''}`;
     case 'error':
       return event.data.message;
+    case 'approval_required':
+      return `${event.data.toolName}: ${event.data.reason}`;
     default:
       return '';
   }
