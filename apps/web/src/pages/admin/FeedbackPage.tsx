@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
 import { ApiError, request } from '../../lib/api';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { StatusPill } from '../../components/ui/Badge';
+import { EmptyState } from '../../components/ui/EmptyState';
 
 interface AdminFeedbackRow {
   id: string;
@@ -12,7 +17,7 @@ interface AdminFeedbackRow {
   createdAt: string;
 }
 
-export function FeedbackPage({ onBack }: { onBack: () => void }) {
+export function FeedbackPage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<AdminFeedbackRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [tagDrafts, setTagDrafts] = useState<Record<string, string>>({});
@@ -52,38 +57,49 @@ export function FeedbackPage({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: 16, fontFamily: 'sans-serif' }}>
-      <button onClick={onBack} style={{ marginBottom: 12 }}>
-        ← Back
-      </button>
-      <h2>Feedback triage (thumbs down)</h2>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+    <div>
+      <PageHeader title="Feedback triage" description="Thumbs-down feedback, for root-cause tagging and eval export." />
+      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
 
-      {rows.map((r) => (
-        <div key={r.id} style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: 10, marginBottom: 8, fontSize: 13 }}>
-          <div>
-            message {r.messageId} — trace {r.traceId ?? '—'} — {r.createdAt}
-            {r.exportedToEval && <span style={{ color: '#16a34a' }}> (exported)</span>}
-          </div>
-          <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
-            <input
-              placeholder="root cause"
-              value={tagDrafts[r.id] ?? r.rootCauseTag ?? ''}
-              onChange={(e) => setTagDrafts((d) => ({ ...d, [r.id]: e.target.value }))}
-            />
-            <button onClick={() => tag(r.id)}>Tag</button>
-            <input
-              placeholder="expected keyword"
-              value={keywordDrafts[r.id] ?? ''}
-              onChange={(e) => setKeywordDrafts((d) => ({ ...d, [r.id]: e.target.value }))}
-            />
-            <button onClick={() => exportToEval(r.id)} disabled={r.exportedToEval}>
-              Export to eval
-            </button>
-          </div>
+      {rows.length === 0 ? (
+        <EmptyState title="No thumbs-down feedback yet" />
+      ) : (
+        <div className="flex flex-col gap-3">
+          {rows.map((r) => (
+            <Card key={r.id}>
+              <p className="text-sm text-gray-500">
+                message <span className="font-mono text-xs">{r.messageId}</span> — trace{' '}
+                <span className="font-mono text-xs">{r.traceId ?? '—'}</span> — {r.createdAt}
+                {r.exportedToEval && (
+                  <StatusPill tone="success" title="Exported to eval">
+                    exported
+                  </StatusPill>
+                )}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <input
+                  placeholder="root cause"
+                  value={tagDrafts[r.id] ?? r.rootCauseTag ?? ''}
+                  onChange={(e) => setTagDrafts((d) => ({ ...d, [r.id]: e.target.value }))}
+                  className="rounded-lg border border-gray-200 px-2 py-1 text-sm"
+                />
+                <Button size="sm" onClick={() => tag(r.id)}>
+                  Tag
+                </Button>
+                <input
+                  placeholder="expected keyword"
+                  value={keywordDrafts[r.id] ?? ''}
+                  onChange={(e) => setKeywordDrafts((d) => ({ ...d, [r.id]: e.target.value }))}
+                  className="rounded-lg border border-gray-200 px-2 py-1 text-sm"
+                />
+                <Button size="sm" variant="primary" disabled={r.exportedToEval} onClick={() => exportToEval(r.id)}>
+                  Export to eval
+                </Button>
+              </div>
+            </Card>
+          ))}
         </div>
-      ))}
-      {rows.length === 0 && <p style={{ color: '#6b7280' }}>No thumbs-down feedback yet.</p>}
+      )}
     </div>
   );
 }

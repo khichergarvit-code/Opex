@@ -8,8 +8,12 @@ import {
   fetchAdminUsers,
   removeGroupMember,
 } from '../../lib/api';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { EmptyState } from '../../components/ui/EmptyState';
 
-export function GroupsPage({ onBack }: { onBack: () => void }) {
+export function GroupsPage({ onBack: _onBack }: { onBack: () => void }) {
   const [groups, setGroups] = useState<ApiGroup[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -63,50 +67,69 @@ export function GroupsPage({ onBack }: { onBack: () => void }) {
   const userEmailById = new Map(users.map((u) => [u.id, u.email]));
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: 16, fontFamily: 'sans-serif' }}>
-      <button onClick={onBack} style={{ marginBottom: 12 }}>
-        ← Back
-      </button>
-      <h2>Groups</h2>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+    <div>
+      <PageHeader title="Groups" description="Group membership drives document ACLs." />
+      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
 
-      <form onSubmit={handleCreate} style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <input placeholder="group name" value={name} onChange={(e) => setName(e.target.value)} required />
-        <button type="submit">Create group</button>
-      </form>
+      <Card className="mb-4">
+        <form onSubmit={handleCreate} className="flex gap-2">
+          <input
+            placeholder="group name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm"
+          />
+          <Button type="submit" variant="primary">
+            Create group
+          </Button>
+        </form>
+      </Card>
 
-      {groups.map((g) => (
-        <div key={g.id} style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: 10, marginBottom: 8 }}>
-          <div
-            style={{ cursor: 'pointer', fontWeight: 600 }}
-            onClick={() => setExpanded(expanded === g.id ? null : g.id)}
-          >
-            {g.name} ({g.memberIds.length} members)
-          </div>
-          {expanded === g.id && (
-            <div style={{ marginTop: 8, fontSize: 13 }}>
-              <ul>
-                {g.memberIds.map((uid) => (
-                  <li key={uid}>
-                    {userEmailById.get(uid) ?? uid}{' '}
-                    <button onClick={() => handleRemoveMember(g.id, uid)}>remove</button>
-                  </li>
-                ))}
-              </ul>
-              <select value={addUserId} onChange={(e) => setAddUserId(e.target.value)}>
-                <option value="">select user…</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.email}
-                  </option>
-                ))}
-              </select>
-              <button onClick={() => handleAddMember(g.id)}>Add member</button>
-            </div>
-          )}
+      {groups.length === 0 ? (
+        <EmptyState title="No groups yet" />
+      ) : (
+        <div className="flex flex-col gap-3">
+          {groups.map((g) => (
+            <Card key={g.id}>
+              <button onClick={() => setExpanded(expanded === g.id ? null : g.id)} className="text-sm font-medium text-gray-900">
+                {g.name} ({g.memberIds.length} members)
+              </button>
+              {expanded === g.id && (
+                <div className="mt-3 flex flex-col gap-2 text-sm">
+                  <ul className="flex flex-col gap-1">
+                    {g.memberIds.map((uid) => (
+                      <li key={uid} className="flex items-center justify-between">
+                        <span>{userEmailById.get(uid) ?? uid}</span>
+                        <Button size="sm" onClick={() => handleRemoveMember(g.id, uid)}>
+                          Remove
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex gap-2">
+                    <select
+                      value={addUserId}
+                      onChange={(e) => setAddUserId(e.target.value)}
+                      className="rounded-lg border border-gray-200 px-2 py-1 text-sm"
+                    >
+                      <option value="">select user…</option>
+                      {users.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.email}
+                        </option>
+                      ))}
+                    </select>
+                    <Button size="sm" variant="primary" onClick={() => handleAddMember(g.id)}>
+                      Add member
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </Card>
+          ))}
         </div>
-      ))}
-      {groups.length === 0 && <p style={{ color: '#6b7280' }}>No groups yet.</p>}
+      )}
     </div>
   );
 }

@@ -6,8 +6,11 @@ import {
   type AdminConversationRow,
   type AdminMessageRow,
 } from '../../lib/api';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { EmptyState } from '../../components/ui/EmptyState';
 
-export function ConversationViewerPage({ onBack }: { onBack: () => void }) {
+export function ConversationViewerPage({ onBack: _onBack }: { onBack: () => void }) {
   const [conversations, setConversations] = useState<AdminConversationRow[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [messages, setMessages] = useState<AdminMessageRow[]>([]);
@@ -27,60 +30,46 @@ export function ConversationViewerPage({ onBack }: { onBack: () => void }) {
   }, [selected]);
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: 16, fontFamily: 'sans-serif' }}>
-      <button onClick={onBack} style={{ marginBottom: 12 }}>
-        ← Back
-      </button>
-      <h2>Conversations</h2>
-      <p style={{ color: '#6b7280', fontSize: 12 }}>
-        Viewing a conversation's messages writes an audit-log entry (this is another user's private data).
-      </p>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+    <div>
+      <PageHeader title="Conversations" description="Viewing a conversation's messages writes an audit-log entry (this is another user's private data)." />
+      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
 
-      <div style={{ display: 'flex', gap: 16 }}>
-        <table style={{ width: '50%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '1px solid #e5e7eb' }}>
-              <th style={{ padding: '6px 10px' }}>User</th>
-              <th style={{ padding: '6px 10px' }}>Updated</th>
-            </tr>
-          </thead>
-          <tbody>
-            {conversations.map((c) => (
-              <tr
-                key={c.id}
-                onClick={() => setSelected(c.id)}
-                style={{
-                  cursor: 'pointer',
-                  background: selected === c.id ? '#dbeafe' : undefined,
-                  borderBottom: '1px solid #f3f4f6',
-                }}
-              >
-                <td style={{ padding: '6px 10px' }}>{c.userEmail}</td>
-                <td style={{ padding: '6px 10px' }}>{c.updatedAt}</td>
+      <div className="flex gap-4">
+        <Card padded={false} className="w-1/2 overflow-hidden">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 text-xs font-medium uppercase text-gray-400">
+                <th className="px-3 py-2">User</th>
+                <th className="px-3 py-2">Updated</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {conversations.map((c) => (
+                <tr
+                  key={c.id}
+                  onClick={() => setSelected(c.id)}
+                  className={`cursor-pointer border-b border-gray-50 last:border-0 ${selected === c.id ? 'bg-accent-50' : 'hover:bg-gray-50'}`}
+                >
+                  <td className="px-3 py-2">{c.userEmail}</td>
+                  <td className="px-3 py-2 text-gray-500">{c.updatedAt}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
 
-        <div style={{ width: '50%', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="flex w-1/2 flex-col gap-2">
           {messages.map((m) => (
             <div
               key={m.id}
-              style={{
-                alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-                background: m.role === 'user' ? '#dbeafe' : '#f3f4f6',
-                borderRadius: 8,
-                padding: '8px 12px',
-                maxWidth: '90%',
-                whiteSpace: 'pre-wrap',
-                fontSize: 13,
-              }}
+              className={`max-w-[90%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${
+                m.role === 'user' ? 'self-end bg-accent-500 text-white' : 'self-start bg-gray-100 text-gray-800'
+              }`}
             >
               {m.content}
             </div>
           ))}
-          {selected && messages.length === 0 && <p style={{ color: '#6b7280' }}>No messages.</p>}
+          {selected && messages.length === 0 && <EmptyState title="No messages" />}
         </div>
       </div>
     </div>
