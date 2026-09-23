@@ -17,3 +17,26 @@ export function verifyCitations(answerText: string, validMarkers: Set<number>): 
   const uncited = cited.filter((marker) => !validMarkers.has(marker));
   return { ok: uncited.length === 0, uncitedClaims: uncited.length };
 }
+
+export interface CodeTaskVerifyResult {
+  ok: boolean;
+  confidence: 'high' | 'low';
+  reason: string;
+}
+
+/**
+ * B3b's code-task check: deterministic, detect-only, no retry loop —
+ * the AC only names citation-groundedness and parallel-tasks as
+ * testable clauses, so this stays a small addition rather than a second
+ * revise loop layered onto executor.ts's tool-call batches.
+ */
+export function verifyCodeTask(toolResults: Array<{ ok: boolean; artifactIds: string[] }>): CodeTaskVerifyResult {
+  if (toolResults.length === 0) {
+    return { ok: true, confidence: 'high', reason: 'no tool calls to verify' };
+  }
+  const failed = toolResults.some((r) => !r.ok);
+  if (failed) {
+    return { ok: false, confidence: 'low', reason: 'at least one tool call exited non-zero or errored' };
+  }
+  return { ok: true, confidence: 'high', reason: 'all tool calls succeeded' };
+}

@@ -15,7 +15,8 @@ import { can } from '../policy/can.js';
 import { loadAgent, loadAgentSystemPrompt } from '../orchestrator/agents.js';
 import { runExecutor } from '../orchestrator/executor.js';
 import { route as routeMessage } from '../orchestrator/router.js';
-import { verifyCitations } from '../orchestrator/verifier.js';
+import { verifyCitations, verifyCodeTask } from '../orchestrator/verifier.js';
+import { answerWithVerification } from '../orchestrator/reviseLoop.js';
 import { buildDocQaPrompt, extractCitedMarkers, projectHasReadyDocuments } from './docQa.js';
 
 const CHAT_SYSTEM_PROMPT_PATH = new URL('../prompts/chat-system.md', import.meta.url);
@@ -259,22 +260,36 @@ export function createConversationsRouter(
           docQaMessages[docQaMessages.length - 1] = { ...lastTurn, content: `${memoryPrefix}\n\n${lastTurn.content}` };
         }
         try {
-          for await (const delta of gateway.chatStream({
-            role: 'general',
-            messages: [{ role: 'system', content: docQa.systemPrompt }, ...docQaMessages],
-            user,
-            traceId: trace.id,
-          })) {
-            assistantContent += delta;
-            sendEvent(res, { type: 'token', data: { delta } });
-          }
+          const validMarkers = new Set(docQa.citationMap.map((c) => c.marker));
+          // Non-streaming throughout: the revise loop needs the complete
+          // answer before groundedness checking can run. The final
+          // accepted string is sent as a single token event once
+          // verification finishes, not token-by-token as it's generated.
+          const verification = await answerWithVerification(
+            { gateway, user, traceId: trace.id },
+            docQa.systemPrompt,
+            docQaMessages,
+            docQa.citedChunks,
+            validMarkers,
+          );
+          assistantContent = verification.answer;
+          sendEvent(res, { type: 'token', data: { delta: assistantContent } });
+
           const citedMarkers = new Set(extractCitedMarkers(assistantContent));
           citations = docQa.citationMap.filter((c) => citedMarkers.has(c.marker));
           for (const citation of citations) {
             sendEvent(res, { type: 'citation', data: citation as CitationEvent['data'] });
           }
-          const verifyResult = verifyCitations(assistantContent, new Set(docQa.citationMap.map((c) => c.marker)));
-          sendEvent(res, { type: 'verify', data: verifyResult });
+          const legacyCheck = verifyCitations(assistantContent, validMarkers);
+          sendEvent(res, {
+            type: 'verify',
+            data: {
+              ok: verification.confidence === 'high',
+              uncitedClaims: legacyCheck.uncitedClaims,
+              confidence: verification.confidence,
+              revisions: verification.revisions,
+            },
+          });
         } catch (err) {
           traceStatus = 'error';
           sendEvent(res, {
@@ -295,6 +310,7 @@ export function createConversationsRouter(
       } else {
         try {
           const systemPrompt = await loadAgentSystemPrompt(agentConfig);
+          const observedToolResults: Array<{ ok: boolean; artifactIds: string[] }> = [];
           const executorOutcome = await runExecutor(
             {
               db,
@@ -319,7 +335,8 @@ export function createConversationsRouter(
               // exists. Documented as Debt.
               taskClassification: 0,
               onToolCall: (e) => sendEvent(res, { type: 'tool_call', data: { toolName: e.toolName, callId: e.callId, args: e.args ?? {} } }),
-              onToolResult: (e) =>
+              onToolResult: (e) => {
+                observedToolResults.push({ ok: e.result?.ok ?? false, artifactIds: e.result?.artifactIds ?? [] });
                 sendEvent(res, {
                   type: 'tool_result',
                   data: {
@@ -328,7 +345,8 @@ export function createConversationsRouter(
                     summary: e.result?.summary ?? '',
                     artifactIds: e.result?.artifactIds ?? [],
                   },
-                }),
+                });
+              },
             },
           );
           if (executorOutcome.status === 'approval_required') {
@@ -345,6 +363,13 @@ export function createConversationsRouter(
           } else {
             assistantContent = executorOutcome.answer;
             sendEvent(res, { type: 'token', data: { delta: assistantContent } });
+            // B3b: a small, detect-only check (no retry loop) — did the
+            // tool calls this answer relies on actually succeed.
+            const codeCheck = verifyCodeTask(observedToolResults);
+            sendEvent(res, {
+              type: 'verify',
+              data: { ok: codeCheck.ok, uncitedClaims: 0, confidence: codeCheck.confidence, revisions: 0 },
+            });
           }
         } catch (err) {
           traceStatus = 'error';

@@ -100,6 +100,10 @@ export const verifyEventSchema = z.object({
   data: z.object({
     ok: z.boolean(),
     uncitedClaims: z.number().int(),
+    // B3b: set for doc_qa's groundedness revise loop and the code-task
+    // check; absent from any other verify emitter (backward compatible).
+    confidence: z.enum(['high', 'low']).optional(),
+    revisions: z.number().int().optional(),
   }),
 });
 export type VerifyEvent = z.infer<typeof verifyEventSchema>;

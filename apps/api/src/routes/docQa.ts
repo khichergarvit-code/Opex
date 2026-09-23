@@ -21,6 +21,8 @@ export interface DocQaResult {
   /** Set (and non-empty prompt run skipped) when retrieval found no support. */
   noSupportAnswer?: string;
   citationMap: CitationMapEntry[];
+  /** Marker → the retrieved chunk's own text, for B3b's groundedness check. */
+  citedChunks: Array<{ marker: number; text: string }>;
 }
 
 /** True if the project has at least one fully-ingested document. */
@@ -86,10 +88,12 @@ export async function buildDocQaPrompt(deps: {
       messages: [],
       noSupportAnswer: noSupportAnswer.trim(),
       citationMap: [],
+      citedChunks: [],
     };
   }
 
   const citationMap = await buildCitationMap(deps.db, outcome.chunks);
+  const citedChunks = outcome.chunks.map((chunk, i) => ({ marker: citationMap[i]!.marker, text: chunk.text }));
   const chunkBlocks = outcome.chunks
     .map((chunk, i) => {
       const entry = citationMap[i]!;
@@ -105,6 +109,7 @@ export async function buildDocQaPrompt(deps: {
     systemPrompt,
     messages: [...deps.priorTurns, { role: 'user', content: augmentedUserTurn }],
     citationMap,
+    citedChunks,
   };
 }
 
