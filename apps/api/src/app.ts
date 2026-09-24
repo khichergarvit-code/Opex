@@ -44,7 +44,7 @@ export function createApp(db: Db, env: Env): Express {
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
   app.use(createAuthRouter(db));
   app.use(createProjectsRouter(db));
-  app.use(createConversationsRouter(db, gateway, spanWriter, env));
+  app.use(createConversationsRouter(db, gateway, spanWriter, env, auditWriter));
   app.use(createDocumentsRouter(db, env.DATA_DIR));
   app.use(createRetrievalRouter(db, gateway, spanWriter));
   app.use(createAdminRouter(db, auditWriter));

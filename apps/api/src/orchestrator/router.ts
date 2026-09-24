@@ -146,6 +146,10 @@ Q: "What is the torque spec for the discharge flange bolts?"
 A: {"task_type":"doc_qa","complexity":"simple","agent":"doc_qa","needs":{"documents":true,"memory":[],"tools":["doc_search"]},"reason":"asks for a spec value likely found in an uploaded document"}
 Q: "Who inspected the boiler feed pump?"
 A: {"task_type":"doc_qa","complexity":"simple","agent":"doc_qa","needs":{"documents":true,"memory":[],"tools":["doc_search"]},"reason":"asks about a past inspection likely recorded in a document"}
+Q: "who is the prime minister of India?"
+A: {"task_type":"chat","complexity":"simple","agent":"general","needs":{"documents":false,"memory":[],"tools":[]},"reason":"general-knowledge question about a public figure, not project content"}
+Q: "explain the tower of hanoi algorithm step by step"
+A: {"task_type":"chat","complexity":"simple","agent":"general","needs":{"documents":false,"memory":[],"tools":[]},"reason":"asks to explain a general algorithm, not project content"}
 Q: "hi, how are you?"
 A: {"task_type":"chat","complexity":"simple","agent":"general","needs":{"documents":false,"memory":[],"tools":[]},"reason":"a plain greeting, not a content question"}
 Q: "thanks, that's all for now"
@@ -199,8 +203,10 @@ function buildRouterSystemPrompt(hasReadyDocuments: boolean): string {
   }
   return (
     `${base}\n\nThis project HAS ready ingested documents. Route to doc_qa ONLY when the message ` +
-    `asks about specific factual content (a spec, a value, a name, an event) that a document could ` +
-    `plausibly contain. Greetings, thanks/closings, small talk, questions about the assistant itself, ` +
+    `asks about content specific to THIS project's own documents (a spec, a value, a tag, a procedure, ` +
+    `an inspection, or wording like "in the manual/report/document"). General-knowledge questions ` +
+    `(who is a public figure, capitals, history, science, how an algorithm works, explain a concept) ` +
+    `are "general" even when documents exist. Greetings, thanks/closings, small talk, questions about the assistant itself, ` +
     `and plain arithmetic are ALWAYS "general", never doc_qa, even on a project with documents.` +
     `\n\n${DOC_QA_FEW_SHOTS}`
   );

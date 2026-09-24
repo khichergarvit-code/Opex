@@ -97,6 +97,7 @@ export interface StoredMessage {
   content: string;
   citations: Citation[];
   attachments?: MessageAttachment[];
+  source?: 'documents' | 'general' | null;
   createdAt: string;
 }
 
@@ -123,7 +124,7 @@ export async function fetchConversations(projectId?: string): Promise<Conversati
 
 export async function fetchConversation(
   id: string,
-): Promise<{ conversation: { id: string; projectId: string }; messages: StoredMessage[] }> {
+): Promise<{ conversation: { id: string; projectId: string; documentMode?: 'auto' | 'on' | 'off' }; messages: StoredMessage[] }> {
   return request(`/conversations/${id}`);
 }
 

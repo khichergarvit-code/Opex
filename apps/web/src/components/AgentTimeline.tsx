@@ -16,6 +16,8 @@ const EVENT_LABELS: Partial<Record<SseEvent['type'], string>> = {
   step_start: 'Step started',
 };
 
+const HIDDEN: SseEvent['type'][] = ['token', 'user_saved', 'progress', 'replace', 'source', 'status'];
+
 const MAX_ARGS_PREVIEW = 200;
 
 function describeEvent(event: SseEvent): string {
@@ -66,12 +68,12 @@ function StepIcon({ isLast, streaming, isError }: { isLast: boolean; streaming: 
 
 /** Built purely from the SSE stream already flowing through lib/sse.ts — no separate backend endpoint. */
 export function AgentTimeline({ events, streaming = false }: { events: SseEvent[]; streaming?: boolean }) {
-  const visible = events.filter((e) => e.type !== 'token');
+  const visible = events.filter((e) => !HIDDEN.includes(e.type));
   if (visible.length === 0) {
     return <EmptyState title="No activity yet" description="Send a message to see agent steps here." />;
   }
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-1">
       <AnimatePresence initial={false}>
       {visible.map((event, i) => (
         <motion.div
@@ -79,12 +81,12 @@ export function AgentTimeline({ events, streaming = false }: { events: SseEvent[
           initial={{ opacity: 0, x: -10 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.25 }}
-          className="flex gap-2.5"
+          className="flex gap-2"
         >
           <StepIcon isLast={i === visible.length - 1} streaming={streaming} isError={event.type === 'error'} />
-          <div className="min-w-0 flex-1 border-l-2 border-line pb-2 pl-3 -mt-0.5">
+          <div className="min-w-0 flex-1 border-l-2 border-line pb-1 pl-2.5 leading-tight">
             <p className="text-xs font-semibold text-fg-2">{EVENT_LABELS[event.type] ?? event.type}</p>
-            <p className="text-xs text-muted">{describeEvent(event)}</p>
+            <p className="text-[11px] leading-snug text-muted">{describeEvent(event)}</p>
           </div>
         </motion.div>
       ))}

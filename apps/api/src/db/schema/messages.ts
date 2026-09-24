@@ -19,5 +19,7 @@ export const messages = pgTable('messages', {
   // [{id, filename, mime}] — images the user attached; the bytes live in
   // `artifacts` (kind='upload') so classification/ACL apply on every read.
   attachments: jsonb('attachments').notNull().default([]),
+  // documents | general | null — where an assistant answer came from.
+  source: text('source'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

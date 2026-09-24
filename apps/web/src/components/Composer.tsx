@@ -1,6 +1,5 @@
 import { useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from 'react';
 import type { ChatModelOption, MessageAttachment } from '../lib/api';
-import { Button } from './ui/Button';
 import { Icon } from './ui/Icon';
 
 export function Composer({
@@ -15,6 +14,8 @@ export function Composer({
   uploading = false,
   onAttach,
   onRemoveAttachment,
+  documents,
+  onDocumentsChange,
 }: {
   disabled: boolean;
   streaming?: boolean;
@@ -28,8 +29,11 @@ export function Composer({
   uploading?: boolean;
   onAttach?: (files: File[]) => void;
   onRemoveAttachment?: (id: string) => void;
+  documents?: 'auto' | 'on' | 'off';
+  onDocumentsChange?: (mode: 'auto' | 'on' | 'off') => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
   const [dragging, setDragging] = useState(false);
   const [value, setValue] = useState('');
 
@@ -37,6 +41,7 @@ export function Composer({
     if ((!value.trim() && attachments.length === 0) || disabled || streaming || uploading) return;
     onSend(value.trim() || 'Describe this image.');
     setValue('');
+    if (taRef.current) taRef.current.style.height = 'auto';
   }
 
   function handleSubmit(e: FormEvent) {
@@ -68,10 +73,19 @@ export function Composer({
     if (files.length > 0 && onAttach) onAttach(files);
   }
 
+  const chip =
+    'appearance-none rounded-full border border-line bg-canvas py-1.5 pl-3 pr-7 text-xs text-fg-2 outline-none transition-colors hover:border-accent-300 focus-visible:border-accent-400 disabled:opacity-50';
+  const canSend = !disabled && !streaming && !uploading && (value.trim() !== '' || attachments.length > 0);
   return (
-    <form onDragOver={(e) => { e.preventDefault(); if (onAttach) setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={handleDrop} onSubmit={handleSubmit} className={`flex flex-wrap items-end gap-2 rounded-[32px] border ${dragging ? 'border-accent-500 bg-accent-50' : 'border-line/60 bg-surface'} p-2.5 pl-5 shadow-card transition-[border-color,box-shadow] duration-200 focus-within:border-accent-400 focus-within:shadow-lift`}>
+    <form
+      onDragOver={(e) => { e.preventDefault(); if (onAttach) setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={handleDrop}
+      onSubmit={handleSubmit}
+      className={`flex flex-col gap-2 rounded-[28px] border ${dragging ? 'border-accent-500 bg-accent-50' : 'border-line/60 bg-surface'} px-4 pb-3 pt-3 shadow-card transition-[border-color,box-shadow] duration-200 focus-within:border-accent-400 focus-within:shadow-lift`}
+    >
       {(attachments.length > 0 || uploading) && (
-        <div className="flex w-full flex-wrap gap-2 pb-1 pr-2 pt-1">
+        <div className="flex w-full flex-wrap gap-2">
           {attachments.map((a) => (
             <span key={a.id} className="group relative">
               <img src={`/artifacts/${a.id}`} alt={a.filename} className="h-16 w-16 rounded-2xl object-cover shadow-card" />
@@ -94,68 +108,106 @@ export function Composer({
         </div>
       )}
       <textarea
+        ref={taRef}
         onPaste={handlePaste}
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => {
+          setValue(e.target.value);
+          e.target.style.height = 'auto';
+          e.target.style.height = `${Math.min(e.target.scrollHeight, 168)}px`;
+        }}
         onKeyDown={handleKeyDown}
         placeholder="Ask anything… (Shift+Enter for a new line)"
         disabled={disabled}
         rows={1}
-        className="min-w-0 flex-1 resize-none basis-48 bg-transparent px-1 py-2 text-[15px] outline-none disabled:opacity-50"
+        className="max-h-[168px] w-full resize-none bg-transparent px-1 py-1.5 text-[15px] leading-6 outline-none disabled:opacity-50"
       />
-      {onAttach && (
-        <>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            multiple
-            hidden
-            onChange={(e) => {
-              const files = [...(e.target.files ?? [])];
-              if (files.length > 0) onAttach(files);
-              e.target.value = '';
-            }}
-          />
+      <div className="flex flex-wrap items-center gap-2">
+        {onAttach && (
+          <>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              multiple
+              className="sr-only"
+              tabIndex={-1}
+              onChange={(e) => {
+                const files = [...(e.target.files ?? [])];
+                if (files.length > 0) onAttach(files);
+                e.target.value = '';
+              }}
+            />
+            <button
+              type="button"
+              aria-label="Attach an image"
+              title="Attach an image (PNG, JPEG or WebP). You can also paste or drop one."
+              disabled={disabled || uploading}
+              onClick={() => fileRef.current?.click()}
+              className="grid h-9 w-9 place-items-center rounded-full text-fg-2 transition-colors hover:bg-accent-100 hover:text-accent-700 disabled:opacity-50"
+            >
+              <Icon name="attach" />
+            </button>
+          </>
+        )}
+        {documents && onDocumentsChange && (
+          <div className="relative">
+            <select
+              value={documents}
+              onChange={(e) => onDocumentsChange(e.target.value as 'auto' | 'on' | 'off')}
+              aria-label="Use documents"
+              title="Auto: use documents when the question is about them, otherwise answer from general knowledge. Always: only answer from documents. Never: ignore documents in this chat."
+              className={chip}
+            >
+              <option value="auto">Documents: Auto</option>
+              <option value="on">Documents: Always</option>
+              <option value="off">Documents: Never</option>
+            </select>
+            <Icon name="arrowDown" className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted" />
+          </div>
+        )}
+        {models.length > 0 && onModelChange && (
+          <div className="relative min-w-0">
+            <select
+              value={modelId}
+              onChange={(e) => onModelChange(e.target.value)}
+              aria-label="Model"
+              title="Choose which model writes the answer. Fast is for plain chat; document, tool and multi-step answers use Quality."
+              className={`${chip} max-w-[15rem] truncate`}
+            >
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label} · {m.detail}
+                  {m.note ? ` (${m.note})` : ''}
+                </option>
+              ))}
+            </select>
+            <Icon name="arrowDown" className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted" />
+          </div>
+        )}
+        <span className="flex-1" />
+        {streaming && onStop ? (
           <button
             type="button"
-            aria-label="Attach an image"
-            title="Attach an image (PNG, JPEG or WebP). You can also paste or drop one."
-            disabled={disabled || streaming}
-            onClick={() => fileRef.current?.click()}
-            className="grid h-10 w-10 place-items-center rounded-full text-fg-2 transition-colors hover:bg-accent-100 hover:text-accent-700 disabled:opacity-50"
+            onClick={onStop}
+            aria-label="Stop generating"
+            title="Stop generating"
+            className="grid h-10 w-10 place-items-center rounded-full bg-danger-600 text-white transition-transform hover:scale-105 active:scale-95"
           >
-            <Icon name="attach" />
+            <Icon name="stop" className="h-4 w-4" />
           </button>
-        </>
-      )}
-      {models.length > 0 && onModelChange && (
-        <select
-          value={modelId}
-          onChange={(e) => onModelChange(e.target.value)}
-          disabled={streaming}
-          aria-label="Model"
-          title="Choose which model writes the answer. Fast is for plain chat; document, tool and multi-step answers use Quality."
-          className="rounded-full border border-line bg-canvas px-3 py-2 text-xs text-fg-2 disabled:opacity-50"
-        >
-          {models.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label} · {m.detail}
-              {m.note ? ` (${m.note})` : ''}
-            </option>
-          ))}
-        </select>
-      )}
-      {streaming && onStop && (
-        <Button type="button" variant="danger" onClick={onStop}>
-          <Icon name="stop" className="h-4 w-4" />
-          Stop
-        </Button>
-      )}
-      <Button type="submit" variant="primary" disabled={disabled || streaming || uploading || (!value.trim() && attachments.length === 0)}>
-        <Icon name="send" className="h-4 w-4" />
-        Send
-      </Button>
+        ) : (
+          <button
+            type="submit"
+            disabled={!canSend}
+            aria-label="Send"
+            title="Send (Enter)"
+            className="grid h-10 w-10 place-items-center rounded-full bg-accent-600 text-on-accent transition-all hover:scale-105 hover:bg-accent-700 active:scale-95 disabled:scale-100 disabled:opacity-40"
+          >
+            <Icon name="send" className="h-4 w-4" />
+          </button>
+        )}
+      </div>
     </form>
   );
 }

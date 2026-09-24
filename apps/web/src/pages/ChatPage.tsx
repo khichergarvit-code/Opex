@@ -22,7 +22,9 @@ import { AgentTimeline } from '../components/AgentTimeline';
 import { ArtifactsPanel, type DisplayArtifact } from '../components/ArtifactsPanel';
 import { ApprovalPrompt } from '../components/ApprovalPrompt';
 import { Card } from '../components/ui/Card';
-import { motion } from 'motion/react';
+import { Alert } from '../components/ui/Alert';
+import { AnimatePresence, motion } from 'motion/react';
+import { Icon } from '../components/ui/Icon';
 
 const STATUS_LABELS: Record<string, string> = {
   cold_start: 'Warming up the model',
@@ -74,6 +76,10 @@ export function ChatPage({
       return '';
     }
   });
+  const [documentMode, setDocumentMode] = useState<'auto' | 'on' | 'off'>('auto');
+  const [atBottom, setAtBottom] = useState(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const userMsgIdRef = useRef<string>('');
   const assistantIdRef = useRef<string>('');
   const abortRef = useRef<AbortController | null>(null);
   const skipLoadForRef = useRef<string | null>(null);
@@ -125,6 +131,7 @@ export function ChatPage({
     setStatus(null);
     setStreaming(false);
     setPendingImages([]);
+    setDocumentMode('auto');
   }
 
   function startNewChat() {
@@ -152,8 +159,9 @@ export function ChatPage({
         .then(({ conversation, messages: stored }) => {
           if (cancelled) return true;
           setProjectId(conversation.projectId);
+          setDocumentMode(conversation.documentMode ?? 'auto');
           const visible = stored.filter((m) => m.role !== 'system');
-          setMessages(visible.map((m) => ({ id: m.id, role: m.role as 'user' | 'assistant', content: m.content, citations: m.citations ?? [], attachments: m.attachments ?? [] })));
+          setMessages(visible.map((m) => ({ id: m.id, role: m.role as 'user' | 'assistant', content: m.content, citations: m.citations ?? [], attachments: m.attachments ?? [], source: m.source ?? null })));
           const last = visible[visible.length - 1];
           return !last || last.role === 'assistant';
         })
@@ -218,7 +226,7 @@ export function ChatPage({
   }
 
   async function handleAttach(files: File[]) {
-    if (!projectId || streaming) return;
+    if (!projectId) return;
     const allowed = files.filter((f) => ['image/png', 'image/jpeg', 'image/webp'].includes(f.type) && f.size <= 8 * 1024 * 1024);
     if (allowed.length < files.length) setStatus('Only PNG, JPEG or WebP images up to 8 MB can be attached.');
     const room = 4 - pendingImages.length;
@@ -237,18 +245,44 @@ export function ChatPage({
     }
   }
 
-  async function handleSend(content: string) {
+  function handleSend(content: string) {
+    return runTurn(content);
+  }
+
+  /** Edit: drop the message and everything after it, then re-run with the new text. */
+  function handleEdit(messageId: string, text: string) {
+    if (streaming) return;
+    const idx = messages.findIndex((m) => m.id === messageId);
+    if (idx < 0) return;
+    const original = messages[idx]!;
+    return runTurn(text, { replaceFromMessageId: messageId, keepBefore: idx, attachments: original.attachments });
+  }
+
+  function handleRegenerate(assistantMessageId: string) {
+    if (streaming) return;
+    const idx = messages.findIndex((m) => m.id === assistantMessageId);
+    const userMsg = messages[idx - 1];
+    if (idx < 1 || !userMsg || userMsg.role !== 'user') return;
+    return runTurn(userMsg.content, { replaceFromMessageId: userMsg.id, keepBefore: idx - 1, attachments: userMsg.attachments });
+  }
+
+  async function runTurn(
+    content: string,
+    replace?: { replaceFromMessageId: string; keepBefore: number; attachments?: MessageAttachment[] },
+  ) {
     if (!projectId) return;
     const convId = await ensureConversation();
-    const sentImages = pendingImages;
-    setPendingImages([]);
-    const userMsgId = crypto.randomUUID();
+    const sentImages = replace ? (replace.attachments ?? []) : pendingImages;
+    if (!replace) setPendingImages([]);
+    userMsgIdRef.current = crypto.randomUUID();
     assistantIdRef.current = crypto.randomUUID();
+    const userMsgId = userMsgIdRef.current;
     setMessages((prev) => [
-      ...prev,
+      ...(replace ? prev.slice(0, replace.keepBefore) : prev),
       { id: userMsgId, role: 'user', content, attachments: sentImages },
       { id: assistantIdRef.current, role: 'assistant', content: '', citations: [] },
     ]);
+    setAtBottom(true);
     setStreaming(true);
     setStatus(null);
     setTimelineEvents([]);
@@ -296,6 +330,12 @@ export function ChatPage({
           }
         },
         onProgress: (_phase, label) => setProgress(label),
+        onUserSaved: (serverId) => {
+          setMessages((prev) => prev.map((m) => (m.id === userMsgId ? { ...m, id: serverId } : m)));
+        },
+        onSource: (kind) => {
+          setMessages((prev) => prev.map((m) => (m.id === assistantIdRef.current ? { ...m, source: kind } : m)));
+        },
         onReplace: (text) => {
           setMessages((prev) => prev.map((m) => (m.id === assistantIdRef.current ? { ...m, content: text } : m)));
         },
@@ -340,11 +380,25 @@ export function ChatPage({
           setStatus(null);
           setProgress(null);
           stopElapsedTimer();
+          if (/model is not available/i.test(message)) {
+            try {
+              localStorage.removeItem('opex.chatModel');
+            } catch {
+              // ignore
+            }
+            fetchChatModels()
+              .then((list) => {
+                setChatModels(list);
+                setModelId((list.find((x) => x.isDefault) ?? list[0])?.id ?? '');
+              })
+              .catch(() => {});
+          }
         },
       },
       controller.signal,
       modelId || undefined,
       sentImages.map((a) => a.id),
+      { documents: documentMode, replaceFromMessageId: replace?.replaceFromMessageId },
     );
     // Aborted by the user clicking Stop — streamMessage resolves normally
     // (fetch-event-source's own abort path, not onError), so finalize here.
@@ -387,6 +441,11 @@ export function ChatPage({
       setPendingApproval(null);
     }
   }
+
+  // Follow the stream while the reader is at the bottom; leave them alone once they scroll up.
+  useEffect(() => {
+    if (atBottom && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages, atBottom]);
 
   const greetingName = user.email.split('@')[0] ?? user.email;
   const hour = new Date().getHours();
@@ -487,7 +546,8 @@ export function ChatPage({
                 <p className="mt-2 text-base text-muted">How can I help you today?</p>
               </div>
               <div className="w-full max-w-xl">
-                <Composer disabled={!projectId} onSend={handleSend} models={chatModels} modelId={modelId} onModelChange={changeModel} attachments={pendingImages} uploading={uploading} onAttach={handleAttach} onRemoveAttachment={(id) => setPendingImages((prev) => prev.filter((a) => a.id !== id))} />
+                {status && <Alert className="mb-2">{status}</Alert>}
+                <Composer disabled={!projectId} onSend={handleSend} models={chatModels} modelId={modelId} onModelChange={changeModel} attachments={pendingImages} uploading={uploading} onAttach={handleAttach} onRemoveAttachment={(id) => setPendingImages((prev) => prev.filter((a) => a.id !== id))} documents={documentMode} onDocumentsChange={setDocumentMode} />
                 {!projectId && projects.length === 0 && (
                   <p className="mt-2 text-center text-xs text-faint">
                     You're not a member of any project yet — ask an admin to add you to one.
@@ -515,8 +575,19 @@ export function ChatPage({
             </div>
           ) : (
             <>
-              <div className="flex-1 overflow-y-auto">
+              <div className="relative flex min-h-0 flex-1 flex-col">
+              <div
+                ref={scrollRef}
+                onScroll={(e) => {
+                  const el = e.currentTarget;
+                  setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
+                }}
+                className="flex-1 overflow-y-auto"
+              >
                 <MessageList
+                  busy={streaming}
+                  onEdit={handleEdit}
+                  onRegenerate={handleRegenerate}
                   pending={streaming && progress ? { label: progress, elapsedMs } : null}
                   messages={messages}
                   onOpenCitation={(c) => onOpenCitation(c.documentId, c.page, c.bbox)}
@@ -534,7 +605,24 @@ export function ChatPage({
                   />
                 )}
               </div>
+              <AnimatePresence>
+                {!atBottom && (
+                  <motion.button
+                    initial={{ opacity: 0, y: 8, scale: 0.9 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.9 }}
+                    onClick={() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })}
+                    aria-label="Scroll to latest message"
+                    title="Scroll to latest message"
+                    className="absolute bottom-3 left-1/2 grid h-10 w-10 -translate-x-1/2 place-items-center rounded-full border border-line bg-surface text-accent-700 shadow-lift"
+                  >
+                    <Icon name="arrowDown" />
+                  </motion.button>
+                )}
+              </AnimatePresence>
+              </div>
               <div className="mt-4">
+                {status && /upload|attach|image|vision/i.test(status) && <Alert className="mb-2">{status}</Alert>}
                 <Composer
                   disabled={!projectId || Boolean(pendingApproval)}
                   streaming={streaming}
@@ -547,6 +635,8 @@ export function ChatPage({
                   uploading={uploading}
                   onAttach={handleAttach}
                   onRemoveAttachment={(id) => setPendingImages((prev) => prev.filter((a) => a.id !== id))}
+                  documents={documentMode}
+                  onDocumentsChange={setDocumentMode}
                 />
               </div>
             </>
@@ -555,20 +645,20 @@ export function ChatPage({
 
         {showTimeline && (
           <div className="w-full shrink-0 overflow-y-auto md:w-80">
-            <Card>
-              <p className="mb-3 text-sm font-semibold text-fg">Activity Run</p>
+            <Card className="!p-3.5">
+              <p className="mb-2 text-sm font-semibold text-fg">Activity Run</p>
               <AgentTimeline events={timelineEvents} streaming={streaming} />
             </Card>
-            <Card className="mt-4">
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-faint">Current model</p>
+            <Card className="mt-2.5 !p-3.5">
+              <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-faint">Current model</p>
               {lastRoutedAgent ? (
                 <p className="text-sm text-fg">{lastRoutedAgent} agent</p>
               ) : (
                 <p className="text-sm text-faint">No agent routed yet</p>
               )}
             </Card>
-            <Card className="mt-4">
-              <p className="mb-2 text-sm font-semibold text-fg">Artifacts</p>
+            <Card className="mt-2.5 !p-3.5">
+              <p className="mb-1.5 text-sm font-semibold text-fg">Artifacts</p>
               <ArtifactsPanel artifacts={artifacts} />
             </Card>
           </div>

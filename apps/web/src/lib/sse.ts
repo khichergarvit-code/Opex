@@ -12,6 +12,8 @@ export interface StreamMessageHandlers {
   onProgress?: (phase: string, label: string) => void;
   /** Replaces the whole answer shown so far (clears a draft before a revision streams). */
   onReplace?: (text: string) => void;
+  onSource?: (kind: 'documents' | 'general') => void;
+  onUserSaved?: (messageId: string) => void;
   /** Fired for every event (including the ones above) — the timeline builds its log from this. */
   onEvent?: (event: SseEvent) => void;
 }
@@ -27,6 +29,7 @@ export async function streamMessage(
   signal?: AbortSignal,
   modelId?: string,
   attachmentIds?: string[],
+  options: { documents?: 'auto' | 'on' | 'off'; replaceFromMessageId?: string } = {},
 ): Promise<void> {
   await fetchEventSource(`/conversations/${conversationId}/messages`, {
     method: 'POST',
@@ -35,8 +38,19 @@ export async function streamMessage(
       'x-csrf-token': getCsrfToken() ?? '',
     },
     credentials: 'same-origin',
-    body: JSON.stringify({ content, modelId, attachmentIds }),
+    body: JSON.stringify({ content, modelId, attachmentIds, ...options }),
     signal,
+    async onopen(res) {
+      if (res.ok && (res.headers.get('content-type') ?? '').startsWith('text/event-stream')) return;
+      let message = `request failed (${res.status})`;
+      try {
+        const body = (await res.json()) as { error?: string };
+        if (body.error) message = body.error;
+      } catch {
+        // non-JSON body — keep the status text
+      }
+      throw new Error(message);
+    },
     onmessage(ev) {
       if (!ev.event) return;
       const data = JSON.parse(ev.data || '{}');
@@ -63,6 +77,12 @@ export async function streamMessage(
           break;
         case 'replace':
           handlers.onReplace?.(event.data.text);
+          break;
+        case 'source':
+          handlers.onSource?.(event.data.kind);
+          break;
+        case 'user_saved':
+          handlers.onUserSaved?.(event.data.messageId);
           break;
       }
     },

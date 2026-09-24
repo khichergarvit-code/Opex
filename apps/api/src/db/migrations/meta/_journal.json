@@ -78,6 +78,13 @@
       "when": 1790265849616,
       "tag": "0010_demonic_patriot",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790269652700,
+      "tag": "0011_striped_harpoon",
+      "breakpoints": true
     }
   ]
 }

@@ -15,6 +15,8 @@ export const conversations = pgTable('conversations', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   title: text('title'),
+  // auto | on | off — whether this chat may use the project's documents.
+  documentMode: text('document_mode').notNull().default('auto'),
   // Working memory's rolling summary (A3) — folded from older turns once
   // history exceeds the working-memory budget threshold.
   workingSummary: text('working_summary'),

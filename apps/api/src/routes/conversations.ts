@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, sql } from 'drizzle-orm';
 import { Router, type Response } from 'express';
 import type { CitationEvent, ProgressEvent, SseEvent } from '@opex/shared';
 import { createConversationRequestSchema, postMessageRequestSchema } from '@opex/shared';
@@ -20,9 +20,12 @@ import { answerWithVerification } from '../orchestrator/reviseLoop.js';
 import { planTask } from '../orchestrator/planner.js';
 import { runPlan } from '../orchestrator/scheduler.js';
 import { listChatModels } from './models.js';
+import { dropRefusalTurns } from './dropRefusalTurns.js';
 import { loadAttachments } from './attachments.js';
+import type { AuditWriter } from '../audit/writeAudit.js';
 import { buildDocQaPrompt, extractCitedMarkers, projectHasReadyDocuments } from './docQa.js';
 
+const GENERAL_FALLBACK_PROMPT_PATH = new URL('../prompts/general-fallback.md', import.meta.url);
 const CHAT_SYSTEM_PROMPT_PATH = new URL('../prompts/chat-system.md', import.meta.url);
 const VISION_SYSTEM_PROMPT_PATH = new URL('../prompts/vision-system.md', import.meta.url);
 
@@ -65,6 +68,7 @@ export function createConversationsRouter(
   gateway: ModelGateway,
   spanWriter: SpanWriter,
   env: Pick<Env, 'DATA_DIR' | 'SANDBOX_RUNNER_URL' | 'SANDBOX_SHARED_SECRET'>,
+  auditWriter?: AuditWriter,
 ): Router {
   const router = Router();
 
@@ -170,7 +174,7 @@ export function createConversationsRouter(
       .where(eq(conversations.id, req.params.id as string))
       .limit(1);
     const conversation = rows[0];
-    if (!conversation) {
+    if (!conversation || conversation.userId !== user.id) {
       res.status(404).json({ error: 'not found' });
       return;
     }
@@ -204,16 +208,46 @@ export function createConversationsRouter(
       return;
     }
 
+    // Edit / regenerate: drop the chosen user message and everything after it.
+    if (parsed.data.replaceFromMessageId) {
+      const [target] = await db
+        .select()
+        .from(messages)
+        .where(and(eq(messages.id, parsed.data.replaceFromMessageId), eq(messages.conversationId, conversation.id)))
+        .limit(1);
+      if (!target || target.role !== 'user') {
+        res.status(404).json({ error: 'message to replace not found' });
+        return;
+      }
+      const removed = await db
+        .delete(messages)
+        .where(and(eq(messages.conversationId, conversation.id), gte(messages.createdAt, target.createdAt)))
+        .returning({ id: messages.id });
+      // The rolling summary may have folded the deleted turns — recompute lazily.
+      await db.update(conversations).set({ workingSummary: null }).where(eq(conversations.id, conversation.id));
+      await auditWriter?.writeAudit({
+        actorId: user.id,
+        action: 'message.replace',
+        resource: conversation.id,
+        details: { fromMessageId: target.id, removedCount: removed.length },
+      });
+    }
+
+    const documentMode = parsed.data.documents ?? (conversation.documentMode as 'auto' | 'on' | 'off');
+    if (documentMode !== conversation.documentMode) {
+      await db.update(conversations).set({ documentMode }).where(eq(conversations.id, conversation.id));
+    }
+
     const [trace] = await db.insert(traces).values({ userId: user.id, conversationId: conversation.id }).returning();
     if (!trace) throw new Error('failed to open trace');
 
-    await db.insert(messages).values({
+    const [savedUserMessage] = await db.insert(messages).values({
       conversationId: conversation.id,
       role: 'user',
       content: parsed.data.content,
       traceId: trace.id,
       attachments: attachments.map(({ id, filename, mime }) => ({ id, filename, mime })),
-    });
+    }).returning({ id: messages.id });
     await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, conversation.id));
 
     res.writeHead(200, {
@@ -234,6 +268,7 @@ export function createConversationsRouter(
     });
     const progress = (phase: ProgressEvent['data']['phase'], label: string) =>
       sendEvent(res, { type: 'progress', data: { phase, label } });
+    if (savedUserMessage) sendEvent(res, { type: 'user_saved', data: { messageId: savedUserMessage.id } });
     progress('routing', 'Understanding your question…');
 
     const history = await db
@@ -251,14 +286,27 @@ export function createConversationsRouter(
 
     const hasReadyDocuments = await projectHasReadyDocuments(db, conversation.projectId);
 
-    const routeDecision = await routeMessage({
-      message: parsed.data.content,
-      attachments: attachments.map(({ id, filename, mime }) => ({ id, filename, mime })),
-      hasReadyDocuments,
-      gateway,
-      user,
-      traceId: trace.id,
-    });
+    let routeDecision =
+      documentMode === 'on' && hasReadyDocuments && attachments.length === 0
+        ? {
+            taskType: 'doc_qa' as const,
+            complexity: 'simple' as const,
+            agent: 'doc_qa' as const,
+            needs: { documents: true, memory: [] as Array<'semantic' | 'episodic'>, tools: ['doc_search'] },
+            reason: 'you chose to always use your documents',
+          }
+        : await routeMessage({
+            message: parsed.data.content,
+            attachments: attachments.map(({ id, filename, mime }) => ({ id, filename, mime })),
+            // "Never use documents" hides them from the router entirely.
+            hasReadyDocuments: documentMode === 'off' ? false : hasReadyDocuments,
+            gateway,
+            user,
+            traceId: trace.id,
+          });
+    if (documentMode === 'off' && routeDecision.agent === 'doc_qa') {
+      routeDecision = { ...routeDecision, taskType: 'chat', agent: 'general', complexity: 'simple', reason: 'documents are turned off for this chat' };
+    }
     sendEvent(res, {
       type: 'route',
       data: {
@@ -282,7 +330,7 @@ export function createConversationsRouter(
         .set({ workingSummary: memoryResult.summary })
         .where(eq(conversations.id, conversation.id));
     }
-    const memoryTurns = toChatTurns(memoryResult.summary, memoryResult.recentTurns);
+    const memoryTurns = dropRefusalTurns(toChatTurns(memoryResult.summary, memoryResult.recentTurns));
 
     // B2 long-term memory: injected as labeled blocks in the user turn
     // (never the system prompt — invariant #5), regardless of which agent
@@ -304,6 +352,7 @@ export function createConversationsRouter(
     const userContent = memoryPrefix ? `${memoryPrefix}\n\n${parsed.data.content}` : parsed.data.content;
 
     let assistantContent = '';
+    let answerSource: 'documents' | 'general' | null = null;
     let traceStatus: 'ok' | 'error' = 'ok';
     let failureMessage = '';
     let citations: Array<{ marker: number; documentId: string; filename: string; page: number; bbox: unknown }> = [];
@@ -409,10 +458,38 @@ export function createConversationsRouter(
         question: parsed.data.content,
       });
 
-      if (docQa.noSupportAnswer) {
+      if (docQa.noSupportAnswer && documentMode === 'on') {
+        // The user insisted on documents only: keep the honest refusal.
         assistantContent = docQa.noSupportAnswer;
+        answerSource = 'documents';
         sendEvent(res, { type: 'token', data: { delta: assistantContent } });
+      } else if (docQa.noSupportAnswer) {
+        // Nothing in the documents matched — most likely a general question the router
+        // over-eagerly sent here. Answer from the model's own knowledge, and say so.
+        answerSource = 'general';
+        sendEvent(res, { type: 'source', data: { kind: 'general' } });
+        progress('generating', 'No match in your documents. Answering from general knowledge…');
+        const chatPrompt = await readFile(GENERAL_FALLBACK_PROMPT_PATH, 'utf8');
+        try {
+          for await (const delta of gateway.chatStream({
+            role: 'general',
+            modelId: chosenModelId,
+            signal: abort.signal,
+            messages: [{ role: 'system', content: chatPrompt }, ...memoryTurns, { role: 'user', content: userContent }],
+            user,
+            traceId: trace.id,
+          })) {
+            assistantContent += delta;
+            sendEvent(res, { type: 'token', data: { delta } });
+          }
+        } catch (err) {
+          traceStatus = 'error';
+          failureMessage = describeModelError(err);
+          sendEvent(res, { type: 'error', data: { message: failureMessage } });
+        }
       } else {
+        answerSource = 'documents';
+        sendEvent(res, { type: 'source', data: { kind: 'documents' } });
         // Memory blocks prepend to the augmented user turn itself, not
         // docQa's `question` param — that stays the bare question since
         // it also drives the retrieval query (buildDocQaPrompt uses it
@@ -614,6 +691,7 @@ export function createConversationsRouter(
             content: storedContent,
             traceId: trace.id,
             citations,
+            source: answerSource,
           })
           .returning();
         assistantMessageId = assistantRow?.id ?? '';

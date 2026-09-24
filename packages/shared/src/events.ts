@@ -170,6 +170,20 @@ export const replaceEventSchema = z.object({
 });
 export type ReplaceEvent = z.infer<typeof replaceEventSchema>;
 
+/** Where the answer came from — lets the UI say plainly when it is NOT grounded in the user's documents. */
+export const sourceEventSchema = z.object({
+  type: z.literal('source'),
+  data: z.object({ kind: z.enum(['documents', 'general']) }),
+});
+export type SourceEvent = z.infer<typeof sourceEventSchema>;
+
+/** The server id of the user message just saved (needed to edit it without a reload). */
+export const userSavedEventSchema = z.object({
+  type: z.literal('user_saved'),
+  data: z.object({ messageId: z.string().uuid() }),
+});
+export type UserSavedEvent = z.infer<typeof userSavedEventSchema>;
+
 export const sseEventSchema = z.discriminatedUnion('type', [
   statusEventSchema,
   tokenEventSchema,
@@ -186,6 +200,8 @@ export const sseEventSchema = z.discriminatedUnion('type', [
   stepStartEventSchema,
   progressEventSchema,
   replaceEventSchema,
+  sourceEventSchema,
+  userSavedEventSchema,
 ]);
 
 export type SseEvent = z.infer<typeof sseEventSchema>;

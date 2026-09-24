@@ -10,6 +10,8 @@ coverage/
 
 # model weights are large binary artifacts, never committed
 models/*.gguf
+models/*.pdl
+models/*.pdl.done
 models/*.bin
 # Docling's HF layout/table-structure model cache — host-fetched by
 # scripts/fetch-models.sh, same category as the GGUF weights above.
