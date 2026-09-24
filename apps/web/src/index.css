@@ -1,37 +1,140 @@
 @import 'tailwindcss';
-@import '@fontsource-variable/inter';
+@import '@fontsource-variable/roboto-flex';
 
-/* Design tokens (Tailwind v4 CSS-first theming). accent = the indigo/violet
-   palette from the reference design; success/danger/warning back the
-   StatusPill component used for admin status columns and the confidence
-   badge alike. */
+/* Material Tonal · Teal — OpeX's design tokens (Tailwind v4 CSS-first).
+   Every colour utility in the app (bg-canvas, text-fg, border-line,
+   bg-accent-500 …) resolves to these, so re-theming is a change to this
+   block only. The font is an npm package bundled by Vite (no CDN). */
 @theme {
-  --font-sans: 'Inter Variable', system-ui, sans-serif;
+  --font-sans: 'Roboto Flex Variable', system-ui, sans-serif;
 
-  --color-accent-50: #f1effe;
-  --color-accent-100: #e4e0fd;
-  --color-accent-200: #cac1fb;
-  --color-accent-300: #b7aefa;
-  --color-accent-400: #8a7bf0;
-  --color-accent-500: #5b4fe9;
-  --color-accent-600: #4a3fd1;
-  --color-accent-700: #3b32a8;
+  /* Surfaces: tonal elevation instead of heavy borders. */
+  --color-canvas: #f5faf9;
+  --color-side: #eef5f4;
+  --color-surface: #e9f0ef;
+  --color-raised: #dde6e5;
+  --color-line: #cbd6d5;
 
-  --color-success-50: #f0fdf4;
-  --color-success-600: #16a34a;
-  --color-success-700: #15803d;
+  --color-fg: #191c1c;
+  --color-fg-2: #3f4948;
+  --color-muted: #566261;
+  --color-faint: #6b7776;
+  --color-on-accent: #ffffff;
 
-  --color-danger-50: #fef2f2;
-  --color-danger-600: #dc2626;
-  --color-danger-700: #b91c1c;
+  /* Teal. 50–200 are tonal containers, 500 is the primary, 600–700 are the
+     pressed/text shades. */
+  --color-accent-50: #e2f3f2;
+  --color-accent-100: #cde8e7;
+  --color-accent-200: #a9d8d7;
+  --color-accent-300: #6fb8b7;
+  --color-accent-400: #2f9090;
+  --color-accent-500: #006a6a;
+  --color-accent-600: #005757;
+  --color-accent-700: #004a4a;
 
-  --color-warning-50: #fffbeb;
-  --color-warning-600: #d97706;
-  --color-warning-700: #b45309;
+  --color-success-50: #ddf3e4;
+  --color-success-600: #1b6c3a;
+  --color-success-700: #0f5228;
 
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --color-danger-50: #ffdad6;
+  --color-danger-600: #ba1a1a;
+  --color-danger-700: #93000a;
+
+  --color-warning-50: #ffe8c7;
+  --color-warning-600: #8b5000;
+  --color-warning-700: #6b3d00;
+
+  --shadow-card: 0 1px 2px rgba(25, 28, 28, 0.08), 0 1px 3px rgba(25, 28, 28, 0.05);
+  --shadow-lift: 0 6px 16px -6px rgba(0, 70, 70, 0.28), 0 2px 4px rgba(25, 28, 28, 0.08);
 }
 
-body {
-  font-family: var(--font-sans);
+@layer base {
+  html {
+    color-scheme: light;
+    background-color: var(--color-canvas);
+  }
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--color-canvas);
+    color: var(--color-fg);
+    -webkit-font-smoothing: antialiased;
+  }
+  input:not([type='checkbox']):not([type='radio']):not([type='file']),
+  select,
+  textarea {
+    background-color: var(--color-canvas);
+    color: var(--color-fg);
+    transition:
+      border-color 0.15s,
+      box-shadow 0.15s;
+  }
+  input:not([type='checkbox']):not([type='radio']):not([type='file']):focus,
+  select:focus,
+  textarea:focus {
+    outline: none;
+    border-color: var(--color-accent-500);
+    box-shadow: 0 0 0 3px var(--color-accent-100);
+  }
+  ::placeholder {
+    color: var(--color-faint);
+  }
+  ::selection {
+    background-color: var(--color-accent-200);
+    color: var(--color-fg);
+  }
+  * {
+    scrollbar-color: #b7c4c3 transparent;
+  }
+}
+
+/* Material ripple — a span appended on pointer-down by lib/ripple.ts. */
+.ripple-wave {
+  position: absolute;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity: 0.22;
+  pointer-events: none;
+  transform: scale(0);
+  animation: ripple 0.6s ease-out forwards;
+}
+@keyframes ripple {
+  to {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--color-surface) 25%, var(--color-raised) 37%, var(--color-surface) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes dot-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  40% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ripple-wave,
+  .skeleton,
+  .typing-dot {
+    animation: none;
+  }
 }

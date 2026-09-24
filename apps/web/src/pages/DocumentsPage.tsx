@@ -2,11 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import type { ApiDocument, Classification, Project } from '@opex/shared';
 import { ApiError, createAccessRequest, fetchDocuments, uploadDocument } from '../lib/api';
 import { Button } from '../components/ui/Button';
+import { motion } from 'motion/react';
 import { Card } from '../components/ui/Card';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { StatusPill, type PillTone } from '../components/ui/Badge';
 import { ClassificationBanner } from '../components/ui/ClassificationBanner';
+import { Skeleton } from '../components/ui/Skeleton';
+import { Alert } from '../components/ui/Alert';
 
 const CLASSIFICATION_LABELS = ['Public', 'Internal', 'Confidential', 'Restricted'];
 const CLASSIFICATION_TONES: PillTone[] = ['neutral', 'info', 'warning', 'danger'];
@@ -43,7 +46,7 @@ function DocumentCard({ doc, onOpen }: { doc: ApiDocument; onOpen: (id: string) 
         <button
           onClick={() => onOpen(doc.id)}
           disabled={live.status !== 'ready'}
-          className="text-left text-sm font-medium text-gray-900 hover:text-accent-600 disabled:cursor-default disabled:text-gray-400"
+          className="text-left text-sm font-medium text-fg hover:text-accent-600 disabled:cursor-default disabled:text-faint"
         >
           {live.filename}
         </button>
@@ -51,7 +54,7 @@ function DocumentCard({ doc, onOpen }: { doc: ApiDocument; onOpen: (id: string) 
           {CLASSIFICATION_LABELS[live.classification] ?? 'Unknown'}
         </StatusPill>
       </div>
-      <div className="mt-2 flex items-center gap-2 text-xs text-gray-400">
+      <div className="mt-2 flex items-center gap-2 text-xs text-faint">
         <StatusPill tone={STATUS_TONES[live.status]}>{live.status}</StatusPill>
         {live.status === 'processing' && live.pageCount ? (
           <span>
@@ -99,7 +102,7 @@ function RequestAccessButton({ documentId }: { documentId: string }) {
         placeholder="reason"
         value={reason}
         onChange={(e) => setReason(e.target.value)}
-        className="w-36 rounded-lg border border-gray-200 px-2 py-1 text-xs"
+        className="w-36 rounded-lg border border-line px-2 py-1 text-xs"
       />
       <Button size="sm" variant="primary" onClick={submit}>
         Send
@@ -170,21 +173,29 @@ export function DocumentsPage({
               disabled={uploading}
               className="text-sm"
             />
-            {uploading && <span className="ml-2 text-sm text-gray-400">Uploading…</span>}
+            {uploading && <span className="ml-2 text-sm text-faint">Uploading…</span>}
           </label>
         }
       />
 
-      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
+      {error && <Alert>{error}</Alert>}
 
       {loading ? (
-        <p className="text-sm text-gray-400">Loading…</p>
+        <Skeleton className="p-2" />
       ) : docs.length === 0 ? (
         error ? null : <EmptyState title="No documents yet" description="Upload a document to get started." />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {docs.map((doc) => (
-            <DocumentCard key={doc.id} doc={doc} onOpen={onOpenDocument} />
+          {docs.map((doc, i) => (
+            <motion.div
+              key={doc.id}
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: Math.min(i, 10) * 0.05, duration: 0.3, ease: [0.2, 0, 0, 1] }}
+              whileHover={{ y: -3 }}
+            >
+              <DocumentCard doc={doc} onOpen={onOpenDocument} />
+            </motion.div>
           ))}
         </div>
       )}

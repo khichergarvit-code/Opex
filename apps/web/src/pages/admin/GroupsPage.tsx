@@ -12,6 +12,8 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { Skeleton } from '../../components/ui/Skeleton';
+import { Alert } from '../../components/ui/Alert';
 
 export function GroupsPage({ onBack: _onBack }: { onBack: () => void }) {
   const [groups, setGroups] = useState<ApiGroup[]>([]);
@@ -72,7 +74,7 @@ export function GroupsPage({ onBack: _onBack }: { onBack: () => void }) {
   return (
     <div>
       <PageHeader title="Groups" description="Group membership drives document ACLs." />
-      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
+      {error && <Alert>{error}</Alert>}
 
       <Card className="mb-4">
         <form onSubmit={handleCreate} className="flex gap-2">
@@ -81,7 +83,7 @@ export function GroupsPage({ onBack: _onBack }: { onBack: () => void }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
-            className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm"
+            className="rounded-lg border border-line px-3 py-1.5 text-sm"
           />
           <Button type="submit" variant="primary">
             Create group
@@ -90,14 +92,14 @@ export function GroupsPage({ onBack: _onBack }: { onBack: () => void }) {
       </Card>
 
       {groupsLoading ? (
-        <p className="text-sm text-gray-400">Loading…</p>
+        <Skeleton className="p-2" />
       ) : groups.length === 0 ? (
         error ? null : <EmptyState title="No groups yet" />
       ) : (
         <div className="flex flex-col gap-3">
           {groups.map((g) => (
             <Card key={g.id}>
-              <button onClick={() => setExpanded(expanded === g.id ? null : g.id)} className="text-sm font-medium text-gray-900">
+              <button onClick={() => setExpanded(expanded === g.id ? null : g.id)} className="text-sm font-medium text-fg">
                 {g.name} ({g.memberIds.length} members)
               </button>
               {expanded === g.id && (
@@ -116,7 +118,7 @@ export function GroupsPage({ onBack: _onBack }: { onBack: () => void }) {
                     <select
                       value={addUserId}
                       onChange={(e) => setAddUserId(e.target.value)}
-                      className="rounded-lg border border-gray-200 px-2 py-1 text-sm"
+                      className="rounded-lg border border-line px-2 py-1 text-sm"
                     >
                       <option value="">select user…</option>
                       {users.map((u) => (

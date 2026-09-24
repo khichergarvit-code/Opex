@@ -65,7 +65,7 @@ export function DocumentViewerPage({ target, onBack }: { target: ViewerTarget; o
         <Button variant="ghost" onClick={onBack} className="mb-3">
           ← Back
         </Button>
-        {doc && <h2 className="text-lg font-semibold text-gray-900">{doc.filename}</h2>}
+        {doc && <h2 className="text-lg font-semibold text-fg">{doc.filename}</h2>}
         {error && <p className="text-sm text-danger-600">{error}</p>}
 
         {doc && doc.pageCount && (
@@ -73,7 +73,7 @@ export function DocumentViewerPage({ target, onBack }: { target: ViewerTarget; o
             <Button size="sm" disabled={pageNumber <= 1} onClick={() => setPageNumber((p) => p - 1)}>
               Prev
             </Button>
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-muted">
               Page {pageNumber} / {doc.pageCount}
             </span>
             <Button size="sm" disabled={pageNumber >= doc.pageCount} onClick={() => setPageNumber((p) => p + 1)}>
@@ -82,7 +82,7 @@ export function DocumentViewerPage({ target, onBack }: { target: ViewerTarget; o
           </div>
         )}
 
-        <div className="relative inline-block rounded-xl border border-gray-100 shadow-card">
+        <div className="relative inline-block rounded-xl border border-line shadow-card">
           <canvas ref={canvasRef} />
           {highlightStyle && <div style={highlightStyle} />}
         </div>

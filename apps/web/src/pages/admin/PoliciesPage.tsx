@@ -4,6 +4,7 @@ import { ApiError, fetchAdminUsers, request } from '../../lib/api';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
+import { Alert } from '../../components/ui/Alert';
 
 interface AdminPolicyRow {
   id: string;
@@ -69,19 +70,19 @@ export function PoliciesPage({ onBack: _onBack }: { onBack: () => void }) {
   return (
     <div>
       <PageHeader title="Policies" description="Editable policy rules, plus a 'what can this user do' preview." />
-      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
+      {error && <Alert>{error}</Alert>}
 
       <div className="flex flex-col gap-3">
         {rows.map((r) => (
           <Card key={r.id}>
-            <p className="font-medium text-gray-900">{r.name}</p>
+            <p className="font-medium text-fg">{r.name}</p>
             {editingId === r.id ? (
               <div className="mt-2">
                 <textarea
                   value={rulesText}
                   onChange={(e) => setRulesText(e.target.value)}
                   rows={12}
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2 font-mono text-xs"
+                  className="w-full rounded-lg border border-line bg-canvas p-2 font-mono text-xs"
                 />
                 <div className="mt-2 flex gap-2">
                   <Button variant="primary" size="sm" onClick={save}>
@@ -94,7 +95,7 @@ export function PoliciesPage({ onBack: _onBack }: { onBack: () => void }) {
               </div>
             ) : (
               <div className="mt-2">
-                <pre className="overflow-x-auto rounded-lg bg-gray-50 p-2 text-xs">{JSON.stringify(r.rules, null, 2)}</pre>
+                <pre className="overflow-x-auto rounded-lg bg-canvas p-2 text-xs">{JSON.stringify(r.rules, null, 2)}</pre>
                 <Button size="sm" className="mt-2" onClick={() => startEdit(r)}>
                   Edit
                 </Button>
@@ -105,12 +106,12 @@ export function PoliciesPage({ onBack: _onBack }: { onBack: () => void }) {
       </div>
 
       <Card className="mt-6">
-        <h3 className="mb-3 text-sm font-semibold text-gray-900">Preview — "what can this user do"</h3>
+        <h3 className="mb-3 text-sm font-semibold text-fg">Preview — "what can this user do"</h3>
         <div className="flex flex-wrap gap-2">
           <select
             value={previewUserId}
             onChange={(e) => setPreviewUserId(e.target.value)}
-            className="rounded-lg border border-gray-200 px-2 py-1 text-sm"
+            className="rounded-lg border border-line px-2 py-1 text-sm"
           >
             <option value="">select user…</option>
             {users.map((u) => (
@@ -123,19 +124,19 @@ export function PoliciesPage({ onBack: _onBack }: { onBack: () => void }) {
             value={previewAction}
             onChange={(e) => setPreviewAction(e.target.value)}
             placeholder="action"
-            className="rounded-lg border border-gray-200 px-2 py-1 text-sm"
+            className="rounded-lg border border-line px-2 py-1 text-sm"
           />
           <input
             value={previewCtx}
             onChange={(e) => setPreviewCtx(e.target.value)}
             placeholder="ctx JSON"
-            className="w-64 rounded-lg border border-gray-200 px-2 py-1 text-sm"
+            className="w-64 rounded-lg border border-line px-2 py-1 text-sm"
           />
           <Button variant="primary" size="sm" onClick={runPreview}>
             Preview
           </Button>
         </div>
-        {previewResult && <pre className="mt-3 rounded-lg bg-gray-50 p-2 text-xs">{previewResult}</pre>}
+        {previewResult && <pre className="mt-3 rounded-lg bg-canvas p-2 text-xs">{previewResult}</pre>}
       </Card>
     </div>
   );

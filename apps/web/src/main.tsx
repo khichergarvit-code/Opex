@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { MotionConfig } from 'motion/react';
 import './index.css';
 import { App } from './App';
 
@@ -8,6 +9,9 @@ if (!container) throw new Error('missing #root element');
 
 createRoot(container).render(
   <StrictMode>
-    <App />
+    {/* reducedMotion="user": every animation respects the OS "reduce motion" setting. */}
+    <MotionConfig reducedMotion="user">
+      <App />
+    </MotionConfig>
   </StrictMode>,
 );

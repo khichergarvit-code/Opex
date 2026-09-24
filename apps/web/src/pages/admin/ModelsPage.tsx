@@ -5,6 +5,7 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { StatusPill } from '../../components/ui/Badge';
 import { DataTable } from '../../components/ui/DataTable';
+import { Alert } from '../../components/ui/Alert';
 
 interface AdminModelRow {
   id: string;
@@ -46,7 +47,7 @@ export function ModelsPage({ onBack: _onBack }: { onBack: () => void }) {
   return (
     <div>
       <PageHeader title="Models and tools" description="Status, VRAM, license and origin, and an enable toggle." />
-      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
+      {error && <Alert>{error}</Alert>}
 
       <Card>
         <DataTable

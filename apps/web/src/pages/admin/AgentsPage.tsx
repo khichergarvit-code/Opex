@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { StatusPill } from '../../components/ui/Badge';
+import { Alert } from '../../components/ui/Alert';
 
 interface AdminAgentRow {
   id: string;
@@ -87,12 +88,12 @@ export function AgentsPage({ onBack: _onBack }: { onBack: () => void }) {
   return (
     <div>
       <PageHeader title="Agents" description="Prompt versions, a diff view, and a test chat." />
-      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
+      {error && <Alert>{error}</Alert>}
 
       <div className="flex flex-col gap-3">
         {[...byName.entries()].map(([agentName, versions]) => (
           <Card key={agentName}>
-            <p className="mb-2 font-medium text-gray-900">{agentName}</p>
+            <p className="mb-2 font-medium text-fg">{agentName}</p>
             <ul className="flex flex-col gap-1.5 text-sm">
               {versions.map((v) => (
                 <li key={v.id} className="flex flex-wrap items-center gap-2">
@@ -117,53 +118,53 @@ export function AgentsPage({ onBack: _onBack }: { onBack: () => void }) {
       </div>
 
       <Card className="mt-6">
-        <h3 className="mb-3 text-sm font-semibold text-gray-900">Diff</h3>
+        <h3 className="mb-3 text-sm font-semibold text-fg">Diff</h3>
         <div className="flex gap-3">
-          <pre className="flex-1 overflow-x-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-2 text-xs">{diffA}</pre>
-          <pre className="flex-1 overflow-x-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-2 text-xs">{diffB}</pre>
+          <pre className="flex-1 overflow-x-auto whitespace-pre-wrap rounded-lg bg-canvas p-2 text-xs">{diffA}</pre>
+          <pre className="flex-1 overflow-x-auto whitespace-pre-wrap rounded-lg bg-canvas p-2 text-xs">{diffB}</pre>
         </div>
       </Card>
 
       <Card className="mt-6">
-        <h3 className="mb-3 text-sm font-semibold text-gray-900">Test chat</h3>
+        <h3 className="mb-3 text-sm font-semibold text-fg">Test chat</h3>
         <div className="flex gap-2">
           <input
             placeholder="agent id"
             value={testAgentId}
             onChange={(e) => setTestAgentId(e.target.value)}
-            className="w-72 rounded-lg border border-gray-200 px-2 py-1 text-sm"
+            className="w-72 rounded-lg border border-line px-2 py-1 text-sm"
           />
           <input
             placeholder="message"
             value={testMessage}
             onChange={(e) => setTestMessage(e.target.value)}
-            className="flex-1 rounded-lg border border-gray-200 px-2 py-1 text-sm"
+            className="flex-1 rounded-lg border border-line px-2 py-1 text-sm"
           />
           <Button variant="primary" size="sm" onClick={runTestChat}>
             Run
           </Button>
         </div>
-        {testResult && <p className="mt-3 rounded-lg bg-gray-50 p-2 text-sm">{testResult}</p>}
+        {testResult && <p className="mt-3 rounded-lg bg-canvas p-2 text-sm">{testResult}</p>}
       </Card>
 
       <Card className="mt-6 max-w-lg">
-        <h3 className="mb-3 text-sm font-semibold text-gray-900">New version</h3>
+        <h3 className="mb-3 text-sm font-semibold text-fg">New version</h3>
         <form onSubmit={createVersion} className="flex flex-col gap-2">
           <input
             placeholder="agent name (e.g. doc_qa)"
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
-            className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm"
+            className="rounded-lg border border-line px-2 py-1.5 text-sm"
           />
           <input
             placeholder="description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             required
-            className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm"
+            className="rounded-lg border border-line px-2 py-1.5 text-sm"
           />
-          <select value={modelRole} onChange={(e) => setModelRole(e.target.value)} className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm">
+          <select value={modelRole} onChange={(e) => setModelRole(e.target.value)} className="rounded-lg border border-line px-2 py-1.5 text-sm">
             <option value="general">general</option>
             <option value="router">router</option>
             <option value="coder">coder</option>
@@ -175,7 +176,7 @@ export function AgentsPage({ onBack: _onBack }: { onBack: () => void }) {
             onChange={(e) => setPromptContent(e.target.value)}
             rows={6}
             required
-            className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm"
+            className="rounded-lg border border-line px-2 py-1.5 text-sm"
           />
           <Button type="submit" variant="primary">
             Create new version

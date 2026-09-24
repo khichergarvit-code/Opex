@@ -1,29 +1,31 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import type { MeResponse } from '@opex/shared';
 import { Avatar } from './ui/Avatar';
-import { Button } from './ui/Button';
+import { Icon, type IconName } from './ui/Icon';
+import { ripple } from '../lib/ripple';
 import { fetchConversations, type ConversationSummary } from '../lib/api';
 import { navigate, useRoute } from '../lib/router';
 import { SidebarNav, SidebarNavItem, SidebarSection } from './ui/SidebarNav';
 
-const AI_TOOLS_SECTION: Array<{ key: string; label: string }> = [
-  { key: 'models', label: 'Models' },
-  { key: 'agents', label: 'Agents' },
-  { key: 'policies', label: 'Policies' },
+const AI_TOOLS_SECTION: Array<{ key: string; label: string; icon: IconName }> = [
+  { key: 'models', label: 'Models', icon: 'layers' },
+  { key: 'agents', label: 'Agents', icon: 'bot' },
+  { key: 'policies', label: 'Policies', icon: 'shield' },
 ];
 
-const ADMIN_SECTION: Array<{ key: string; label: string }> = [
-  { key: 'users', label: 'Users' },
-  { key: 'groups', label: 'Groups' },
-  { key: 'access-requests', label: 'Access requests' },
-  { key: 'approvals', label: 'Approvals' },
-  { key: 'audit-log', label: 'Audit log' },
-  { key: 'traces', label: 'Traces' },
-  { key: 'usage', label: 'Usage' },
-  { key: 'feedback', label: 'Feedback' },
-  { key: 'system', label: 'System' },
-  { key: 'memory', label: 'Memory' },
-  { key: 'conversations', label: 'Conversations' },
+const ADMIN_SECTION: Array<{ key: string; label: string; icon: IconName }> = [
+  { key: 'users', label: 'Users', icon: 'users' },
+  { key: 'groups', label: 'Groups', icon: 'users' },
+  { key: 'access-requests', label: 'Access requests', icon: 'inbox' },
+  { key: 'approvals', label: 'Approvals', icon: 'check' },
+  { key: 'audit-log', label: 'Audit log', icon: 'list' },
+  { key: 'traces', label: 'Traces', icon: 'pulse' },
+  { key: 'usage', label: 'Usage', icon: 'coins' },
+  { key: 'feedback', label: 'Feedback', icon: 'thumbs' },
+  { key: 'system', label: 'System', icon: 'server' },
+  { key: 'memory', label: 'Memory', icon: 'memory' },
+  { key: 'conversations', label: 'Conversations', icon: 'chat' },
 ];
 
 /**
@@ -91,91 +93,143 @@ export function AppShell({
     else navigate({ name: 'admin', section: key });
   }
 
+  const item = (key: string, label: string, icon: IconName) => (
+    <SidebarNavItem key={key} label={label} icon={<Icon name={icon} />} active={activeKey === key} onClick={() => onNavigate(key)} />
+  );
+
+  const navContent = (
+    <>
+      <div className="flex items-center gap-3 px-5 pb-3 pt-5">
+        <span className="grid h-9 w-9 place-items-center rounded-full bg-accent-500 text-sm font-bold text-on-accent shadow-card" aria-hidden="true">
+          O
+        </span>
+        <span className="text-xl font-medium tracking-tight text-fg">OpeX</span>
+      </div>
+
+      <div className="px-3 pb-2">
+        <button
+          type="button"
+          onPointerDown={ripple}
+          onClick={() => {
+            setMenuOpen(false);
+            onNewChat();
+          }}
+          className="relative flex w-full items-center gap-3 overflow-hidden rounded-2xl bg-accent-100 px-5 py-3.5 text-sm font-medium text-accent-700 shadow-card transition-[box-shadow,transform,background-color] duration-200 hover:bg-accent-200 hover:shadow-lift active:scale-[0.98]"
+        >
+          <Icon name="plus" />
+          New chat
+        </button>
+      </div>
+
+      <SidebarNav>
+        <SidebarSection>
+          {item('chat', 'Chat', 'chat')}
+          {item('documents', 'Documents', 'file')}
+        </SidebarSection>
+
+        {recent.length > 0 && (
+          <SidebarSection label="Recent chats">
+            {recent.map((c) => (
+              <SidebarNavItem
+                key={c.id}
+                label={c.title || 'Untitled chat'}
+                active={route.name === 'chat' && route.conversationId === c.id}
+                onClick={() => {
+                  setMenuOpen(false);
+                  navigate({ name: 'chat', conversationId: c.id });
+                }}
+              />
+            ))}
+          </SidebarSection>
+        )}
+
+        {isAdmin && (
+          <>
+            <SidebarSection label="AI tools">{AI_TOOLS_SECTION.map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
+            <SidebarSection label="Administration">{ADMIN_SECTION.map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
+          </>
+        )}
+      </SidebarNav>
+
+      <div className="mx-3 mb-3 rounded-3xl bg-surface p-3">
+        <div className="mb-2 flex items-center gap-3 px-1">
+          <Avatar email={user.email} />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-fg">{user.email}</p>
+            <p className="text-xs text-muted">{user.role}</p>
+          </div>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <SidebarNavItem label="What OpeX remembers" icon={<Icon name="memory" />} active={activeKey === 'my-memories'} onClick={() => onNavigate('my-memories')} />
+          <SidebarNavItem label="Sign out" icon={<Icon name="logout" />} onClick={onLoggedOut} />
+        </div>
+      </div>
+    </>
+  );
+
   return (
-    <div className="flex h-screen flex-col bg-gray-50 md:flex-row">
-      <header className="flex items-center justify-between border-b border-gray-100 bg-white px-4 py-3 md:hidden">
-        <div className="flex items-center gap-2">
-          <div className="h-6 w-6 rounded-full bg-accent-500" aria-hidden="true" />
-          <span className="font-semibold text-gray-900">OpeX</span>
+    <div className="flex h-screen flex-col bg-side md:flex-row">
+      <header className="flex items-center justify-between bg-side px-4 py-3 md:hidden">
+        <div className="flex items-center gap-2.5">
+          <span className="grid h-8 w-8 place-items-center rounded-full bg-accent-500 text-xs font-bold text-on-accent" aria-hidden="true">O</span>
+          <span className="text-lg font-medium text-fg">OpeX</span>
         </div>
         <button
           type="button"
-          aria-label="Toggle navigation menu"
+          aria-label="Open navigation menu"
           aria-expanded={menuOpen}
-          onClick={() => setMenuOpen((v) => !v)}
-          className="rounded-lg px-2 py-1 text-lg text-gray-600 hover:bg-gray-100"
+          onClick={() => setMenuOpen(true)}
+          className="grid h-10 w-10 place-items-center rounded-full text-fg-2 transition-colors hover:bg-raised"
         >
-          {menuOpen ? '✕' : '☰'}
+          <Icon name="menu" className="h-6 w-6" />
         </button>
       </header>
-      <aside
-        className={`${menuOpen ? 'flex' : 'hidden'} w-full shrink-0 flex-col border-r border-gray-100 bg-white md:flex md:w-60 max-md:absolute max-md:inset-x-0 max-md:top-[53px] max-md:bottom-0 max-md:z-30`}
-      >
-        <div className="flex items-center gap-2 px-4 py-4">
-          <div className="h-7 w-7 rounded-full bg-accent-500" aria-hidden="true" />
-          <span className="text-base font-semibold text-gray-900">OpeX</span>
-        </div>
 
-        <div className="px-3">
-          <Button variant="primary" className="w-full" onClick={() => { setMenuOpen(false); onNewChat(); }}>
-            + New chat
-          </Button>
-        </div>
+      <aside className="hidden w-64 shrink-0 flex-col md:flex">{navContent}</aside>
 
-        <SidebarNav>
-          <SidebarSection>
-            <SidebarNavItem label="Chat" active={activeKey === 'chat'} onClick={() => onNavigate('chat')} />
-            <SidebarNavItem label="Documents" active={activeKey === 'documents'} onClick={() => onNavigate('documents')} />
-          </SidebarSection>
+      <AnimatePresence>
+        {menuOpen && (
+          <>
+            <motion.div
+              key="scrim"
+              className="fixed inset-0 z-30 bg-fg/40 md:hidden"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setMenuOpen(false)}
+            />
+            <motion.aside
+              key="drawer"
+              className="fixed inset-y-0 left-0 z-40 flex w-72 max-w-[85vw] flex-col rounded-r-[28px] bg-side shadow-lift md:hidden"
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', stiffness: 380, damping: 38 }}
+            >
+              <button
+                type="button"
+                aria-label="Close navigation menu"
+                onClick={() => setMenuOpen(false)}
+                className="absolute right-3 top-4 grid h-9 w-9 place-items-center rounded-full text-fg-2 hover:bg-raised"
+              >
+                <Icon name="close" />
+              </button>
+              {navContent}
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
 
-          {recent.length > 0 && (
-            <SidebarSection label="Recent chats">
-              {recent.map((c) => (
-                <SidebarNavItem
-                  key={c.id}
-                  label={c.title || 'Untitled chat'}
-                  active={route.name === 'chat' && route.conversationId === c.id}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    navigate({ name: 'chat', conversationId: c.id });
-                  }}
-                />
-              ))}
-            </SidebarSection>
-          )}
-
-          {isAdmin && (
-            <>
-              <SidebarSection label="AI Tools">
-                {AI_TOOLS_SECTION.map((item) => (
-                  <SidebarNavItem key={item.key} label={item.label} active={activeKey === item.key} onClick={() => onNavigate(item.key)} />
-                ))}
-              </SidebarSection>
-              <SidebarSection label="Administration">
-                {ADMIN_SECTION.map((item) => (
-                  <SidebarNavItem key={item.key} label={item.label} active={activeKey === item.key} onClick={() => onNavigate(item.key)} />
-                ))}
-              </SidebarSection>
-            </>
-          )}
-        </SidebarNav>
-
-        <div className="border-t border-gray-100 p-3">
-          <div className="mb-2 flex items-center gap-2">
-            <Avatar email={user.email} />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-gray-900">{user.email}</p>
-              <p className="text-xs text-gray-400">{user.role}</p>
-            </div>
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <SidebarNavItem label="What OpeX remembers" active={activeKey === 'my-memories'} onClick={() => onNavigate('my-memories')} />
-            <SidebarNavItem label="Sign out" onClick={onLoggedOut} />
-          </div>
-        </div>
-      </aside>
-
-      <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
+      <main className="min-h-0 flex-1 overflow-y-auto bg-canvas md:m-2 md:ml-0 md:rounded-[28px] md:border md:border-line/40 md:shadow-card">
+        <motion.div
+          className="h-full"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.32, ease: [0.2, 0, 0, 1] }}
+        >
+          {children}
+        </motion.div>
+      </main>
     </div>
   );
 }

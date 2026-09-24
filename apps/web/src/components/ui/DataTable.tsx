@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
+import { motion } from 'motion/react';
 import { EmptyState } from './EmptyState';
+import { Skeleton } from './Skeleton';
 
 export interface DataTableColumn<Row> {
   key: string;
@@ -29,7 +31,7 @@ export function DataTable<Row extends { id: string }>({
   error?: string | null;
 }) {
   if (loading) {
-    return <p className="py-6 text-center text-sm text-gray-400">Loading…</p>;
+    return <Skeleton className="p-4" lines={4} />;
   }
   if (rows.length === 0 && error) {
     return <p className="py-6 text-center text-sm text-danger-600">{error}</p>;
@@ -41,23 +43,29 @@ export function DataTable<Row extends { id: string }>({
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
         <thead>
-          <tr className="border-b border-gray-100 text-xs font-medium uppercase tracking-wide text-gray-400">
+          <tr className="border-b border-line text-xs font-medium tracking-wide text-muted">
             {columns.map((col) => (
-              <th key={col.key} className="px-3 py-2">
+              <th key={col.key} className="px-3 py-3">
                 {col.label}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
+          {rows.map((row, i) => (
+            <motion.tr
+              key={row.id}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: Math.min(i, 12) * 0.03, duration: 0.24 }}
+              className="border-b border-line/60 transition-colors last:border-0 hover:bg-accent-50/70"
+            >
               {columns.map((col) => (
-                <td key={col.key} className="px-3 py-2.5 text-gray-700">
+                <td key={col.key} className="px-3 py-2.5 text-fg-2">
                   {col.render ? col.render(row) : String((row as Record<string, unknown>)[col.key] ?? '')}
                 </td>
               ))}
-            </tr>
+            </motion.tr>
           ))}
         </tbody>
       </table>

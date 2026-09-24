@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
+import { ripple } from '../../lib/ripple';
 
 export function SidebarSection({ label, children }: { label?: string; children: ReactNode }) {
   return (
-    <div className="mb-4">
-      {label && <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide text-gray-400">{label}</p>}
+    <div className="mb-3">
+      {label && <p className="mb-1 px-4 pt-2 text-xs font-medium tracking-wide text-faint">{label}</p>}
       <div className="flex flex-col gap-0.5">{children}</div>
     </div>
   );
@@ -24,16 +25,18 @@ export function SidebarNavItem({
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-        active ? 'bg-accent-50 font-medium text-accent-700' : 'text-gray-600 hover:bg-gray-100'
+      onPointerDown={ripple}
+      aria-current={active ? 'page' : undefined}
+      className={`relative flex items-center gap-3 overflow-hidden rounded-full px-4 py-2.5 text-left text-sm transition-colors duration-200 ${
+        active ? 'bg-accent-100 font-medium text-accent-700' : 'text-fg-2 hover:bg-raised/70'
       }`}
     >
-      {icon && <span className="flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span>}
+      {icon && <span className="flex shrink-0 items-center justify-center">{icon}</span>}
       <span className="truncate">{label}</span>
     </button>
   );
 }
 
 export function SidebarNav({ children }: { children: ReactNode }) {
-  return <nav className="flex flex-1 flex-col overflow-y-auto px-3 py-2">{children}</nav>;
+  return <nav className="flex flex-1 flex-col overflow-y-auto px-2 py-2">{children}</nav>;
 }

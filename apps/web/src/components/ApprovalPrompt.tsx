@@ -24,9 +24,9 @@ export function ApprovalPrompt({
       <div className="mb-2">
         <StatusPill tone="warning">Approval needed</StatusPill>
       </div>
-      <p className="text-sm text-gray-800">
-        Wants to run <code className="rounded bg-white px-1 py-0.5">{event.toolName}</code>:{' '}
-        <code className="rounded bg-white px-1 py-0.5">{JSON.stringify(event.args)}</code>
+      <p className="text-sm text-fg">
+        Wants to run <code className="rounded bg-surface px-1 py-0.5">{event.toolName}</code>:{' '}
+        <code className="rounded bg-surface px-1 py-0.5">{JSON.stringify(event.args)}</code>
       </p>
       <p className="mt-1 text-sm text-warning-700">{event.reason}</p>
       <div className="mt-3 flex gap-2">

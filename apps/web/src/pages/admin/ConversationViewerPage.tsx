@@ -9,6 +9,8 @@ import {
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { Skeleton } from '../../components/ui/Skeleton';
+import { Alert } from '../../components/ui/Alert';
 
 export function ConversationViewerPage({ onBack: _onBack }: { onBack: () => void }) {
   const [conversations, setConversations] = useState<AdminConversationRow[]>([]);
@@ -39,13 +41,13 @@ export function ConversationViewerPage({ onBack: _onBack }: { onBack: () => void
   return (
     <div>
       <PageHeader title="Conversations" description="Viewing a conversation's messages writes an audit-log entry (this is another user's private data)." />
-      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
+      {error && <Alert>{error}</Alert>}
 
       <div className="flex gap-4">
         <Card padded={false} className="w-1/2 overflow-hidden">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-gray-100 text-xs font-medium uppercase text-gray-400">
+              <tr className="border-b border-line text-xs font-medium uppercase text-faint">
                 <th className="px-3 py-2">User</th>
                 <th className="px-3 py-2">Updated</th>
               </tr>
@@ -55,10 +57,10 @@ export function ConversationViewerPage({ onBack: _onBack }: { onBack: () => void
                 <tr
                   key={c.id}
                   onClick={() => setSelected(c.id)}
-                  className={`cursor-pointer border-b border-gray-50 last:border-0 ${selected === c.id ? 'bg-accent-50' : 'hover:bg-gray-50'}`}
+                  className={`cursor-pointer border-b border-line last:border-0 ${selected === c.id ? 'bg-accent-50' : 'hover:bg-raised'}`}
                 >
                   <td className="px-3 py-2">{c.userEmail}</td>
-                  <td className="px-3 py-2 text-gray-500">{c.updatedAt}</td>
+                  <td className="px-3 py-2 text-muted">{c.updatedAt}</td>
                 </tr>
               ))}
             </tbody>
@@ -70,13 +72,13 @@ export function ConversationViewerPage({ onBack: _onBack }: { onBack: () => void
             <div
               key={m.id}
               className={`max-w-[90%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${
-                m.role === 'user' ? 'self-end bg-accent-500 text-white' : 'self-start bg-gray-100 text-gray-800'
+                m.role === 'user' ? 'self-end bg-raised text-fg' : 'self-start bg-raised text-fg'
               }`}
             >
               {m.content}
             </div>
           ))}
-          {selected && messagesLoading && <p className="text-sm text-gray-400">Loading…</p>}
+          {selected && messagesLoading && <Skeleton className="p-2" />}
           {selected && !messagesLoading && messages.length === 0 && <EmptyState title="No messages" />}
         </div>
       </div>

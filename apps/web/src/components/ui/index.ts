@@ -8,3 +8,7 @@ export * from './EmptyState';
 export * from './Avatar';
 export * from './ClassificationBanner';
 export * from './SidebarNav';
+export * from './Icon';
+export * from './Skeleton';
+export * from './TypingDots';
+export * from './Alert';

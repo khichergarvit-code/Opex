@@ -10,6 +10,7 @@ import { DocumentsPage } from './pages/DocumentsPage';
 import { DocumentViewerPage } from './pages/DocumentViewerPage';
 import { AdminLayout, type AdminSection } from './pages/admin/AdminLayout';
 import { MyMemoriesPanel } from './components/MyMemoriesPanel';
+import { Skeleton } from './components/ui/Skeleton';
 
 const ADMIN_ROLES = new Set(['super_admin', 'workspace_admin']);
 
@@ -44,7 +45,11 @@ export function App() {
   }, [user, route.name]);
 
   if (checkingSession) {
-    return <div className="flex h-screen items-center justify-center bg-gray-50 text-sm text-gray-400">Loading…</div>;
+    return (
+      <div className="flex h-screen items-center justify-center bg-canvas" role="status" aria-label="Loading">
+        <span className="h-10 w-10 animate-spin rounded-full border-4 border-accent-100 border-t-accent-500" />
+      </div>
+    );
   }
 
   if (!user) {
@@ -94,7 +99,7 @@ export function App() {
           onOpenDocument={(documentId) => navigate({ name: 'viewer', documentId })}
         />
       ) : (
-        <p className="p-6 text-sm text-gray-400">Loading…</p>
+        <Skeleton className="p-6" />
       ),
     );
   }

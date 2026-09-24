@@ -3,6 +3,7 @@ import { ApiError, fetchAdminUsage, type AdminUsageRow } from '../../lib/api';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { DataTable } from '../../components/ui/DataTable';
+import { Alert } from '../../components/ui/Alert';
 
 export function UsagePage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<AdminUsageRow[]>([]);
@@ -22,7 +23,7 @@ export function UsagePage({ onBack: _onBack }: { onBack: () => void }) {
         title="Usage"
         description="Raw token totals per user, model, and day — quota burn-down isn't shown since quotas aren't enforced yet."
       />
-      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
+      {error && <Alert>{error}</Alert>}
 
       <Card>
         <DataTable

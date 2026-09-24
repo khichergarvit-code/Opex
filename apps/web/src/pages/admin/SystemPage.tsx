@@ -3,6 +3,8 @@ import { ApiError, request } from '../../lib/api';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { DataTable } from '../../components/ui/DataTable';
+import { Skeleton } from '../../components/ui/Skeleton';
+import { Alert } from '../../components/ui/Alert';
 
 interface AdminSystemResponse {
   queueByStatus: Array<{ status: string; count: number }>;
@@ -25,8 +27,8 @@ export function SystemPage({ onBack: _onBack }: { onBack: () => void }) {
   return (
     <div>
       <PageHeader title="System" description="Live disk, GPU, and job-queue status. Anything not reported by the host shows as N/A." />
-      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
-      {!data && !error && <p className="text-sm text-gray-400">Loading…</p>}
+      {error && <Alert>{error}</Alert>}
+      {!data && !error && <Skeleton className="p-2" />}
 
       {data && (
         <>
@@ -41,22 +43,22 @@ export function SystemPage({ onBack: _onBack }: { onBack: () => void }) {
           <Card className="mb-6">
             <div className="grid grid-cols-3 gap-4 text-sm">
               <div>
-                <p className="text-gray-500">Disk used</p>
-                <p className="mt-1 text-lg font-semibold text-gray-900">{data.diskUsedPct.toFixed(1)}%</p>
+                <p className="text-muted">Disk used</p>
+                <p className="mt-1 text-lg font-semibold text-fg">{data.diskUsedPct.toFixed(1)}%</p>
               </div>
               <div>
-                <p className="text-gray-500">GPU</p>
-                <p className="mt-1 text-lg font-semibold text-gray-900">{data.gpu}</p>
+                <p className="text-muted">GPU</p>
+                <p className="mt-1 text-lg font-semibold text-fg">{data.gpu}</p>
               </div>
               <div>
-                <p className="text-gray-500">VRAM</p>
-                <p className="mt-1 text-lg font-semibold text-gray-900">{data.vram}</p>
+                <p className="text-muted">VRAM</p>
+                <p className="mt-1 text-lg font-semibold text-fg">{data.vram}</p>
               </div>
             </div>
           </Card>
 
           <Card>
-            <h3 className="mb-3 text-sm font-semibold text-gray-900">Job queue</h3>
+            <h3 className="mb-3 text-sm font-semibold text-fg">Job queue</h3>
             <DataTable
               emptyMessage="No queued jobs"
               rows={data.queueByStatus.map((q) => ({ ...q, id: q.status }))}

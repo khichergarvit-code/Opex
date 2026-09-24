@@ -5,6 +5,8 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { Skeleton } from '../../components/ui/Skeleton';
+import { Alert } from '../../components/ui/Alert';
 
 export function AccessRequestsPage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<AccessRequest[]>([]);
@@ -36,26 +38,26 @@ export function AccessRequestsPage({ onBack: _onBack }: { onBack: () => void }) 
   return (
     <div>
       <PageHeader title="Access requests" description="A user has requested access to a document above their default clearance." />
-      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
+      {error && <Alert>{error}</Alert>}
 
       {loading ? (
-        <p className="text-sm text-gray-400">Loading…</p>
+        <Skeleton className="p-2" />
       ) : rows.length === 0 ? (
         error ? null : <EmptyState title="No pending requests" />
       ) : (
         <div className="flex flex-col gap-3">
           {rows.map((r) => (
             <Card key={r.id}>
-              <p className="text-sm text-gray-800">
+              <p className="text-sm text-fg">
                 Document <span className="font-mono text-xs">{r.documentId}</span> — user{' '}
                 <span className="font-mono text-xs">{r.userId}</span>
               </p>
-              <p className="mt-1 text-sm text-gray-500">Reason: {r.reason}</p>
+              <p className="mt-1 text-sm text-muted">Reason: {r.reason}</p>
               <div className="mt-3 flex items-center gap-2">
                 <input
                   type="datetime-local"
                   onChange={(e) => setExpiryDrafts((d) => ({ ...d, [r.id]: e.target.value }))}
-                  className="rounded-lg border border-gray-200 px-2 py-1 text-sm"
+                  className="rounded-lg border border-line px-2 py-1 text-sm"
                 />
                 <Button variant="primary" size="sm" onClick={() => decide(r.id, 'approved')}>
                   Approve

@@ -3,6 +3,7 @@ import { ApiError, fetchAdminAudit, type AdminAuditRow } from '../../lib/api';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { DataTable } from '../../components/ui/DataTable';
+import { Alert } from '../../components/ui/Alert';
 
 export function AuditLogPage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<AdminAuditRow[]>([]);
@@ -19,7 +20,7 @@ export function AuditLogPage({ onBack: _onBack }: { onBack: () => void }) {
   return (
     <div>
       <PageHeader title="Audit log" description="Append-only, hash-chained. Run pnpm audit:verify to check the chain." />
-      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
+      {error && <Alert>{error}</Alert>}
 
       <Card>
         <DataTable

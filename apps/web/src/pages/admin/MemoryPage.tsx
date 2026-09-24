@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { DataTable } from '../../components/ui/DataTable';
+import { Alert } from '../../components/ui/Alert';
 
 interface AdminMemoryRow {
   id: string;
@@ -92,10 +93,10 @@ export function MemoryPage({ onBack: _onBack }: { onBack: () => void }) {
         title="Memory (all users)"
         description="Admin, workspace-wide view of every user's long-term and working memory. Each user's own read-only view is 'What OpeX remembers' in their sidebar."
       />
-      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
+      {error && <Alert>{error}</Alert>}
 
       <Card className="mb-6">
-        <h3 className="mb-3 text-sm font-semibold text-gray-900">Long-term memory (episodic / semantic)</h3>
+        <h3 className="mb-3 text-sm font-semibold text-fg">Long-term memory (episodic / semantic)</h3>
         <DataTable
           emptyMessage="No long-term memories yet"
           loading={longTermLoading}
@@ -122,26 +123,26 @@ export function MemoryPage({ onBack: _onBack }: { onBack: () => void }) {
           ]}
         />
 
-        <h4 className="mb-2 mt-6 text-sm font-medium text-gray-700">Set TTL (days; blank = never expires)</h4>
+        <h4 className="mb-2 mt-6 text-sm font-medium text-fg-2">Set TTL (days; blank = never expires)</h4>
         <form onSubmit={saveTtl} className="flex flex-wrap gap-2">
           <input
             placeholder="workspace id"
             value={workspaceId}
             onChange={(e) => setWorkspaceId(e.target.value)}
             required
-            className="rounded-lg border border-gray-200 px-2 py-1 text-sm"
+            className="rounded-lg border border-line px-2 py-1 text-sm"
           />
           <input
             placeholder="episodic days"
             value={episodicDays}
             onChange={(e) => setEpisodicDays(e.target.value)}
-            className="w-32 rounded-lg border border-gray-200 px-2 py-1 text-sm"
+            className="w-32 rounded-lg border border-line px-2 py-1 text-sm"
           />
           <input
             placeholder="semantic days"
             value={semanticDays}
             onChange={(e) => setSemanticDays(e.target.value)}
-            className="w-32 rounded-lg border border-gray-200 px-2 py-1 text-sm"
+            className="w-32 rounded-lg border border-line px-2 py-1 text-sm"
           />
           <Button type="submit" variant="primary" size="sm">
             Save TTL
@@ -150,7 +151,7 @@ export function MemoryPage({ onBack: _onBack }: { onBack: () => void }) {
       </Card>
 
       <Card>
-        <h3 className="mb-3 text-sm font-semibold text-gray-900">Working memory (per-conversation rolling summary)</h3>
+        <h3 className="mb-3 text-sm font-semibold text-fg">Working memory (per-conversation rolling summary)</h3>
         <DataTable
           emptyMessage="No working-memory summaries yet"
           loading={rowsLoading}

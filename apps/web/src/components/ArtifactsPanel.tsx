@@ -15,7 +15,7 @@ export function ArtifactsPanel({ artifacts }: { artifacts: DisplayArtifact[] }) 
     <div className="flex flex-col gap-2">
       {artifacts.map((a) => (
         <Card key={a.id} padded={false} className="p-3">
-          <div className="mb-1.5 text-xs text-gray-400">{a.toolName}</div>
+          <div className="mb-1.5 text-xs text-faint">{a.toolName}</div>
           <img
             src={`/artifacts/${a.id}`}
             alt={`Artifact from ${a.toolName}`}

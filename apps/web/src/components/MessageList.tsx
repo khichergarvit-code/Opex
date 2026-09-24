@@ -1,4 +1,7 @@
+import { motion } from 'motion/react';
 import type { Citation, MessageRole } from '@opex/shared';
+import { TypingDots } from './ui/TypingDots';
+import { Icon } from './ui/Icon';
 import { CitationChip } from './CitationChip';
 import { StatusPill } from './ui/Badge';
 
@@ -44,18 +47,26 @@ export function MessageList({
   const lastId = messages[messages.length - 1]?.id;
   const progressLine = (m: DisplayMessage) =>
     pending && m.id === lastId && m.role === 'assistant' ? (
-      <span className="flex items-center gap-2 text-xs text-gray-500">
-        <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" aria-hidden="true" />
-        {pending.label} {(pending.elapsedMs / 1000).toFixed(0)}s
+      <span className="flex items-center gap-2.5 text-xs text-muted">
+        <TypingDots />
+        {pending.label} · {(pending.elapsedMs / 1000).toFixed(0)}s
       </span>
     ) : null;
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       {messages.map((m) => (
-        <div key={m.id} className={`flex max-w-[80%] flex-col gap-1.5 ${m.role === 'user' ? 'self-end items-end' : 'self-start items-start'}`}>
+        <motion.div
+          key={m.id}
+          initial={{ opacity: 0, y: 12, scale: 0.985 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.28, ease: [0.2, 0, 0, 1] }}
+          className={`flex flex-col gap-1.5 ${m.role === 'user' ? 'max-w-[80%] self-end items-end' : 'max-w-[92%] self-start items-start'}`}
+        >
           <div
-            className={`whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm ${
-              m.role === 'user' ? 'bg-accent-500 text-white' : 'border border-gray-100 bg-white text-gray-800 shadow-card'
+            className={`whitespace-pre-wrap text-[15px] leading-7 ${
+              m.role === 'user'
+                ? 'rounded-3xl rounded-br-lg bg-accent-100 px-5 py-3 text-fg'
+                : 'rounded-3xl rounded-bl-lg bg-surface px-5 py-3 text-fg shadow-card'
             }`}
           >
             {m.content === '' && progressLine(m) ? progressLine(m) : renderContentWithCitations(m.content, m.citations ?? [], onOpenCitation)}
@@ -77,23 +88,23 @@ export function MessageList({
                     onClick={() => onFeedback(m.id, 'thumbs_up')}
                     title="Good answer"
                     aria-label="Good answer"
-                    className="rounded px-1 hover:bg-gray-100"
+                    className="grid h-8 w-8 place-items-center rounded-full text-muted transition-colors hover:bg-accent-100 hover:text-accent-700 active:scale-90"
                   >
-                    👍
+                    <Icon name="thumbs" className="h-4 w-4" />
                   </button>
                   <button
                     onClick={() => onFeedback(m.id, 'thumbs_down')}
                     title="Bad answer"
                     aria-label="Bad answer"
-                    className="rounded px-1 hover:bg-gray-100"
+                    className="grid h-8 w-8 place-items-center rounded-full text-muted transition-colors hover:bg-danger-50 hover:text-danger-700 active:scale-90"
                   >
-                    👎
+                    <Icon name="thumbs" className="h-4 w-4 rotate-180" />
                   </button>
                 </div>
               )}
             </div>
           )}
-        </div>
+        </motion.div>
       ))}
     </div>
   );

@@ -6,6 +6,7 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { StatusPill } from '../../components/ui/Badge';
 import { DataTable } from '../../components/ui/DataTable';
+import { Alert } from '../../components/ui/Alert';
 
 export function UsersPage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<AdminUser[]>([]);
@@ -53,7 +54,7 @@ export function UsersPage({ onBack: _onBack }: { onBack: () => void }) {
   return (
     <div>
       <PageHeader title="Users" description="Create and manage OpeX accounts." />
-      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
+      {error && <Alert>{error}</Alert>}
 
       <Card className="mb-4">
         <form onSubmit={handleCreate} className="flex flex-wrap gap-2">
@@ -62,14 +63,14 @@ export function UsersPage({ onBack: _onBack }: { onBack: () => void }) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm"
+            className="rounded-lg border border-line px-3 py-1.5 text-sm"
           />
           <input
             placeholder="name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
-            className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm"
+            className="rounded-lg border border-line px-3 py-1.5 text-sm"
           />
           <input
             placeholder="password (min 12 chars)"
@@ -77,9 +78,9 @@ export function UsersPage({ onBack: _onBack }: { onBack: () => void }) {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm"
+            className="rounded-lg border border-line px-3 py-1.5 text-sm"
           />
-          <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm">
+          <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="rounded-lg border border-line px-3 py-1.5 text-sm">
             <option value="employee">employee</option>
             <option value="workspace_admin">workspace_admin</option>
             <option value="super_admin">super_admin</option>
@@ -87,7 +88,7 @@ export function UsersPage({ onBack: _onBack }: { onBack: () => void }) {
           <select
             value={clearance}
             onChange={(e) => setClearance(Number(e.target.value))}
-            className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm"
+            className="rounded-lg border border-line px-3 py-1.5 text-sm"
           >
             <option value={0}>0 Public</option>
             <option value={1}>1 Internal</option>

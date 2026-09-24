@@ -5,6 +5,8 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { StatusPill } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { Skeleton } from '../../components/ui/Skeleton';
+import { Alert } from '../../components/ui/Alert';
 
 interface AdminFeedbackRow {
   id: string;
@@ -62,17 +64,17 @@ export function FeedbackPage({ onBack: _onBack }: { onBack: () => void }) {
   return (
     <div>
       <PageHeader title="Feedback triage" description="Thumbs-down feedback, for root-cause tagging and eval export." />
-      {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
+      {error && <Alert>{error}</Alert>}
 
       {loading ? (
-        <p className="text-sm text-gray-400">Loading…</p>
+        <Skeleton className="p-2" />
       ) : rows.length === 0 ? (
         error ? null : <EmptyState title="No thumbs-down feedback yet" />
       ) : (
         <div className="flex flex-col gap-3">
           {rows.map((r) => (
             <Card key={r.id}>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted">
                 message <span className="font-mono text-xs">{r.messageId}</span> — trace{' '}
                 <span className="font-mono text-xs">{r.traceId ?? '—'}</span> — {r.createdAt}
                 {r.exportedToEval && (
@@ -86,7 +88,7 @@ export function FeedbackPage({ onBack: _onBack }: { onBack: () => void }) {
                   placeholder="root cause"
                   value={tagDrafts[r.id] ?? r.rootCauseTag ?? ''}
                   onChange={(e) => setTagDrafts((d) => ({ ...d, [r.id]: e.target.value }))}
-                  className="rounded-lg border border-gray-200 px-2 py-1 text-sm"
+                  className="rounded-lg border border-line px-2 py-1 text-sm"
                 />
                 <Button size="sm" onClick={() => tag(r.id)}>
                   Tag
@@ -95,7 +97,7 @@ export function FeedbackPage({ onBack: _onBack }: { onBack: () => void }) {
                   placeholder="expected keyword"
                   value={keywordDrafts[r.id] ?? ''}
                   onChange={(e) => setKeywordDrafts((d) => ({ ...d, [r.id]: e.target.value }))}
-                  className="rounded-lg border border-gray-200 px-2 py-1 text-sm"
+                  className="rounded-lg border border-line px-2 py-1 text-sm"
                 />
                 <Button size="sm" variant="primary" disabled={r.exportedToEval} onClick={() => exportToEval(r.id)}>
                   Export to eval

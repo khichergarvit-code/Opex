@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from 'motion/react';
 import type { SseEvent } from '@opex/shared';
 import { EmptyState } from './ui/EmptyState';
 
@@ -51,13 +52,13 @@ function describeEvent(event: SseEvent): string {
 
 function StepIcon({ isLast, streaming, isError }: { isLast: boolean; streaming: boolean; isError: boolean }) {
   if (isError) {
-    return <span className="flex h-4 w-4 items-center justify-center rounded-full bg-danger-600 text-[10px] text-white">!</span>;
+    return <span className="flex h-4 w-4 items-center justify-center rounded-full bg-danger-600 text-[10px] text-on-accent">!</span>;
   }
   if (isLast && streaming) {
     return <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" aria-hidden="true" />;
   }
   return (
-    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-success-600 text-[10px] text-white" aria-hidden="true">
+    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-success-600 text-[10px] text-on-accent" aria-hidden="true">
       ✓
     </span>
   );
@@ -71,15 +72,23 @@ export function AgentTimeline({ events, streaming = false }: { events: SseEvent[
   }
   return (
     <div className="flex flex-col gap-3">
+      <AnimatePresence initial={false}>
       {visible.map((event, i) => (
-        <div key={i} className="flex gap-2.5">
+        <motion.div
+          key={i}
+          initial={{ opacity: 0, x: -10 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.25 }}
+          className="flex gap-2.5"
+        >
           <StepIcon isLast={i === visible.length - 1} streaming={streaming} isError={event.type === 'error'} />
-          <div className="min-w-0 flex-1 border-l-2 border-gray-100 pb-2 pl-3 -mt-0.5">
-            <p className="text-xs font-semibold text-gray-700">{EVENT_LABELS[event.type] ?? event.type}</p>
-            <p className="text-xs text-gray-500">{describeEvent(event)}</p>
+          <div className="min-w-0 flex-1 border-l-2 border-line pb-2 pl-3 -mt-0.5">
+            <p className="text-xs font-semibold text-fg-2">{EVENT_LABELS[event.type] ?? event.type}</p>
+            <p className="text-xs text-muted">{describeEvent(event)}</p>
           </div>
-        </div>
+        </motion.div>
       ))}
+      </AnimatePresence>
     </div>
   );
 }

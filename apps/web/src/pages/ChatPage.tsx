@@ -20,6 +20,7 @@ import { AgentTimeline } from '../components/AgentTimeline';
 import { ArtifactsPanel, type DisplayArtifact } from '../components/ArtifactsPanel';
 import { ApprovalPrompt } from '../components/ApprovalPrompt';
 import { Card } from '../components/ui/Card';
+import { motion } from 'motion/react';
 
 const STATUS_LABELS: Record<string, string> = {
   cold_start: 'Warming up the model',
@@ -403,7 +404,7 @@ export function ChatPage({
                 setProjectId(e.target.value);
                 startNewChat();
               }}
-              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm"
+              className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm"
             >
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -415,14 +416,14 @@ export function ChatPage({
               <button
                 onClick={() => setShowHistory((v) => !v)}
                 aria-expanded={showHistory}
-                className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-fg-2 hover:bg-raised"
               >
                 History
               </button>
               {showHistory && (
-                <div className="absolute left-0 top-full z-20 mt-1 max-h-80 w-72 overflow-y-auto rounded-xl border border-gray-100 bg-white p-1 shadow-lg">
+                <div className="absolute left-0 top-full z-20 mt-1 max-h-80 w-72 overflow-y-auto rounded-xl border border-line bg-surface p-1 shadow-lg">
                   {history.length === 0 ? (
-                    <p className="px-3 py-2 text-sm text-gray-400">No saved chats yet.</p>
+                    <p className="px-3 py-2 text-sm text-faint">No saved chats yet.</p>
                   ) : (
                     history.map((c) => (
                       <button
@@ -431,10 +432,10 @@ export function ChatPage({
                           setShowHistory(false);
                           navigate({ name: 'chat', conversationId: c.id });
                         }}
-                        className={`block w-full truncate rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 ${c.id === conversationId ? 'bg-accent-50 font-medium text-accent-700' : 'text-gray-700'}`}
+                        className={`block w-full truncate rounded-lg px-3 py-2 text-left text-sm hover:bg-raised ${c.id === conversationId ? 'bg-accent-50 font-medium text-accent-700' : 'text-fg-2'}`}
                       >
                         {c.title || 'Untitled chat'}
-                        <span className="block text-xs font-normal text-gray-400">{new Date(c.updatedAt).toLocaleString()}</span>
+                        <span className="block text-xs font-normal text-faint">{new Date(c.updatedAt).toLocaleString()}</span>
                       </button>
                     ))
                   )}
@@ -452,30 +453,35 @@ export function ChatPage({
           {messages.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-6">
               <div className="text-center">
-                <p className="text-2xl font-semibold text-gray-900">
-                  Good {timeOfDay}, {greetingName} 👋
+                <p className="text-[40px] font-normal leading-tight tracking-tight text-fg">
+                  Good {timeOfDay}, {greetingName}
                 </p>
-                <p className="mt-1 text-gray-500">How can I help you today?</p>
+                <p className="mt-2 text-base text-muted">How can I help you today?</p>
               </div>
               <div className="w-full max-w-xl">
                 <Composer disabled={!projectId} onSend={handleSend} models={chatModels} modelId={modelId} onModelChange={changeModel} />
                 {!projectId && projects.length === 0 && (
-                  <p className="mt-2 text-center text-xs text-gray-400">
+                  <p className="mt-2 text-center text-xs text-faint">
                     You're not a member of any project yet — ask an admin to add you to one.
                   </p>
                 )}
               </div>
               <div className="grid w-full max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
-                {suggestionTiles.map((tile) => (
-                  <button
+                {suggestionTiles.map((tile, i) => (
+                  <motion.button
                     key={tile.title}
+                    initial={{ opacity: 0, y: 14 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.12 + i * 0.06, duration: 0.3, ease: [0.2, 0, 0, 1] }}
+                    whileHover={{ y: -3 }}
+                    whileTap={{ scale: 0.98 }}
                     onClick={tile.onClick}
                     disabled={!projectId}
-                    className="rounded-2xl border border-gray-100 bg-white p-4 text-left shadow-card transition-colors hover:border-accent-200 disabled:opacity-50"
+                    className="rounded-3xl bg-surface p-5 text-left shadow-card transition-shadow hover:shadow-lift disabled:opacity-50"
                   >
-                    <p className="text-sm font-medium text-gray-900">{tile.title}</p>
-                    <p className="mt-0.5 text-xs text-gray-400">{tile.description}</p>
-                  </button>
+                    <p className="text-sm font-medium text-fg">{tile.title}</p>
+                    <p className="mt-1 text-xs text-muted">{tile.description}</p>
+                  </motion.button>
                 ))}
               </div>
             </div>
@@ -490,7 +496,7 @@ export function ChatPage({
                     submitFeedback(messageId, rating).catch(() => {});
                   }}
                 />
-                {status && <p className="mt-2 text-xs text-gray-400">{status}</p>}
+                {status && <p className="mt-2 text-xs text-faint">{status}</p>}
                 {pendingApproval && (
                   <ApprovalPrompt
                     event={pendingApproval}
@@ -518,19 +524,19 @@ export function ChatPage({
         {showTimeline && (
           <div className="w-full shrink-0 overflow-y-auto md:w-80">
             <Card>
-              <p className="mb-3 text-sm font-semibold text-gray-900">Activity Run</p>
+              <p className="mb-3 text-sm font-semibold text-fg">Activity Run</p>
               <AgentTimeline events={timelineEvents} streaming={streaming} />
             </Card>
             <Card className="mt-4">
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">Current model</p>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-faint">Current model</p>
               {lastRoutedAgent ? (
-                <p className="text-sm text-gray-800">{lastRoutedAgent} agent</p>
+                <p className="text-sm text-fg">{lastRoutedAgent} agent</p>
               ) : (
-                <p className="text-sm text-gray-400">No agent routed yet</p>
+                <p className="text-sm text-faint">No agent routed yet</p>
               )}
             </Card>
             <Card className="mt-4">
-              <p className="mb-2 text-sm font-semibold text-gray-900">Artifacts</p>
+              <p className="mb-2 text-sm font-semibold text-fg">Artifacts</p>
               <ArtifactsPanel artifacts={artifacts} />
             </Card>
           </div>
