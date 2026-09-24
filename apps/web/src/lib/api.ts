@@ -85,12 +85,36 @@ export interface ConversationSummary {
   updatedAt: string;
 }
 
+export interface MessageAttachment {
+  id: string;
+  filename: string;
+  mime: string;
+}
+
 export interface StoredMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   citations: Citation[];
+  attachments?: MessageAttachment[];
   createdAt: string;
+}
+
+/** Uploads an image for the next message. Uses FormData, so it bypasses request()'s JSON content-type. */
+export async function uploadAttachment(conversationId: string, file: File): Promise<MessageAttachment> {
+  const body = new FormData();
+  body.append('file', file);
+  const res = await fetch(`/conversations/${conversationId}/attachments`, {
+    method: 'POST',
+    headers: { 'x-csrf-token': csrfToken ?? '' },
+    credentials: 'same-origin',
+    body,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new ApiError(res.status, err.error ?? res.statusText);
+  }
+  return (await res.json()) as MessageAttachment;
 }
 
 export async function fetchConversations(projectId?: string): Promise<ConversationSummary[]> {

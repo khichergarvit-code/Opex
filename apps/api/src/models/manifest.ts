@@ -13,6 +13,8 @@ export const manifestEntrySchema = z.object({
   endpoint: z.string().url(),
   gguf_path: z.string(),
   mmproj_path: z.string().optional(),
+  /** Required whenever mmproj_path is set — the projector is model weights too (invariant #3). */
+  mmproj_sha256: z.string().length(64).optional(),
   sha256: z.string().length(64),
   ctx_len: z.number().int().positive(),
   capabilities: z.array(z.enum(['tools', 'vision', 'json_schema'])).default([]),
@@ -22,6 +24,7 @@ export const manifestEntrySchema = z.object({
   enabled: z.boolean().default(true),
 });
 export type ManifestEntry = z.infer<typeof manifestEntrySchema>;
+
 
 const manifestSchema = z.object({
   models: z.array(manifestEntrySchema),
@@ -77,6 +80,15 @@ export async function verifyAndLoadManifest(opts: VerifyAndLoadOptions): Promise
     const actual = await sha256OfFile(filePath);
     if (actual !== entry.sha256) {
       throw new ManifestHashMismatchError(entry.id, entry.sha256, actual);
+    }
+    if (entry.mmproj_path) {
+      if (!entry.mmproj_sha256) {
+        throw new Error(`Model "${entry.id}" has mmproj_path but no mmproj_sha256`);
+      }
+      const mmprojActual = await sha256OfFile(path.join(opts.modelsDir, entry.mmproj_path));
+      if (mmprojActual !== entry.mmproj_sha256) {
+        throw new ManifestHashMismatchError(`${entry.id} (mmproj)`, entry.mmproj_sha256, mmprojActual);
+      }
     }
   }
 

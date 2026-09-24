@@ -30,7 +30,7 @@ export const DEFAULT_POLICY_RULES: PolicyRules = {
   allowedModelsByRole: {
     super_admin: ['router', 'general', 'coder', 'vision', 'embed', 'rerank'],
     workspace_admin: ['router', 'general', 'coder', 'vision', 'embed', 'rerank'],
-    employee: ['router', 'general', 'embed', 'rerank'],
+    employee: ['router', 'general', 'vision', 'embed', 'rerank'],
   },
   dailyTokenQuota: {},
   allowedTools: {},

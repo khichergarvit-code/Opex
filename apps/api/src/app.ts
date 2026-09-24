@@ -13,6 +13,7 @@ import { createDocumentsRouter } from './routes/documents.js';
 import { createRetrievalRouter } from './routes/retrieval.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createArtifactsRouter } from './routes/artifacts.js';
+import { createAttachmentsRouter } from './routes/attachments.js';
 import { createRouterDebugRouter } from './routes/routerDebug.js';
 import { createGroundednessDebugRouter } from './routes/groundednessDebug.js';
 import { createAccessRequestsRouter } from './routes/accessRequests.js';
@@ -48,6 +49,7 @@ export function createApp(db: Db, env: Env): Express {
   app.use(createRetrievalRouter(db, gateway, spanWriter));
   app.use(createAdminRouter(db, auditWriter));
   app.use(createArtifactsRouter(db, env.DATA_DIR));
+  app.use(createAttachmentsRouter(db, env.DATA_DIR));
   app.use(createRouterDebugRouter(db, gateway));
   app.use(createGroundednessDebugRouter(db, gateway));
   app.use(createAccessRequestsRouter(db, auditWriter));

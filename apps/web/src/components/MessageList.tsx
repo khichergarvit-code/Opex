@@ -1,5 +1,6 @@
 import { motion } from 'motion/react';
 import type { Citation, MessageRole } from '@opex/shared';
+import type { MessageAttachment } from '../lib/api';
 import { TypingDots } from './ui/TypingDots';
 import { Icon } from './ui/Icon';
 import { CitationChip } from './CitationChip';
@@ -10,6 +11,7 @@ export interface DisplayMessage {
   role: MessageRole;
   content: string;
   citations?: Citation[];
+  attachments?: MessageAttachment[];
   /** Set from the real `verify` SSE event for a doc_qa answer — never fabricated. */
   confidence?: 'high' | 'low';
   revisions?: number;
@@ -62,6 +64,15 @@ export function MessageList({
           transition={{ duration: 0.28, ease: [0.2, 0, 0, 1] }}
           className={`flex flex-col gap-1.5 ${m.role === 'user' ? 'max-w-[80%] self-end items-end' : 'max-w-[92%] self-start items-start'}`}
         >
+          {m.attachments && m.attachments.length > 0 && (
+            <div className="flex flex-wrap justify-end gap-2">
+              {m.attachments.map((a) => (
+                <a key={a.id} href={`/artifacts/${a.id}`} target="_blank" rel="noreferrer">
+                  <img src={`/artifacts/${a.id}`} alt={a.filename} className="max-h-52 max-w-[16rem] rounded-2xl object-cover shadow-card" />
+                </a>
+              ))}
+            </div>
+          )}
           <div
             className={`whitespace-pre-wrap text-[15px] leading-7 ${
               m.role === 'user'

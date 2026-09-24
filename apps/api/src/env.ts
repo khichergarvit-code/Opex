@@ -12,6 +12,7 @@ const envSchema = z.object({
   LLM_MAIN_URL: z.string().url().default('http://localhost:8082'),
   LLM_EMBED_URL: z.string().url().default('http://localhost:8083'),
   LLM_RERANK_URL: z.string().url().default('http://localhost:8084'),
+  LLM_VISION_URL: z.string().url().default('http://localhost:8085'),
   SANDBOX_RUNNER_URL: z.string().url().default('http://localhost:8085'),
   SANDBOX_SHARED_SECRET: z.string().min(1).default('dev_only_change_me'),
 });

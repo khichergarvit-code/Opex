@@ -26,6 +26,8 @@ export const postMessageRequestSchema = z.object({
   content: z.string().min(1).max(8000),
   /** Optional chosen chat model id (see GET /models); defaults to the general model. */
   modelId: z.string().min(1).max(100).optional(),
+  /** Ids from POST /conversations/:id/attachments (images the user attached to this message). */
+  attachmentIds: z.array(z.string().uuid()).max(4).optional(),
 });
 export type PostMessageRequest = z.infer<typeof postMessageRequestSchema>;
 

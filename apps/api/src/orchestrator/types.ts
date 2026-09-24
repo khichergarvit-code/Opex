@@ -30,6 +30,7 @@ export interface AgentConfig {
 }
 
 export interface Attachment {
+  id?: string;
   filename: string;
   mime: string;
 }

@@ -16,5 +16,8 @@ export const messages = pgTable('messages', {
   // [{marker, documentId, filename, page, bbox}] — lets the viewer replay
   // citations on conversation reload, not just from the live SSE stream.
   citations: jsonb('citations').notNull().default([]),
+  // [{id, filename, mime}] — images the user attached; the bytes live in
+  // `artifacts` (kind='upload') so classification/ACL apply on every read.
+  attachments: jsonb('attachments').notNull().default([]),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

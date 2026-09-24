@@ -82,4 +82,42 @@ describe('verifyAndLoadManifest', () => {
       verifyAndLoadManifest({ manifestPath, modelsDir, checkOnly: true }),
     ).rejects.toThrow();
   });
+
+  it('verifies the mmproj projector file too, and refuses a tampered one', async () => {
+    const modelsDir = path.join(dir, 'models');
+    await mkdir(modelsDir, { recursive: true });
+    await writeFile(path.join(modelsDir, 'vl.gguf'), 'weights');
+    await writeFile(path.join(modelsDir, 'vl-mmproj.gguf'), 'projector');
+    const sha = (t: string) => createHash('sha256').update(t).digest('hex');
+    const write = (mmprojSha: string) =>
+      writeFile(
+        path.join(dir, 'vision.yaml'),
+        [
+          'models:',
+          '  - id: test-vision',
+          '    role: vision',
+          '    endpoint: http://localhost:8085',
+          '    gguf_path: vl.gguf',
+          `    sha256: ${sha('weights')}`,
+          '    mmproj_path: vl-mmproj.gguf',
+          `    mmproj_sha256: ${mmprojSha}`,
+          '    ctx_len: 4096',
+          '    capabilities: [vision]',
+          '    license: apache-2.0',
+          '    origin: test',
+          '    enabled: true',
+          '',
+        ].join('\n'),
+      );
+
+    await write(sha('projector'));
+    await expect(
+      verifyAndLoadManifest({ manifestPath: path.join(dir, 'vision.yaml'), modelsDir, checkOnly: true }),
+    ).resolves.toHaveLength(1);
+
+    await write(sha('something else'));
+    await expect(
+      verifyAndLoadManifest({ manifestPath: path.join(dir, 'vision.yaml'), modelsDir, checkOnly: true }),
+    ).rejects.toBeInstanceOf(ManifestHashMismatchError);
+  });
 });

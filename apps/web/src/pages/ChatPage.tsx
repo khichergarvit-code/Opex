@@ -8,6 +8,8 @@ import {
   fetchConversations,
   fetchProjects,
   submitFeedback,
+  uploadAttachment,
+  type MessageAttachment,
   type ChatModelOption,
   type ConversationSummary,
 } from '../lib/api';
@@ -61,6 +63,8 @@ export function ChatPage({
   const [decidingApproval, setDecidingApproval] = useState(false);
   const [lastRoutedAgent, setLastRoutedAgent] = useState<string | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [pendingImages, setPendingImages] = useState<MessageAttachment[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [chatModels, setChatModels] = useState<ChatModelOption[]>([]);
   const [modelId, setModelId] = useState<string>(() => {
@@ -120,6 +124,7 @@ export function ChatPage({
     setPendingApproval(null);
     setStatus(null);
     setStreaming(false);
+    setPendingImages([]);
   }
 
   function startNewChat() {
@@ -148,7 +153,7 @@ export function ChatPage({
           if (cancelled) return true;
           setProjectId(conversation.projectId);
           const visible = stored.filter((m) => m.role !== 'system');
-          setMessages(visible.map((m) => ({ id: m.id, role: m.role as 'user' | 'assistant', content: m.content, citations: m.citations ?? [] })));
+          setMessages(visible.map((m) => ({ id: m.id, role: m.role as 'user' | 'assistant', content: m.content, citations: m.citations ?? [], attachments: m.attachments ?? [] })));
           const last = visible[visible.length - 1];
           return !last || last.role === 'assistant';
         })
@@ -212,14 +217,36 @@ export function ChatPage({
     abortRef.current?.abort();
   }
 
+  async function handleAttach(files: File[]) {
+    if (!projectId || streaming) return;
+    const allowed = files.filter((f) => ['image/png', 'image/jpeg', 'image/webp'].includes(f.type) && f.size <= 8 * 1024 * 1024);
+    if (allowed.length < files.length) setStatus('Only PNG, JPEG or WebP images up to 8 MB can be attached.');
+    const room = 4 - pendingImages.length;
+    if (allowed.length === 0 || room <= 0) return;
+    setUploading(true);
+    try {
+      const convId = await ensureConversation();
+      for (const file of allowed.slice(0, room)) {
+        const uploaded = await uploadAttachment(convId, file);
+        setPendingImages((prev) => [...prev, uploaded]);
+      }
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'could not upload the image');
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function handleSend(content: string) {
     if (!projectId) return;
     const convId = await ensureConversation();
+    const sentImages = pendingImages;
+    setPendingImages([]);
     const userMsgId = crypto.randomUUID();
     assistantIdRef.current = crypto.randomUUID();
     setMessages((prev) => [
       ...prev,
-      { id: userMsgId, role: 'user', content },
+      { id: userMsgId, role: 'user', content, attachments: sentImages },
       { id: assistantIdRef.current, role: 'assistant', content: '', citations: [] },
     ]);
     setStreaming(true);
@@ -317,6 +344,7 @@ export function ChatPage({
       },
       controller.signal,
       modelId || undefined,
+      sentImages.map((a) => a.id),
     );
     // Aborted by the user clicking Stop — streamMessage resolves normally
     // (fetch-event-source's own abort path, not onError), so finalize here.
@@ -459,7 +487,7 @@ export function ChatPage({
                 <p className="mt-2 text-base text-muted">How can I help you today?</p>
               </div>
               <div className="w-full max-w-xl">
-                <Composer disabled={!projectId} onSend={handleSend} models={chatModels} modelId={modelId} onModelChange={changeModel} />
+                <Composer disabled={!projectId} onSend={handleSend} models={chatModels} modelId={modelId} onModelChange={changeModel} attachments={pendingImages} uploading={uploading} onAttach={handleAttach} onRemoveAttachment={(id) => setPendingImages((prev) => prev.filter((a) => a.id !== id))} />
                 {!projectId && projects.length === 0 && (
                   <p className="mt-2 text-center text-xs text-faint">
                     You're not a member of any project yet — ask an admin to add you to one.
@@ -515,6 +543,10 @@ export function ChatPage({
                   models={chatModels}
                   modelId={modelId}
                   onModelChange={changeModel}
+                  attachments={pendingImages}
+                  uploading={uploading}
+                  onAttach={handleAttach}
+                  onRemoveAttachment={(id) => setPendingImages((prev) => prev.filter((a) => a.id !== id))}
                 />
               </div>
             </>

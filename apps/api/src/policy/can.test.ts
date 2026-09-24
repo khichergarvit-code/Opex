@@ -33,7 +33,7 @@ describe('can() — model:invoke', () => {
     ['employee', 'router', true],
     ['employee', 'embed', true],
     ['employee', 'coder', false],
-    ['employee', 'vision', false],
+    ['employee', 'vision', true],
   ];
 
   it.each(matrix)('role=%s modelRole=%s -> allowed=%s', (role, modelRole, expected) => {

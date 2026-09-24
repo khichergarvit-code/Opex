@@ -69,7 +69,7 @@ function ruleBasedRoute(input: RouteInput): RouteDecision | null {
       taskType: 'vision',
       complexity: 'simple',
       agent: 'vision',
-      needs: { documents: false, memory: [], tools: ['describe_image'] },
+      needs: { documents: false, memory: [], tools: [] },
       reason: 'image attachment present',
     };
   }

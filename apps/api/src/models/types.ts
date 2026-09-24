@@ -15,6 +15,8 @@ export interface ChatMessage {
   tool_calls?: ToolCallRequest[];
   /** Set on a 'tool' turn — which call this result answers. */
   tool_call_id?: string;
+  /** data: URIs of images the user attached to this turn (vision model only). */
+  images?: string[];
 }
 
 export interface ChatRequest {

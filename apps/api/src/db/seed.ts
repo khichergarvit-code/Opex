@@ -27,10 +27,10 @@ const SEED_AGENTS = [
   },
   {
     name: 'vision',
-    description: 'Handles image attachments. No vision model is loaded — scaffolded, not functional.',
+    description: 'Answers questions about images the user attaches, using the vision model.',
     systemPromptTemplate: 'vision-system.md',
-    modelRole: 'general' as const,
-    toolAllowlist: ['describe_image'],
+    modelRole: 'vision' as const,
+    toolAllowlist: [],
   },
   {
     name: 'analysis',

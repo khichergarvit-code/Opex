@@ -54,6 +54,7 @@ services:
       LLM_MAIN_URL: http://llm-main:8082
       LLM_EMBED_URL: http://llm-embed:8083
       LLM_RERANK_URL: http://llm-rerank:8084
+      LLM_VISION_URL: http://llm-vision:8085
       DATA_DIR: /data
       SANDBOX_RUNNER_URL: http://sandbox-runner:8000
       SANDBOX_SHARED_SECRET: ${SANDBOX_SHARED_SECRET:-dev_only_change_me}
@@ -119,6 +120,25 @@ services:
     command: ["-m", "/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf", "--host", "0.0.0.0", "--port", "8082", "-c", "16384", "--jinja"]
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8082/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 60s
+
+  llm-vision:
+    restart: unless-stopped
+    image: ghcr.io/ggml-org/llama.cpp:server
+    networks:
+      - core
+    environment: *offline-env
+    volumes:
+      - ./models:/models:ro
+    # A hard cap so a vision request that balloons is killed on its own
+    # instead of taking llm-main down with it (the VM shares one memory pool).
+    mem_limit: 4g
+    command: ["-m", "/models/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf", "--mmproj", "/models/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf", "--host", "0.0.0.0", "--port", "8085", "-c", "8192", "--jinja"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8085/health || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 40

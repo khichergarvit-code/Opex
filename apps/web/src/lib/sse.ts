@@ -26,6 +26,7 @@ export async function streamMessage(
   handlers: StreamMessageHandlers,
   signal?: AbortSignal,
   modelId?: string,
+  attachmentIds?: string[],
 ): Promise<void> {
   await fetchEventSource(`/conversations/${conversationId}/messages`, {
     method: 'POST',
@@ -34,7 +35,7 @@ export async function streamMessage(
       'x-csrf-token': getCsrfToken() ?? '',
     },
     credentials: 'same-origin',
-    body: JSON.stringify({ content, modelId }),
+    body: JSON.stringify({ content, modelId, attachmentIds }),
     signal,
     onmessage(ev) {
       if (!ev.event) return;

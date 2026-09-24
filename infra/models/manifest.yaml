@@ -38,6 +38,27 @@ models:
     enabled: true
     source_url: https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf
 
+  # Vision: a small multimodal model served by its own llama-server with
+  # --mmproj. The projector (mmproj) is a second file and is hash-pinned too
+  # (invariant #3). Used only when a chat message carries an image.
+  - id: llm-vision
+    role: vision
+    endpoint: http://llm-vision:8085
+    gguf_path: Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf
+    sha256: "d02fe9b69ad8cadbbd228e387667af66612c44bed29ffc8eb1e7caf9ac486c12"
+    mmproj_path: mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf
+    mmproj_sha256: "980c9b2f78c04e6cff93d277ada09e768394f112d75db3b4e9dea8a69f9fb904"
+    ctx_len: 8192
+    capabilities: [vision]
+    vram_mb: 3200
+    license: apache-2.0
+    origin: ggml-org/Qwen2.5-VL-3B-Instruct-GGUF
+    # Flip to true once the two files are in ./models (the API verifies every
+    # enabled entry's SHA-256 at boot and refuses to start on a missing file).
+    enabled: false
+    source_url: https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf
+    mmproj_source_url: https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf
+
   - id: llm-embed
     role: embed
     endpoint: http://llm-embed:8083

@@ -20,9 +20,11 @@ import { answerWithVerification } from '../orchestrator/reviseLoop.js';
 import { planTask } from '../orchestrator/planner.js';
 import { runPlan } from '../orchestrator/scheduler.js';
 import { listChatModels } from './models.js';
+import { loadAttachments } from './attachments.js';
 import { buildDocQaPrompt, extractCitedMarkers, projectHasReadyDocuments } from './docQa.js';
 
 const CHAT_SYSTEM_PROMPT_PATH = new URL('../prompts/chat-system.md', import.meta.url);
+const VISION_SYSTEM_PROMPT_PATH = new URL('../prompts/vision-system.md', import.meta.url);
 
 function sendEvent(res: Response, event: SseEvent): void {
   res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`);
@@ -31,6 +33,9 @@ function sendEvent(res: Response, event: SseEvent): void {
 /** Turns a raw model-call failure into something a non-technical user can act on. */
 function describeModelError(err: unknown): string {
   const raw = err instanceof Error ? err.message : 'model call failed';
+  if (/No enabled model configured for role "?(vision|image)/i.test(raw)) {
+    return "This needs the vision model, which isn't installed on this server yet. Ask an admin to install it, then try again.";
+  }
   if (/fetch failed|ECONNREFUSED|llama-server 5\d\d|Circuit open|not available/i.test(raw)) {
     return "The answer model isn't reachable right now (it may be restarting or out of memory). Try again in a minute, or switch to the Fast model.";
   }
@@ -192,6 +197,13 @@ export function createConversationsRouter(
     const docQaModelId = chosenOption && chosenOption.role !== 'general' ? undefined : chosenModelId;
     const docQaOverridden = Boolean(chosenModelId) && docQaModelId === undefined;
 
+    const attachmentIds = [...new Set(parsed.data.attachmentIds ?? [])];
+    const attachments = await loadAttachments(db, env.DATA_DIR, user, conversation.id, attachmentIds);
+    if (attachments.length !== attachmentIds.length) {
+      res.status(400).json({ error: 'an attached image was not found' });
+      return;
+    }
+
     const [trace] = await db.insert(traces).values({ userId: user.id, conversationId: conversation.id }).returning();
     if (!trace) throw new Error('failed to open trace');
 
@@ -200,6 +212,7 @@ export function createConversationsRouter(
       role: 'user',
       content: parsed.data.content,
       traceId: trace.id,
+      attachments: attachments.map(({ id, filename, mime }) => ({ id, filename, mime })),
     });
     await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, conversation.id));
 
@@ -240,7 +253,7 @@ export function createConversationsRouter(
 
     const routeDecision = await routeMessage({
       message: parsed.data.content,
-      attachments: [],
+      attachments: attachments.map(({ id, filename, mime }) => ({ id, filename, mime })),
       hasReadyDocuments,
       gateway,
       user,
@@ -353,6 +366,34 @@ export function createConversationsRouter(
         traceStatus = 'error';
         failureMessage = describeModelError(err);
         sendEvent(res, { type: 'error', data: { message: failureMessage } });
+      }
+    } else if (routeDecision.agent === 'vision') {
+      if (attachments.length === 0) {
+        assistantContent = 'Attach an image (the paperclip next to the message box) and I can answer questions about it.';
+        sendEvent(res, { type: 'token', data: { delta: assistantContent } });
+      } else {
+        const systemPrompt = await readFile(VISION_SYSTEM_PROMPT_PATH, 'utf8');
+        try {
+          progress('generating', 'Looking at your image…');
+          for await (const delta of gateway.chatStream({
+            role: 'vision',
+            signal: abort.signal,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              ...memoryTurns,
+              { role: 'user', content: userContent, images: attachments.map((a) => a.dataUri) },
+            ],
+            user,
+            traceId: trace.id,
+          })) {
+            assistantContent += delta;
+            sendEvent(res, { type: 'token', data: { delta } });
+          }
+        } catch (err) {
+          traceStatus = 'error';
+          failureMessage = describeModelError(err);
+          sendEvent(res, { type: 'error', data: { message: failureMessage } });
+        }
       }
     } else if (routeDecision.agent === 'doc_qa') {
       progress('retrieving', 'Searching your documents…');

@@ -32,6 +32,24 @@ export interface LlamaChatResult {
   toolCalls: LlamaToolCall[];
 }
 
+/**
+ * OpenAI-style wire format: a turn with `images` becomes a multimodal
+ * `content` array (text + image_url parts); every other turn is untouched.
+ */
+export function toWireMessages(messages: ChatMessage[]): unknown[] {
+  return messages.map(({ images, ...rest }) =>
+    images && images.length > 0
+      ? {
+          ...rest,
+          content: [
+            { type: 'text', text: rest.content },
+            ...images.map((url) => ({ type: 'image_url', image_url: { url } })),
+          ],
+        }
+      : rest,
+  );
+}
+
 async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -115,7 +133,7 @@ export async function llamaChat(opts: LlamaChatOptions): Promise<LlamaChatResult
         headers: { 'content-type': 'application/json' },
         signal: opts.signal ? AbortSignal.any([controller.signal, opts.signal]) : controller.signal,
         body: JSON.stringify({
-          messages: opts.messages,
+          messages: toWireMessages(opts.messages),
           max_tokens: opts.maxTokens,
           tools: opts.tools,
           response_format: opts.jsonSchema
@@ -182,7 +200,7 @@ export async function* llamaChatStream(opts: LlamaChatOptions): AsyncGenerator<s
     headers: { 'content-type': 'application/json' },
     signal: opts.signal,
     body: JSON.stringify({
-      messages: opts.messages,
+      messages: toWireMessages(opts.messages),
       max_tokens: opts.maxTokens,
       stream: true,
     }),
