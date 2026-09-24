@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { projects } from './projects.js';
 import { users } from './users.js';
 import { workspaces } from './workspaces.js';
@@ -24,6 +24,8 @@ export const conversations = pgTable('conversations', {
   // so the scheduler doesn't re-extract from the same idle conversation
   // repeatedly (memory/scheduler.ts only extracts when null or stale).
   memoryExtractedAt: timestamp('memory_extracted_at', { withTimezone: true }),
+  // Consecutive extraction attempts that failed because the model was unreachable; retried up to a cap.
+  memoryExtractFailures: integer('memory_extract_failures').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

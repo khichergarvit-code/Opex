@@ -6,60 +6,68 @@
 # API's manifest loader); it exists only so scripts/fetch-models.sh has a
 # single source of truth for where to download each file from.
 #
+# Two models run today: one Qwen2.5-VL-7B that serves chat, vision and routing
+# (llm-main, llm-router and llm-vision are three roles on the same file/URL)
+# plus bge-m3 for embeddings. Every endpoint reads `${LLM_<ROLE>_URL:-default}`
+# from the environment: pointing a role at another server is a .env change only
+# (internal hosts only, shown as "unverified" — see docs/PROGRESS.md Decisions).
+#
 # A1 pick rationale (see docs/PROGRESS.md Decisions): small, Apache-2.0,
 # single-file GGUFs that fit this dev machine's 16GB unified memory, chosen
 # over the exact classes models.md's reference build names because that
 # reference build assumes a 16-24GB Linux/NVIDIA box. llm-main is text-only
 # for A1 — Spike B's vision check is deferred (see spike results).
 models:
-  - id: llm-small
-    role: router
-    endpoint: http://llm-small:8081
-    gguf_path: qwen2.5-0.5b-instruct-q4_k_m.gguf
-    sha256: "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db"
-    ctx_len: 8192
-    capabilities: [json_schema, tools]
-    vram_mb: 900
-    license: apache-2.0
-    origin: Qwen/Qwen2.5-0.5B-Instruct-GGUF
-    enabled: true
-    source_url: https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf
-
+  # Bundled chat + vision model. Its files are hash-pinned (invariant 3).
   - id: llm-main
     role: general
-    endpoint: http://llm-main:8082
-    gguf_path: Qwen2.5-7B-Instruct-Q4_K_M.gguf
-    sha256: "65b8fcd92af6b4fefa935c625d1ac27ea29dcb6ee14589c55a8f115ceaaa1423"
-    ctx_len: 8192
-    capabilities: [json_schema, tools]
-    vram_mb: 6000
+    endpoint: "${LLM_MAIN_URL:-http://llm-main:8082}"
+    gguf_path: Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf
+    sha256: "9258bf05b12686d097ff3b6b18d968ab393649780aa2b3cd67fec43d50554392"
+    mmproj_path: mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf
+    mmproj_sha256: "2ddb555391bae966e412deab9e07b58afa18bcc06930ba0f1c78a3695ab9e506"
+    ctx_len: 16384
+    capabilities: [json_schema, tools, vision]
+    vram_mb: 7000
     license: apache-2.0
-    origin: bartowski/Qwen2.5-7B-Instruct-GGUF
+    origin: ggml-org/Qwen2.5-VL-7B-Instruct-GGUF
     enabled: true
-    source_url: https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf
+    source_url: https://huggingface.co/ggml-org/Qwen2.5-VL-7B-Instruct-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf
+    mmproj_source_url: https://huggingface.co/ggml-org/Qwen2.5-VL-7B-Instruct-GGUF/resolve/main/mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf
 
-  # Vision: a small multimodal model served by its own llama-server with
-  # --mmproj. The projector (mmproj) is a second file and is hash-pinned too
-  # (invariant #3). Used only when a chat message carries an image.
+  # Same model serving the router role. Set LLM_ROUTER_URL to use another (e.g. a small fast) model.
+  - id: llm-router
+    role: router
+    endpoint: "${LLM_ROUTER_URL:-http://llm-main:8082}"
+    gguf_path: Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf
+    sha256: "9258bf05b12686d097ff3b6b18d968ab393649780aa2b3cd67fec43d50554392"
+    mmproj_path: mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf
+    mmproj_sha256: "2ddb555391bae966e412deab9e07b58afa18bcc06930ba0f1c78a3695ab9e506"
+    ctx_len: 16384
+    capabilities: [json_schema, tools]
+    vram_mb: 7000
+    license: apache-2.0
+    origin: ggml-org/Qwen2.5-VL-7B-Instruct-GGUF
+    enabled: true
+
+  # Same model serving the vision role. Set LLM_VISION_URL to use another vision model.
   - id: llm-vision
     role: vision
-    endpoint: http://llm-vision:8085
-    gguf_path: Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf
-    sha256: "d02fe9b69ad8cadbbd228e387667af66612c44bed29ffc8eb1e7caf9ac486c12"
-    mmproj_path: mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf
-    mmproj_sha256: "980c9b2f78c04e6cff93d277ada09e768394f112d75db3b4e9dea8a69f9fb904"
-    ctx_len: 4096
+    endpoint: "${LLM_VISION_URL:-http://llm-main:8082}"
+    gguf_path: Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf
+    sha256: "9258bf05b12686d097ff3b6b18d968ab393649780aa2b3cd67fec43d50554392"
+    mmproj_path: mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf
+    mmproj_sha256: "2ddb555391bae966e412deab9e07b58afa18bcc06930ba0f1c78a3695ab9e506"
+    ctx_len: 16384
     capabilities: [vision]
-    vram_mb: 3200
+    vram_mb: 7000
     license: apache-2.0
-    origin: ggml-org/Qwen2.5-VL-3B-Instruct-GGUF
+    origin: ggml-org/Qwen2.5-VL-7B-Instruct-GGUF
     enabled: true
-    source_url: https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf
-    mmproj_source_url: https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf
 
   - id: llm-embed
     role: embed
-    endpoint: http://llm-embed:8083
+    endpoint: "${LLM_EMBED_URL:-http://llm-embed:8083}"
     gguf_path: bge-m3-Q8_0.gguf
     sha256: "950f4a8e5e19477a6d3c26d2f162233c20002c601f75e4b002e3239997821167"
     ctx_len: 8192
@@ -70,9 +78,11 @@ models:
     enabled: true
     source_url: https://huggingface.co/gpustack/bge-m3-GGUF/resolve/main/bge-m3-Q8_0.gguf
 
+  # Optional. Off by default; set LLM_RERANK_URL in .env to a reranker server to turn it on.
+  # Without it, document search keeps the fused order and judges "no support" by embedding similarity.
   - id: llm-rerank
     role: rerank
-    endpoint: http://llm-rerank:8084
+    endpoint: "${LLM_RERANK_URL:-http://llm-rerank:8084}"
     gguf_path: bge-reranker-v2-m3-Q8_0.gguf
     sha256: "a43c7c9b11a4c1517e5bf95151960e1621d1b72f7a493364b01e386cf1aaa1d3"
     ctx_len: 8192
@@ -80,5 +90,6 @@ models:
     vram_mb: 900
     license: apache-2.0
     origin: gpustack/bge-reranker-v2-m3-GGUF
-    enabled: true
+    enabled: false
+    enabled_if_env: LLM_RERANK_URL
     source_url: https://huggingface.co/gpustack/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-Q8_0.gguf

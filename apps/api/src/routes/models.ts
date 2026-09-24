@@ -33,6 +33,9 @@ export async function listChatModels(db: Db, user: AuthedUser): Promise<ChatMode
     .filter((m) => m.enabled)
     .filter((m) => can(user, 'model:invoke', { modelRole: m.role }).allowed)
     .filter((m) => m.groupAllowlist.length === 0 || m.groupAllowlist.some((g) => groupIds.has(g)))
+    // Alias entries (router/vision served by the same endpoint as the main model) are one choice, not three.
+    .sort((a, b) => Number(b.role === 'general') - Number(a.role === 'general'))
+    .filter((m, i, all) => all.findIndex((o) => o.endpoint === m.endpoint) === i)
     .map((m) => ({
       id: m.id,
       role: m.role,

@@ -18,9 +18,12 @@ export async function computeSourceClassification(
   db: Db,
   conversationId: string,
   projectId: string,
+  opts: { includeProjectDefault?: boolean } = {},
 ): Promise<number> {
   const [project] = await db.select({ defaultClassification: projects.defaultClassification }).from(projects).where(eq(projects.id, projectId)).limit(1);
-  let max = project?.defaultClassification ?? 0;
+  // A fact the user states about themselves is not derived from the project's default classification —
+  // only from documents actually cited in the conversation — so it stays recallable in every space.
+  let max = opts.includeProjectDefault === false ? 0 : (project?.defaultClassification ?? 0);
 
   const rows = await db
     .select({ citations: messages.citations })

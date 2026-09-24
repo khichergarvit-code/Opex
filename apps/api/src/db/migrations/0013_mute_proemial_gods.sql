@@ -1,0 +1,1 @@
+ALTER TABLE "conversations" ADD COLUMN "memory_extract_failures" integer DEFAULT 0 NOT NULL;

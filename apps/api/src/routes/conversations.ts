@@ -23,7 +23,11 @@ import { listChatModels } from './models.js';
 import { dropRefusalTurns } from './dropRefusalTurns.js';
 import { loadAttachments } from './attachments.js';
 import type { AuditWriter } from '../audit/writeAudit.js';
-import { buildDocQaPrompt, extractCitedMarkers, projectHasReadyDocuments } from './docQa.js';
+import { buildDocQaPrompt, extractCitedMarkers, loadUserGroupIds, projectHasReadyDocuments } from './docQa.js';
+import { buildCitationMap } from '../retrieval/index.js';
+import { quickExtract } from '../memory/quickExtract.js';
+import { looksLikeSelfStatement } from '../memory/qualityFilter.js';
+import { isSummarizeRequest, listVisibleDocuments, loadDocumentChunks, pickTarget, summarizeChunks, type VisibleDocument } from '../orchestrator/summarize.js';
 
 const GENERAL_FALLBACK_PROMPT_PATH = new URL('../prompts/general-fallback.md', import.meta.url);
 const CHAT_SYSTEM_PROMPT_PATH = new URL('../prompts/chat-system.md', import.meta.url);
@@ -269,6 +273,16 @@ export function createConversationsRouter(
     const progress = (phase: ProgressEvent['data']['phase'], label: string) =>
       sendEvent(res, { type: 'progress', data: { phase, label } });
     if (savedUserMessage) sendEvent(res, { type: 'user_saved', data: { messageId: savedUserMessage.id } });
+    // Learn a stated fact right away, in parallel with answering (the model server has two slots).
+    const quickMemory: Promise<unknown> = looksLikeSelfStatement(parsed.data.content)
+      ? quickExtract(
+          { db, gateway, spanWriter, user, traceId: trace.id },
+          { id: conversation.id, projectId: conversation.projectId, workspaceId: conversation.workspaceId },
+          parsed.data.content,
+        ).then((saved) => {
+          for (const m of saved) if (!res.writableEnded) sendEvent(res, { type: 'memory_saved', data: m });
+        })
+      : Promise.resolve();
     progress('routing', 'Understanding your question…');
 
     const history = await db
@@ -286,8 +300,32 @@ export function createConversationsRouter(
 
     const hasReadyDocuments = await projectHasReadyDocuments(db, conversation.projectId);
 
+    // "Summarise <document>": resolved by rule from the documents this user may read
+    // (ACL in the SQL), so it needs no router call.
+    let summarizeTarget: VisibleDocument | null = null;
+    let summarizeAsk: string | null = null;
+    if (documentMode !== 'off' && hasReadyDocuments && attachments.length === 0 && isSummarizeRequest(parsed.data.content)) {
+      const groupIds = await loadUserGroupIds(db, user.id);
+      const target = pickTarget(
+        parsed.data.content,
+        await listVisibleDocuments(db, { workspaceId: conversation.workspaceId, projectId: conversation.projectId, userId: user.id, clearance: user.clearance, groupIds }),
+      );
+      if (target.kind === 'found') summarizeTarget = target.document;
+      if (target.kind === 'ambiguous') {
+        summarizeAsk = `Which document should I summarise? I can see:\n${target.names.map((n) => `- ${n}`).join('\n')}\n\nReply with something like "summarise ${target.names[0]}".`;
+      }
+    }
+
     let routeDecision =
-      documentMode === 'on' && hasReadyDocuments && attachments.length === 0
+      summarizeTarget || summarizeAsk
+        ? {
+            taskType: 'doc_qa' as const,
+            complexity: 'simple' as const,
+            agent: 'doc_qa' as const,
+            needs: { documents: true, memory: [] as Array<'semantic' | 'episodic'>, tools: [] as string[] },
+            reason: summarizeTarget ? `summarising ${summarizeTarget.filename}` : 'summary requested; asking which document',
+          }
+        : documentMode === 'on' && hasReadyDocuments && attachments.length === 0
         ? {
             taskType: 'doc_qa' as const,
             complexity: 'simple' as const,
@@ -337,10 +375,14 @@ export function createConversationsRouter(
     // handles the message. Project notes are always included; semantic/
     // episodic only when the router asked for them.
     const [project] = await db.select().from(projects).where(eq(projects.id, conversation.projectId)).limit(1);
+    // Memory is an enhancement: if recall fails, answer without it rather than not at all.
     const { block: longTermMemoryBlock, injected: injectedMemories } = await buildMemoryBlock(
       { db, gateway, spanWriter, user, traceId: trace.id },
       { workspaceId: conversation.workspaceId, projectId: conversation.projectId, query: parsed.data.content, needsMemory: routeDecision.needs.memory },
-    );
+    ).catch((err: unknown) => {
+      console.error('memory recall failed:', err instanceof Error ? err.message : err);
+      return { block: '', injected: [] as Awaited<ReturnType<typeof buildMemoryBlock>>['injected'] };
+    });
     const projectNotesBlock = project ? renderProjectNotesBlock(project.notesMd) : null;
     for (const m of injectedMemories) {
       sendEvent(res, { type: 'memory_used', data: { id: m.id, kind: m.type, score: m.score } });
@@ -353,6 +395,7 @@ export function createConversationsRouter(
 
     let assistantContent = '';
     let answerSource: 'documents' | 'general' | null = null;
+    let answerClassification = 0;
     let traceStatus: 'ok' | 'error' = 'ok';
     let failureMessage = '';
     let citations: Array<{ marker: number; documentId: string; filename: string; page: number; bbox: unknown }> = [];
@@ -361,7 +404,63 @@ export function createConversationsRouter(
     // finalization block entirely rather than overwrite that status.
     let pausedForApproval = false;
 
-    if (routeDecision.complexity === 'multi_step') {
+    if (summarizeAsk) {
+      assistantContent = summarizeAsk;
+      answerSource = 'documents';
+      sendEvent(res, { type: 'token', data: { delta: assistantContent } });
+    } else if (summarizeTarget) {
+      try {
+        answerSource = 'documents';
+        answerClassification = summarizeTarget.classification;
+        sendEvent(res, { type: 'source', data: { kind: 'documents' } });
+        progress('retrieving', `Reading ${summarizeTarget.filename}…`);
+        const groupIds = await loadUserGroupIds(db, user.id);
+        const chunkRows = await loadDocumentChunks(db, {
+          workspaceId: conversation.workspaceId,
+          projectId: conversation.projectId,
+          userId: user.id,
+          clearance: user.clearance,
+          groupIds,
+          documentId: summarizeTarget.id,
+        });
+        if (chunkRows.length === 0) {
+          assistantContent = `I couldn't read any text from ${summarizeTarget.filename}, so there is nothing to summarise.`;
+          sendEvent(res, { type: 'token', data: { delta: assistantContent } });
+        } else {
+          const header = `**Summary of ${summarizeTarget.filename}**\n\n`;
+          sendEvent(res, { type: 'token', data: { delta: header } });
+          const result = await summarizeChunks(
+            {
+              gateway,
+              user,
+              traceId: trace.id,
+              signal: abort.signal,
+              modelId: chosenModelId,
+              onProgress: (label) => progress('generating', label),
+              onToken: (delta) => sendEvent(res, { type: 'token', data: { delta } }),
+            },
+            summarizeTarget.filename,
+            chunkRows,
+          );
+          assistantContent = header + result.text;
+          if (result.used.length < result.totalChunks) {
+            const note = `\n\n_Summarised from ${result.used.length} of ${result.totalChunks} sections (long document)._`;
+            assistantContent += note;
+            sendEvent(res, { type: 'token', data: { delta: note } });
+          }
+          const citationMap = await buildCitationMap(db, result.used);
+          const cited = new Set(extractCitedMarkers(assistantContent));
+          citations = citationMap.filter((c) => cited.has(c.marker));
+          for (const citation of citations) {
+            sendEvent(res, { type: 'citation', data: citation as CitationEvent['data'] });
+          }
+        }
+      } catch (err) {
+        traceStatus = 'error';
+        failureMessage = describeModelError(err);
+        sendEvent(res, { type: 'error', data: { message: failureMessage } });
+      }
+    } else if (routeDecision.complexity === 'multi_step') {
       try {
         progress('planning', 'Planning the steps…');
         const plan = await planTask({ gateway, user, traceId: trace.id, signal: abort.signal }, parsed.data.content);
@@ -692,6 +791,7 @@ export function createConversationsRouter(
             traceId: trace.id,
             citations,
             source: answerSource,
+            classification: answerClassification,
           })
           .returning();
         assistantMessageId = assistantRow?.id ?? '';
@@ -703,6 +803,7 @@ export function createConversationsRouter(
         .set({ status: clientGone ? 'error' : traceStatus, endedAt: new Date() })
         .where(eq(traces.id, trace.id));
 
+      await quickMemory;
       if (traceStatus === 'ok' && !clientGone) {
         sendEvent(res, { type: 'done', data: { messageId: assistantMessageId, traceId: trace.id } });
       }

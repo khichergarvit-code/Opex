@@ -8,11 +8,13 @@ const envSchema = z.object({
   MODELS_DIR: z.string().default('./models'),
   DATA_DIR: z.string().default('./data'),
   MANIFEST_PATH: z.string().default('./infra/models/manifest.yaml'),
-  LLM_SMALL_URL: z.string().url().default('http://localhost:8081'),
-  LLM_MAIN_URL: z.string().url().default('http://localhost:8082'),
-  LLM_EMBED_URL: z.string().url().default('http://localhost:8083'),
-  LLM_RERANK_URL: z.string().url().default('http://localhost:8084'),
-  LLM_VISION_URL: z.string().url().default('http://localhost:8085'),
+  // Model endpoints are read from process.env by the manifest loader (`${LLM_<ROLE>_URL:-default}`);
+  // listed here only so they are documented next to the other settings.
+  LLM_MAIN_URL: z.string().optional(),
+  LLM_ROUTER_URL: z.string().optional(),
+  LLM_VISION_URL: z.string().optional(),
+  LLM_EMBED_URL: z.string().optional(),
+  LLM_RERANK_URL: z.string().optional(),
   SANDBOX_RUNNER_URL: z.string().url().default('http://localhost:8085'),
   SANDBOX_SHARED_SECRET: z.string().min(1).default('dev_only_change_me'),
 });

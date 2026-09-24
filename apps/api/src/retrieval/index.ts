@@ -2,7 +2,7 @@ import type { Db } from '../db/client.js';
 import type { ModelGateway, SpanWriter } from '../models/gateway.js';
 import type { AuthedUser } from '../policy/types.js';
 import { ftsSearch } from './ftsSearch.js';
-import { rerankChunks } from './rerank.js';
+import { rerankChunks, selectWithoutRerank } from './rerank.js';
 import { rrfFuse } from './rrf.js';
 import type { SearchOutcome, SearchParams } from './types.js';
 import { vectorSearch } from './vectorSearch.js';
@@ -49,14 +49,9 @@ export async function search(deps: SearchDeps, params: SearchParams): Promise<Se
     ]);
 
     const fused = rrfFuse(vectorResults, ftsResults).slice(0, 30);
-    const result = await rerankChunks(
-      deps.gateway,
-      deps.user,
-      deps.traceId,
-      params.query,
-      fused,
-      finalK,
-    );
+    const result = (await deps.gateway.hasRole('rerank'))
+      ? await rerankChunks(deps.gateway, deps.user, deps.traceId, params.query, fused, finalK)
+      : selectWithoutRerank(fused, vectorResults, ftsResults, finalK);
 
     const latencyMs = Date.now() - started;
     await deps.spanWriter.writeSpan({

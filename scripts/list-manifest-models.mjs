@@ -11,8 +11,11 @@ const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const manifestPath = process.env.MANIFEST_PATH ?? path.join(repoRoot, 'infra/models/manifest.yaml');
 
 const doc = yaml.load(readFileSync(manifestPath, 'utf8'));
+// Alias entries (router/vision on the same file as chat) list each file once.
+const seen = new Set();
 for (const entry of doc.models) {
-  if (entry.enabled === false) continue;
+  if (entry.enabled === false || seen.has(entry.gguf_path)) continue;
+  seen.add(entry.gguf_path);
   console.log([entry.id, entry.gguf_path, entry.source_url ?? '', entry.sha256 ?? ''].join('\t'));
   if (entry.mmproj_path) {
     console.log([`${entry.id}-mmproj`, entry.mmproj_path, entry.mmproj_source_url ?? '', entry.mmproj_sha256 ?? ''].join('\t'));

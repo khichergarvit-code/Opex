@@ -5,8 +5,10 @@ import { runMigrations } from './db/migrate.js';
 import { loadEnv } from './env.js';
 import { verifyAndLoadManifest } from './models/manifest.js';
 import { ModelGateway } from './models/gateway.js';
+import { createDbAuditWriter } from './audit/writeAudit.js';
 import { createDbSpanWriter } from './spans/writeSpan.js';
 import { startMemoryScheduler } from './memory/scheduler.js';
+import { recoverInterruptedTurns } from './orchestrator/recoverInterrupted.js';
 import { startApprovalTimeoutSweep } from './orchestrator/approvalSweep.js';
 
 async function main() {
@@ -20,7 +22,11 @@ async function main() {
     manifestPath: env.MANIFEST_PATH,
     modelsDir: env.MODELS_DIR,
     db,
+    auditWriter: createDbAuditWriter(db),
   });
+
+  const recovered = await recoverInterruptedTurns(db);
+  if (recovered > 0) console.log(`Recovered ${recovered} chat(s) left without an answer by a restart.`);
 
   const app = createApp(db, env);
   app.listen(env.PORT, () => {

@@ -77,3 +77,21 @@ pnpm eval               # runs eval/ suites against a live API, writes eval/resu
 - Everything is CPU-inference by default (~2-6 tokens/sec measured on the
   original dev box). A machine with an NVIDIA GPU would need CUDA support
   wired into llama.cpp's Docker image/compose config — not currently set up.
+
+## Production: swap models by editing `.env`
+
+Two models run out of the box: **Qwen2.5-VL-7B** (chat, vision and routing, container `llm-main`) and **bge-m3** (embeddings, `llm-embed`). Allocate about 10 GB to Docker.
+
+To use a different or bigger model, install it on any server that speaks the OpenAI-compatible API (llama.cpp `llama-server`, vLLM, ...) and set the role's URL in `.env`, then `docker compose up -d api`:
+
+| Variable | Role |
+|---|---|
+| `LLM_MAIN_URL` | chat / general answers (also used by document ingestion) |
+| `LLM_ROUTER_URL` | decides which agent handles a message |
+| `LLM_VISION_URL` | image questions |
+| `LLM_EMBED_URL` | document embeddings (changing the embedding model requires re-ingesting documents) |
+| `LLM_RERANK_URL` | optional reranker; unset = off |
+
+Example: `LLM_MAIN_URL=http://10.0.0.20:8000`, `LLM_ROUTER_URL=http://10.0.0.20:8000`, `LLM_VISION_URL=http://10.0.0.20:8000`, then stop the bundled `llm-main` to free its memory.
+
+Rules: the host must be internal (Docker service name, `localhost`, `10.x`, `172.16-31.x`, `192.168.x`, `*.local`, `*.internal`); a public address is refused when the API starts, which keeps the no-egress guarantee. An externally served model cannot be SHA-256 verified, so it shows as "unverified (external)" on the admin Models page and its registration is written to the audit log. Bundled models stay hash-pinned in `infra/models/manifest.yaml`.

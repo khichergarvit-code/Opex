@@ -10,6 +10,7 @@ import { StatusPill, type PillTone } from '../components/ui/Badge';
 import { ClassificationBanner } from '../components/ui/ClassificationBanner';
 import { Skeleton } from '../components/ui/Skeleton';
 import { Alert } from '../components/ui/Alert';
+import { navigate } from '../lib/router';
 
 const CLASSIFICATION_LABELS = ['Public', 'Internal', 'Confidential', 'Restricted'];
 const CLASSIFICATION_TONES: PillTone[] = ['neutral', 'info', 'warning', 'danger'];
@@ -21,7 +22,7 @@ const STATUS_TONES: Record<ApiDocument['status'], PillTone> = {
   failed: 'danger',
 };
 
-function DocumentCard({ doc, onOpen }: { doc: ApiDocument; onOpen: (id: string) => void }) {
+function DocumentCard({ doc, projectId, onOpen }: { doc: ApiDocument; projectId: string; onOpen: (id: string) => void }) {
   const [live, setLive] = useState(doc);
 
   useEffect(() => {
@@ -63,7 +64,22 @@ function DocumentCard({ doc, onOpen }: { doc: ApiDocument; onOpen: (id: string) 
         ) : null}
         <span>{(live.sizeBytes / 1024).toFixed(0)} KB</span>
       </div>
-      <div className="mt-3">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {live.status === 'ready' && (
+          <Button
+            size="sm"
+            onClick={() => {
+              try {
+                sessionStorage.setItem('opex.autoSend', JSON.stringify({ projectId, text: `Summarise ${live.filename}` }));
+              } catch {
+                // sessionStorage unavailable — the user can type the request instead
+              }
+              navigate({ name: 'chat' });
+            }}
+          >
+            Summarise
+          </Button>
+        )}
         <RequestAccessButton documentId={doc.id} />
       </div>
     </Card>
@@ -194,7 +210,7 @@ export function DocumentsPage({
               transition={{ delay: Math.min(i, 10) * 0.05, duration: 0.3, ease: [0.2, 0, 0, 1] }}
               whileHover={{ y: -3 }}
             >
-              <DocumentCard doc={doc} onOpen={onOpenDocument} />
+              <DocumentCard doc={doc} projectId={project.id} onOpen={onOpenDocument} />
             </motion.div>
           ))}
         </div>

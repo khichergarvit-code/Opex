@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ApiError, fetchMyMemories, type MyMemoryRow } from '../lib/api';
+import { ApiError, fetchMyMemories, forgetAllMemories, forgetMemory, type MyMemoryRow } from '../lib/api';
 import { Button } from './ui/Button';
 import { Card } from './ui/Card';
 import { StatusPill } from './ui/Badge';
@@ -29,8 +29,23 @@ export function MyMemoriesPanel({ onBack }: { onBack: () => void }) {
       </Button>
       <h2 className="text-xl font-semibold text-fg">What OpeX remembers</h2>
       <p className="mt-1 text-sm text-muted">
-        Preferences and facts OpeX has picked up from your conversations. Ask an admin to delete anything here.
+        Facts and preferences OpeX has picked up from what you told it. They are private to you and are used in every chat and space. Forget anything you don't want kept.
       </p>
+      {rows && rows.length > 0 && (
+        <Button
+          variant="danger"
+          size="sm"
+          className="mt-3"
+          onClick={() => {
+            if (!window.confirm('Forget everything OpeX has learned about you?')) return;
+            forgetAllMemories()
+              .then(() => setRows([]))
+              .catch((err) => setError(err instanceof ApiError ? err.message : 'could not forget memories'));
+          }}
+        >
+          Forget everything
+        </Button>
+      )}
 
       {error && <Alert className="mt-4">{error}</Alert>}
 
@@ -44,6 +59,18 @@ export function MyMemoriesPanel({ onBack }: { onBack: () => void }) {
               <StatusPill tone={m.type === 'semantic' ? 'info' : 'neutral'}>{m.type}</StatusPill>
               <span className="text-xs text-faint">confidence {Math.round(m.confidence * 100)}%</span>
               <span className="text-xs text-faint">{new Date(m.createdAt).toLocaleDateString()}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-auto"
+                onClick={() =>
+                  forgetMemory(m.id)
+                    .then(() => setRows((prev) => (prev ? prev.filter((r) => r.id !== m.id) : prev)))
+                    .catch((err) => setError(err instanceof ApiError ? err.message : 'could not forget that memory'))
+                }
+              >
+                Forget
+              </Button>
             </div>
           </Card>
         ))}

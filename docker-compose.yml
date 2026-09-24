@@ -50,11 +50,13 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-dev_only_change_me_use_a_random_64_byte_value}
       MODELS_DIR: /models
       MANIFEST_PATH: /app/infra/models/manifest.yaml
-      LLM_SMALL_URL: http://llm-small:8081
-      LLM_MAIN_URL: http://llm-main:8082
-      LLM_EMBED_URL: http://llm-embed:8083
-      LLM_RERANK_URL: http://llm-rerank:8084
-      LLM_VISION_URL: http://llm-vision:8085
+      # Model URLs. Empty = the bundled container from infra/models/manifest.yaml. To use a
+      # model served elsewhere on the private network, set the URL in .env and restart the API.
+      LLM_MAIN_URL: ${LLM_MAIN_URL:-}
+      LLM_ROUTER_URL: ${LLM_ROUTER_URL:-}
+      LLM_VISION_URL: ${LLM_VISION_URL:-}
+      LLM_EMBED_URL: ${LLM_EMBED_URL:-}
+      LLM_RERANK_URL: ${LLM_RERANK_URL:-}
       DATA_DIR: /data
       SANDBOX_RUNNER_URL: http://sandbox-runner:8000
       SANDBOX_SHARED_SECRET: ${SANDBOX_SHARED_SECRET:-dev_only_change_me}
@@ -94,6 +96,8 @@ services:
       retries: 10
 
   llm-small:
+    # Superseded by the single llm-main model (roles are URLs in .env). Start with: docker compose --profile legacy up -d llm-small
+    profiles: ["legacy"]
     restart: unless-stopped
     image: ghcr.io/ggml-org/llama.cpp:server
     networks:
@@ -118,9 +122,10 @@ services:
     environment: *offline-env
     volumes:
       - ./models:/models:ro
-    # Sized for a 12 GB Docker VM on a 16 GB Mac (see docs/PROGRESS.md).
-    mem_limit: 6500m
-    command: ["-m", "/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf", "--host", "0.0.0.0", "--port", "8082", "-c", "8192", "-np", "1", "--jinja"]
+    # One Qwen2.5-VL-7B serves chat, vision and routing. -np 2 lets a routing call and a
+    # chat call run at the same time (each slot gets half of -c). Sized for a ~10 GB Docker VM.
+    mem_limit: 8g
+    command: ["-m", "/models/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf", "--mmproj", "/models/mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf", "--host", "0.0.0.0", "--port", "8082", "-c", "16384", "-np", "2", "--jinja"]
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8082/health || exit 1"]
       interval: 5s
@@ -129,6 +134,8 @@ services:
       start_period: 60s
 
   llm-vision:
+    # Superseded by the single llm-main model (roles are URLs in .env). Start with: docker compose --profile legacy up -d llm-vision
+    profiles: ["legacy"]
     restart: unless-stopped
     image: ghcr.io/ggml-org/llama.cpp:server
     networks:
@@ -165,6 +172,8 @@ services:
       start_period: 30s
 
   llm-rerank:
+    # Superseded by the single llm-main model (roles are URLs in .env). Start with: docker compose --profile legacy up -d llm-rerank
+    profiles: ["legacy"]
     restart: unless-stopped
     image: ghcr.io/ggml-org/llama.cpp:server
     networks:
@@ -190,8 +199,8 @@ services:
     environment:
       <<: *offline-env
       DATABASE_URL: postgres://${POSTGRES_USER:-opex}:${POSTGRES_PASSWORD:-opex_dev_only_change_me}@postgres:5432/${POSTGRES_DB:-opex}
-      LLM_EMBED_URL: http://llm-embed:8083
-      LLM_MAIN_URL: http://llm-main:8082
+      LLM_EMBED_URL: ${LLM_EMBED_URL:-http://llm-embed:8083}
+      LLM_MAIN_URL: ${LLM_MAIN_URL:-http://llm-main:8082}
       DATA_DIR: /data
       # Docling downloads its layout/table-structure models from HF on
       # first use — HF_HUB_OFFLINE=1 correctly blocks that at runtime, so

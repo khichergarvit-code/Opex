@@ -7,6 +7,7 @@ import {
   fetchChatModels,
   fetchConversations,
   fetchProjects,
+  forgetMemory,
   submitFeedback,
   uploadAttachment,
   type MessageAttachment,
@@ -309,6 +310,14 @@ export function ChatPage({
             const newArtifacts = event.data.artifactIds.map((id) => ({ id, toolName: 'tool' }));
             if (newArtifacts.length > 0) setArtifacts((prev) => [...prev, ...newArtifacts]);
           }
+          if (event.type === 'memory_used' && event.data.kind !== 'project') {
+            setMessages((prev) => prev.map((m) => (m.id === assistantIdRef.current ? { ...m, memoriesUsed: (m.memoriesUsed ?? 0) + 1 } : m)));
+          }
+          if (event.type === 'memory_saved') {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantIdRef.current ? { ...m, remembered: [...(m.remembered ?? []), event.data] } : m)),
+            );
+          }
           if (event.type === 'verify') {
             // Real data from the groundedness verifier — never fabricated.
             setMessages((prev) =>
@@ -446,6 +455,29 @@ export function ChatPage({
   useEffect(() => {
     if (atBottom && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, atBottom]);
+
+  // "Summarise" on the Documents page hands over a request through sessionStorage.
+  useEffect(() => {
+    if (!projectId || projects.length === 0 || conversationId) return;
+    let payload: { projectId: string; text: string } | null = null;
+    try {
+      const raw = sessionStorage.getItem('opex.autoSend');
+      payload = raw ? (JSON.parse(raw) as { projectId: string; text: string }) : null;
+    } catch {
+      payload = null;
+    }
+    if (!payload) return;
+    if (payload.projectId !== projectId && projects.some((p) => p.id === payload.projectId)) {
+      setProjectId(payload.projectId);
+      return;
+    }
+    try {
+      sessionStorage.removeItem('opex.autoSend');
+    } catch {
+      // ignore
+    }
+    void handleSend(payload.text);
+  }, [projectId, projects.length]);
 
   const greetingName = user.email.split('@')[0] ?? user.email;
   const hour = new Date().getHours();
@@ -588,6 +620,11 @@ export function ChatPage({
                   busy={streaming}
                   onEdit={handleEdit}
                   onRegenerate={handleRegenerate}
+                  onForgetMemory={(id) => {
+                    forgetMemory(id)
+                      .then(() => setMessages((prev) => prev.map((m) => (m.remembered ? { ...m, remembered: m.remembered.filter((r) => r.id !== id) } : m))))
+                      .catch(() => setStatus('could not forget that memory'));
+                  }}
                   pending={streaming && progress ? { label: progress, elapsedMs } : null}
                   messages={messages}
                   onOpenCitation={(c) => onOpenCitation(c.documentId, c.page, c.bbox)}

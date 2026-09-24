@@ -42,3 +42,24 @@ export async function rerankChunks(
 
   return { chunks: scored.slice(0, finalK), noSupport: false };
 }
+
+/**
+ * Fallback when no reranker model is configured: keep the RRF order and decide
+ * "no support" from bge-m3 cosine similarity of the best vector hit, or any
+ * keyword (FTS) hit. Coarser than a cross-encoder, but keeps the
+ * "answer from documents, else general knowledge" behavior working.
+ */
+export const VECTOR_NO_SUPPORT_THRESHOLD = 0.45;
+
+export function selectWithoutRerank(
+  fused: RetrievedChunk[],
+  vectorResults: RetrievedChunk[],
+  ftsResults: RetrievedChunk[],
+  finalK: number,
+): { chunks: RetrievedChunk[]; noSupport: boolean } {
+  const bestVector = vectorResults.reduce((max, c) => Math.max(max, c.score), -Infinity);
+  if (fused.length === 0 || (ftsResults.length === 0 && bestVector < VECTOR_NO_SUPPORT_THRESHOLD)) {
+    return { chunks: [], noSupport: true };
+  }
+  return { chunks: fused.slice(0, finalK), noSupport: false };
+}

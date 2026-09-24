@@ -17,6 +17,10 @@ export interface DisplayMessage {
   confidence?: 'high' | 'low';
   revisions?: number;
   source?: 'documents' | 'general' | null;
+  /** How many remembered facts about the user were given to the model for this answer. */
+  memoriesUsed?: number;
+  /** Facts just saved to memory because of the user message this answers. */
+  remembered?: Array<{ id: string; text: string }>;
 }
 
 async function copyText(text: string): Promise<void> {
@@ -119,6 +123,7 @@ export function MessageList({
   onFeedback,
   onEdit,
   onRegenerate,
+  onForgetMemory,
   busy = false,
   pending,
 }: {
@@ -129,6 +134,7 @@ export function MessageList({
   onEdit?: (messageId: string, text: string) => void;
   /** Re-run the answer to the user message before this assistant message. */
   onRegenerate?: (assistantMessageId: string) => void;
+  onForgetMemory?: (id: string) => void;
   busy?: boolean;
   /** What the server is doing for the newest assistant message, while it is being produced. */
   pending?: { label: string; elapsedMs: number } | null;
@@ -193,8 +199,28 @@ export function MessageList({
               {onEdit && <ActionButton label="Edit" icon="edit" onClick={() => setEditingId(m.id)} />}
             </div>
           )}
+          {m.role === 'assistant' && m.remembered && m.remembered.length > 0 && (
+            <div className="flex flex-col gap-1 text-xs">
+              {m.remembered.map((r) => (
+                <span key={r.id} className="inline-flex flex-wrap items-center gap-2 rounded-full bg-accent-50 px-3 py-1 text-accent-700">
+                  <Icon name="check" className="h-3.5 w-3.5" />
+                  Remembered: {r.text}
+                  {onForgetMemory && (
+                    <button type="button" onClick={() => onForgetMemory(r.id)} className="font-medium underline underline-offset-2 hover:text-accent-700">
+                      Forget
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
           {m.role === 'assistant' && m.content !== '' && (
             <div className="flex flex-wrap items-center gap-1 text-xs">
+              {(m.memoriesUsed ?? 0) > 0 && (
+                <StatusPill tone="info" title="Facts OpeX remembered about you were used for this answer">
+                  Used {m.memoriesUsed} {m.memoriesUsed === 1 ? 'memory' : 'memories'}
+                </StatusPill>
+              )}
               {m.source === 'general' && (
                 <StatusPill tone="warning" title="No document supported this answer, so it comes from the model's general knowledge.">
                   General knowledge · not from your documents

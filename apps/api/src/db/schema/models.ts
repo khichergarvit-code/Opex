@@ -25,6 +25,8 @@ export const models = pgTable('models', {
   vramMb: integer('vram_mb'),
   license: text('license').notNull(),
   origin: text('origin').notNull(),
+  // false for externally served models (URL from .env): no local file, so no SHA-256 to verify.
+  verified: boolean('verified').notNull().default(true),
   enabled: boolean('enabled').notNull().default(true),
   // Mirrors agents.allowedGroups: empty array = no restriction. B5's
   // Models admin page can restrict a model to specific groups.

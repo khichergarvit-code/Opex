@@ -1,0 +1,1 @@
+ALTER TABLE "models" ADD COLUMN "verified" boolean DEFAULT true NOT NULL;

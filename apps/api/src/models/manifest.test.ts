@@ -121,3 +121,59 @@ describe('verifyAndLoadManifest', () => {
     ).rejects.toBeInstanceOf(ManifestHashMismatchError);
   });
 });
+
+import { assertInternalHost, resolveEndpoint } from './manifest.js';
+
+describe('endpoint resolution from .env', () => {
+  it('uses the default and stays local when the variable is unset', () => {
+    expect(resolveEndpoint('${LLM_MAIN_URL:-http://llm-main:8082}', {})).toEqual({ url: 'http://llm-main:8082', external: false });
+  });
+  it('treats an override as external', () => {
+    expect(resolveEndpoint('${LLM_MAIN_URL:-http://llm-main:8082}', { LLM_MAIN_URL: 'http://10.0.0.5:9000/' })).toEqual({
+      url: 'http://10.0.0.5:9000',
+      external: true,
+    });
+  });
+  it('is not external when the override equals the default', () => {
+    expect(resolveEndpoint('${LLM_MAIN_URL:-http://llm-main:8082}', { LLM_MAIN_URL: 'http://llm-main:8082' }).external).toBe(false);
+  });
+  it('passes literal endpoints through', () => {
+    expect(resolveEndpoint('http://llm-embed:8083', {})).toEqual({ url: 'http://llm-embed:8083', external: false });
+  });
+});
+
+describe('assertInternalHost', () => {
+  it.each(['http://llm-main:8082', 'http://localhost:1', 'http://10.1.2.3', 'http://192.168.1.9:80', 'http://172.20.0.4', 'http://gpu.internal:8000', 'http://host.docker.internal:8082'])(
+    'accepts %s',
+    (u) => expect(() => assertInternalHost(u)).not.toThrow(),
+  );
+  it.each(['https://example.com', 'http://8.8.8.8', 'http://172.32.0.1', 'http://api.openai.com/v1'])('rejects %s', (u) =>
+    expect(() => assertInternalHost(u)).toThrow(/internal host/),
+  );
+});
+
+describe('enabled_if_env', () => {
+  it('enables an otherwise disabled optional model when its URL is set', async () => {
+    const { loadManifest } = await import('./manifest.js');
+    const file = path.join(dir, 'm.yaml');
+    await writeFile(
+      file,
+      `models:
+  - id: llm-rerank
+    role: rerank
+    endpoint: "\${LLM_RERANK_URL:-http://llm-rerank:8084}"
+    gguf_path: r.gguf
+    sha256: "${'0'.repeat(64)}"
+    ctx_len: 8192
+    license: mit
+    origin: x
+    enabled: false
+    enabled_if_env: LLM_RERANK_URL
+`,
+    );
+    expect((await loadManifest(file, {}))[0]!.enabled).toBe(false);
+    const on = (await loadManifest(file, { LLM_RERANK_URL: 'http://10.0.0.9:8084' }))[0]!;
+    expect(on.enabled).toBe(true);
+    expect(on.external).toBe(true);
+  });
+});

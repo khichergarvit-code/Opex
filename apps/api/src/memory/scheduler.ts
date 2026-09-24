@@ -5,20 +5,25 @@ import { loadActivePolicyRules } from '../policy/loadPolicyRules.js';
 import type { ModelGateway, SpanWriter } from '../models/gateway.js';
 import { runExtractionForConversation } from './extraction.js';
 
-const IDLE_MINUTES = 30;
+// Short: the immediate per-message path handles explicit statements; this sweep is the safety net.
+const IDLE_MINUTES = 5;
+const MAX_FAILURES = 5;
 
 async function extractIdleConversations(db: Db, gateway: ModelGateway, spanWriter: SpanWriter): Promise<void> {
   const cutoff = new Date(Date.now() - IDLE_MINUTES * 60_000).toISOString();
   const idle = await db.execute(sql`
     SELECT id FROM conversations
     WHERE updated_at < ${cutoff}
+      AND memory_extract_failures < ${MAX_FAILURES}
       AND (memory_extracted_at IS NULL OR memory_extracted_at < updated_at)
+    ORDER BY updated_at DESC
+    LIMIT 25
   `);
   for (const row of idle as unknown as Array<{ id: string }>) {
-    await runExtractionForConversation({ db, gateway, spanWriter }, row.id).catch(() => {
-      // one conversation's extraction failing shouldn't stop the sweep —
-      // it'll be retried next tick since memoryExtractedAt was never set.
-    });
+    // A failure (model down) leaves the conversation queued for the next tick; one conversation
+    // failing shouldn't stop the sweep.
+    const ok = await runExtractionForConversation({ db, gateway, spanWriter }, row.id).catch(() => false);
+    if (!ok) break; // the model is likely down: stop hammering it until the next tick
   }
 }
 

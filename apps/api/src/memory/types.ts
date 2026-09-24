@@ -4,3 +4,8 @@ export interface MemoryCandidate {
   scope: 'user' | 'project' | 'workspace';
   confidence: number;
 }
+
+export interface SavedMemory {
+  id: string;
+  text: string;
+}

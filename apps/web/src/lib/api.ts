@@ -334,6 +334,14 @@ export interface MyMemoryRow {
   createdAt: string;
 }
 
+export async function forgetMemory(id: string): Promise<void> {
+  await request(`/memory/mine/${id}`, { method: 'DELETE' });
+}
+
+export async function forgetAllMemories(): Promise<{ forgotten: number }> {
+  return request<{ forgotten: number }>('/memory/mine', { method: 'DELETE' });
+}
+
 export async function fetchMyMemories(): Promise<MyMemoryRow[]> {
   return request<MyMemoryRow[]>('/memory/mine');
 }

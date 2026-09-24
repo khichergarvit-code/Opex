@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { models as modelsTable } from '../db/schema/index.js';
 import { can } from '../policy/can.js';
@@ -85,7 +85,7 @@ export class ModelGateway {
     const rows = await this.deps.db
       .select()
       .from(modelsTable)
-      .where(modelId ? eq(modelsTable.id, modelId) : eq(modelsTable.role, role))
+      .where(modelId ? eq(modelsTable.id, modelId) : and(eq(modelsTable.role, role), eq(modelsTable.enabled, true)))
       .limit(1);
     const row = rows[0];
     if (!row || !row.enabled) {
@@ -244,6 +244,12 @@ export class ModelGateway {
       });
       throw err;
     }
+  }
+
+  /** True when an enabled model is registered for the role (e.g. rerank is optional). */
+  async hasRole(role: ModelRole): Promise<boolean> {
+    const rows = await this.deps.db.select({ enabled: modelsTable.enabled }).from(modelsTable).where(eq(modelsTable.role, role)).limit(1);
+    return rows[0]?.enabled === true;
   }
 
   async rerank(req: RerankRequest): Promise<number[]> {

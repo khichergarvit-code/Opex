@@ -14,6 +14,7 @@ interface AdminModelRow {
   vramMb: number | null;
   license: string;
   origin: string;
+  verified: boolean;
   enabled: boolean;
   groupAllowlist: string[];
   status: 'up' | 'down';
@@ -61,7 +62,20 @@ export function ModelsPage({ onBack: _onBack }: { onBack: () => void }) {
             { key: 'status', label: 'Status', render: (r) => <StatusPill tone={r.status === 'up' ? 'success' : 'danger'}>{r.status}</StatusPill> },
             { key: 'vram', label: 'VRAM (configured)', render: (r) => `${r.vramMb ?? '—'} MB (${r.vramLive})` },
             { key: 'license', label: 'License' },
-            { key: 'origin', label: 'Origin' },
+            {
+              key: 'origin',
+              label: 'Origin',
+              render: (r) => (
+                <span className="flex flex-wrap items-center gap-2">
+                  {r.origin}
+                  {!r.verified && (
+                    <StatusPill tone="warning" title="Served from another host: the file cannot be SHA-256 verified">
+                      unverified (external)
+                    </StatusPill>
+                  )}
+                </span>
+              ),
+            },
             {
               key: 'enabled',
               label: '',

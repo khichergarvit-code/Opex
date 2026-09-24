@@ -118,6 +118,13 @@ export const memoryUsedEventSchema = z.object({
 });
 export type MemoryUsedEvent = z.infer<typeof memoryUsedEventSchema>;
 
+/** A fact about the user was just saved to long-term memory (shown with a Forget option). */
+export const memorySavedEventSchema = z.object({
+  type: z.literal('memory_saved'),
+  data: z.object({ id: z.string().uuid(), text: z.string() }),
+});
+export type MemorySavedEvent = z.infer<typeof memorySavedEventSchema>;
+
 export const planStepSchema = z.object({
   id: z.string(),
   agent: z.string(),
@@ -195,6 +202,7 @@ export const sseEventSchema = z.discriminatedUnion('type', [
   toolResultEventSchema,
   verifyEventSchema,
   memoryUsedEventSchema,
+  memorySavedEventSchema,
   approvalRequiredEventSchema,
   planEventSchema,
   stepStartEventSchema,
