@@ -103,6 +103,19 @@ export async function fetchConversation(
   return request(`/conversations/${id}`);
 }
 
+export interface ChatModelOption {
+  id: string;
+  role: string;
+  label: string;
+  detail: string;
+  note?: string;
+  isDefault: boolean;
+}
+
+export async function fetchChatModels(): Promise<ChatModelOption[]> {
+  return request<ChatModelOption[]>('/models');
+}
+
 export async function createConversation(projectId: string): Promise<{ id: string }> {
   return request('/conversations', { method: 'POST', body: JSON.stringify({ projectId }) });
 }

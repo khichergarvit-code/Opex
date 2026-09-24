@@ -26,10 +26,13 @@ export interface RunPlanDeps {
   workspaceId: string;
   projectId: string;
   taskClassification: number;
+  signal?: AbortSignal;
 }
 
 export interface RunPlanCallbacks extends ExecutorCallbacks {
   onStepStart?: (step: PlanStep) => void;
+  /** Fires right before the final answer is written (its text streams through onToken). */
+  onSynthesisStart?: () => void;
 }
 
 interface StepResult {
@@ -76,6 +79,7 @@ async function runStep(deps: RunPlanDeps, step: PlanStep, results: Map<string, S
       messages,
       docQa.citedChunks,
       validMarkers,
+      { signal: deps.signal },
     );
     return verification.answer;
   }
@@ -85,6 +89,7 @@ async function runStep(deps: RunPlanDeps, step: PlanStep, results: Map<string, S
     const systemPrompt = await readFile(CHAT_SYSTEM_PROMPT_PATH, 'utf8');
     const result = await deps.gateway.chat({
       role: 'general',
+      signal: deps.signal,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userTurn },
@@ -123,6 +128,7 @@ async function runStep(deps: RunPlanDeps, step: PlanStep, results: Map<string, S
       workspaceId: deps.workspaceId,
       projectId: deps.projectId,
       taskClassification: deps.taskClassification,
+      signal: deps.signal,
       onToolCall: callbacks.onToolCall,
       onToolResult: callbacks.onToolResult,
     },
@@ -176,8 +182,11 @@ export async function runPlan(deps: RunPlanDeps, plan: Plan, originalMessage: st
     .map(renderStepOutputBlock)
     .join('\n\n');
   const synthesisSystemPrompt = await readFile(SYNTHESIS_SYSTEM_PROMPT_PATH, 'utf8');
+  callbacks.onSynthesisStart?.();
   const synthesis = await deps.gateway.chat({
     role: 'general',
+    signal: deps.signal,
+    onToken: callbacks.onToken,
     messages: [
       { role: 'system', content: synthesisSystemPrompt },
       { role: 'user', content: `${stepBlocks}\n\nOriginal request: ${originalMessage}` },

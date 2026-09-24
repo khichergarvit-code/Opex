@@ -25,6 +25,7 @@ export default defineConfig({
       '/memory': 'http://localhost:3000',
       '/access-requests': 'http://localhost:3000',
       '/feedback': 'http://localhost:3000',
+      '/models': 'http://localhost:3000',
     },
   },
   build: {

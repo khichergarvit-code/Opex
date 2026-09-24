@@ -4,9 +4,11 @@ import {
   createConversation,
   decideApproval,
   fetchConversation,
+  fetchChatModels,
   fetchConversations,
   fetchProjects,
   submitFeedback,
+  type ChatModelOption,
   type ConversationSummary,
 } from '../lib/api';
 import { navigate } from '../lib/router';
@@ -58,6 +60,15 @@ export function ChatPage({
   const [decidingApproval, setDecidingApproval] = useState(false);
   const [lastRoutedAgent, setLastRoutedAgent] = useState<string | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [chatModels, setChatModels] = useState<ChatModelOption[]>([]);
+  const [modelId, setModelId] = useState<string>(() => {
+    try {
+      return localStorage.getItem('opex.chatModel') ?? '';
+    } catch {
+      return '';
+    }
+  });
   const assistantIdRef = useRef<string>('');
   const abortRef = useRef<AbortController | null>(null);
   const skipLoadForRef = useRef<string | null>(null);
@@ -67,6 +78,12 @@ export function ChatPage({
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
+    fetchChatModels()
+      .then((list) => {
+        setChatModels(list);
+        setModelId((current) => (list.some((m) => m.id === current) ? current : (list.find((m) => m.isDefault) ?? list[0])?.id ?? ''));
+      })
+      .catch(() => {});
     fetchProjects().then((rows) => {
       setProjects(rows);
       setProjectId((current) => current || rows[0]?.id || '');
@@ -177,6 +194,19 @@ export function ChatPage({
     }
   }
 
+  function notifyChatsChanged() {
+    window.dispatchEvent(new Event('opex:chats-changed'));
+  }
+
+  function changeModel(id: string) {
+    setModelId(id);
+    try {
+      localStorage.setItem('opex.chatModel', id);
+    } catch {
+      // localStorage unavailable — the choice just isn't remembered
+    }
+  }
+
   function stopGenerating() {
     abortRef.current?.abort();
   }
@@ -200,6 +230,7 @@ export function ChatPage({
     abortRef.current = controller;
     const startedAt = Date.now();
     setElapsedMs(0);
+    setProgress('Starting…');
     stopElapsedTimer();
     elapsedTimerRef.current = setInterval(() => setElapsedMs(Date.now() - startedAt), 250);
 
@@ -232,8 +263,13 @@ export function ChatPage({
             // treating the composer as busy so the approval card can act.
             setPendingApproval(event.data);
             setStreaming(false);
+            setProgress(null);
             stopElapsedTimer();
           }
+        },
+        onProgress: (_phase, label) => setProgress(label),
+        onReplace: (text) => {
+          setMessages((prev) => prev.map((m) => (m.id === assistantIdRef.current ? { ...m, content: text } : m)));
         },
         onToken: (delta) => {
           setMessages((prev) =>
@@ -262,23 +298,34 @@ export function ChatPage({
           );
           setStreaming(false);
           setStatus(null);
+          setProgress(null);
           stopElapsedTimer();
           refreshHistory();
+          notifyChatsChanged();
         },
         onError: (message) => {
+          // Show the failure where the answer would have been.
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantIdRef.current && m.content === '' ? { ...m, content: `⚠️ ${message}` } : m)),
+          );
           setStreaming(false);
-          setStatus(`error: ${message}`);
+          setStatus(null);
+          setProgress(null);
           stopElapsedTimer();
         },
       },
       controller.signal,
+      modelId || undefined,
     );
     // Aborted by the user clicking Stop — streamMessage resolves normally
     // (fetch-event-source's own abort path, not onError), so finalize here.
     if (controller.signal.aborted) {
       setStreaming(false);
       setStatus('stopped');
+      setProgress(null);
       stopElapsedTimer();
+      refreshHistory();
+      notifyChatsChanged();
     }
     abortRef.current = null;
   }
@@ -411,7 +458,7 @@ export function ChatPage({
                 <p className="mt-1 text-gray-500">How can I help you today?</p>
               </div>
               <div className="w-full max-w-xl">
-                <Composer disabled={!projectId} onSend={handleSend} />
+                <Composer disabled={!projectId} onSend={handleSend} models={chatModels} modelId={modelId} onModelChange={changeModel} />
                 {!projectId && projects.length === 0 && (
                   <p className="mt-2 text-center text-xs text-gray-400">
                     You're not a member of any project yet — ask an admin to add you to one.
@@ -436,21 +483,13 @@ export function ChatPage({
             <>
               <div className="flex-1 overflow-y-auto">
                 <MessageList
+                  pending={streaming && progress ? { label: progress, elapsedMs } : null}
                   messages={messages}
                   onOpenCitation={(c) => onOpenCitation(c.documentId, c.page, c.bbox)}
                   onFeedback={(messageId, rating) => {
                     submitFeedback(messageId, rating).catch(() => {});
                   }}
                 />
-                {streaming && (
-                  <div className="mt-2 flex items-center gap-2 text-xs text-gray-400">
-                    <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-accent-500" />
-                    Generating… {(elapsedMs / 1000).toFixed(1)}s
-                    <button onClick={stopGenerating} className="font-medium text-accent-600 hover:text-accent-700">
-                      Stop
-                    </button>
-                  </div>
-                )}
                 {status && <p className="mt-2 text-xs text-gray-400">{status}</p>}
                 {pendingApproval && (
                   <ApprovalPrompt
@@ -462,7 +501,15 @@ export function ChatPage({
                 )}
               </div>
               <div className="mt-4">
-                <Composer disabled={streaming || !projectId || Boolean(pendingApproval)} onSend={handleSend} />
+                <Composer
+                  disabled={!projectId || Boolean(pendingApproval)}
+                  streaming={streaming}
+                  onSend={handleSend}
+                  onStop={stopGenerating}
+                  models={chatModels}
+                  modelId={modelId}
+                  onModelChange={changeModel}
+                />
               </div>
             </>
           )}

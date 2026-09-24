@@ -24,6 +24,7 @@ import { createAdminPoliciesRouter } from './routes/adminPolicies.js';
 import { createAdminAgentsRouter } from './routes/adminAgents.js';
 import { createAdminMemoryRouter } from './routes/adminMemory.js';
 import { createMemoryRouter } from './routes/memory.js';
+import { createModelsRouter } from './routes/models.js';
 import { createFeedbackRouter } from './routes/feedback.js';
 import { createAdminSystemRouter } from './routes/adminSystem.js';
 import { createDbAuditWriter } from './audit/writeAudit.js';
@@ -58,6 +59,7 @@ export function createApp(db: Db, env: Env): Express {
   app.use(createAdminAgentsRouter(db, gateway, auditWriter));
   app.use(createAdminMemoryRouter(db, gateway, spanWriter, auditWriter));
   app.use(createMemoryRouter(db));
+  app.use(createModelsRouter(db));
   app.use(createFeedbackRouter(db, auditWriter));
   app.use(createAdminSystemRouter(db, env.DATA_DIR));
 

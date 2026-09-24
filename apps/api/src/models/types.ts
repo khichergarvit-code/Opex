@@ -24,6 +24,11 @@ export interface ChatRequest {
   jsonSchema?: Record<string, unknown>;
   stream?: boolean;
   budget?: { maxTokens?: number };
+  /** Use this specific model (its own role is what policy checks) instead of the role's default. */
+  modelId?: string;
+  signal?: AbortSignal;
+  /** Stream text deltas while still returning the full result (tool calls included). */
+  onToken?: (delta: string) => void;
   user: AuthedUser;
   traceId: string;
 }

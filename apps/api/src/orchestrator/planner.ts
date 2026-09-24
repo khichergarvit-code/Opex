@@ -81,12 +81,13 @@ const PLAN_SYSTEM_PROMPT =
  * error.
  */
 export async function planTask(
-  deps: { gateway: ModelGateway; user: AuthedUser; traceId: string },
+  deps: { gateway: ModelGateway; user: AuthedUser; traceId: string; signal?: AbortSignal },
   message: string,
 ): Promise<Plan> {
   try {
     const result = await deps.gateway.chat({
       role: 'router',
+      signal: deps.signal,
       messages: [
         { role: 'system', content: PLAN_SYSTEM_PROMPT },
         { role: 'user', content: message },

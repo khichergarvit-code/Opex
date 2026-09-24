@@ -33,11 +33,22 @@ export function MessageList({
   messages,
   onOpenCitation,
   onFeedback,
+  pending,
 }: {
   messages: DisplayMessage[];
   onOpenCitation: (c: Citation) => void;
   onFeedback?: (messageId: string, rating: 'thumbs_up' | 'thumbs_down') => void;
+  /** What the server is doing for the newest assistant message, while it is being produced. */
+  pending?: { label: string; elapsedMs: number } | null;
 }) {
+  const lastId = messages[messages.length - 1]?.id;
+  const progressLine = (m: DisplayMessage) =>
+    pending && m.id === lastId && m.role === 'assistant' ? (
+      <span className="flex items-center gap-2 text-xs text-gray-500">
+        <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" aria-hidden="true" />
+        {pending.label} {(pending.elapsedMs / 1000).toFixed(0)}s
+      </span>
+    ) : null;
   return (
     <div className="flex flex-col gap-3">
       {messages.map((m) => (
@@ -47,8 +58,9 @@ export function MessageList({
               m.role === 'user' ? 'bg-accent-500 text-white' : 'border border-gray-100 bg-white text-gray-800 shadow-card'
             }`}
           >
-            {renderContentWithCitations(m.content, m.citations ?? [], onOpenCitation)}
+            {m.content === '' && progressLine(m) ? progressLine(m) : renderContentWithCitations(m.content, m.citations ?? [], onOpenCitation)}
           </div>
+          {m.content !== '' && progressLine(m)}
           {m.role === 'assistant' && (m.confidence || onFeedback) && (
             <div className="flex items-center gap-2 text-xs">
               {m.confidence && (

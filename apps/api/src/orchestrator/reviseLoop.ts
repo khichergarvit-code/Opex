@@ -3,6 +3,16 @@ import type { ModelGateway } from '../models/gateway.js';
 import type { AuthedUser } from '../policy/types.js';
 import { verifyGroundedness, type CitedChunk } from './groundedness.js';
 
+export interface AnswerHooks {
+  /** Live text of the current draft, token by token. */
+  onDraftToken?: (delta: string) => void;
+  /** Called before each attempt; attempt > 0 means a revision — clear the old draft. */
+  onAttemptStart?: (attempt: number) => void;
+  onVerifying?: () => void;
+  modelId?: string;
+  signal?: AbortSignal;
+}
+
 export interface AnswerWithVerificationResult {
   answer: string;
   confidence: 'high' | 'low';
@@ -18,8 +28,8 @@ const MAX_ATTEMPTS = 3;
  * B3b's revise-with-feedback loop, kept beside docQa.ts rather than
  * folded into executor.ts's tool-call loop — this is a plain
  * generate-then-check cycle over a single completion, not tool calls.
- * Non-streaming throughout: groundedness checking needs the complete
- * answer before it can run.
+ * Each draft streams live to the caller (onDraftToken) but is only
+ * accepted once groundedness checking passes on the complete text.
  */
 export async function answerWithVerification(
   deps: { gateway: ModelGateway; user: AuthedUser; traceId: string },
@@ -27,19 +37,28 @@ export async function answerWithVerification(
   messages: ChatMessage[],
   citedChunks: CitedChunk[],
   validMarkers: Set<number>,
+  hooks: AnswerHooks = {},
 ): Promise<AnswerWithVerificationResult> {
   let currentMessages = messages;
   let lastAnswer = '';
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const result = await deps.gateway.chat({
+    hooks.onAttemptStart?.(attempt);
+    let draft = '';
+    for await (const delta of deps.gateway.chatStream({
       role: 'general',
+      modelId: hooks.modelId,
+      signal: hooks.signal,
       messages: [{ role: 'system', content: systemPrompt }, ...currentMessages],
       user: deps.user,
       traceId: deps.traceId,
-    });
-    lastAnswer = result.content;
+    })) {
+      draft += delta;
+      hooks.onDraftToken?.(delta);
+    }
+    lastAnswer = draft;
 
+    hooks.onVerifying?.();
     const groundedness = await verifyGroundedness(deps, lastAnswer, citedChunks, validMarkers);
     if (groundedness.ok) {
       return { answer: lastAnswer, confidence: 'high', revisions: attempt };

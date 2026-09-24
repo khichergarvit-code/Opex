@@ -51,6 +51,8 @@ export interface GatewayDeps {
 
 export class PolicyDeniedError extends Error {}
 
+const CHAT_MODEL_ROLES = new Set<ModelRole>(['router', 'general', 'coder', 'vision']);
+
 export class ModelGateway {
   private readonly breakers = new Map<string, CircuitBreaker>();
   private readonly coldStarted = new Set<string>();
@@ -76,21 +78,27 @@ export class ModelGateway {
     return b;
   }
 
-  private async resolveEndpoint(role: ModelRole): Promise<{ id: string; endpoint: string }> {
+  private async resolveEndpoint(
+    role: ModelRole,
+    modelId?: string,
+  ): Promise<{ id: string; endpoint: string; role: ModelRole }> {
     const rows = await this.deps.db
       .select()
       .from(modelsTable)
-      .where(eq(modelsTable.role, role))
+      .where(modelId ? eq(modelsTable.id, modelId) : eq(modelsTable.role, role))
       .limit(1);
     const row = rows[0];
     if (!row || !row.enabled) {
-      throw new Error(`No enabled model configured for role "${role}"`);
+      throw new Error(modelId ? `Model "${modelId}" is not available` : `No enabled model configured for role "${role}"`);
+    }
+    if (modelId && !CHAT_MODEL_ROLES.has(row.role as ModelRole)) {
+      throw new Error(`Model "${modelId}" cannot be used for chat`);
     }
     if (!this.coldStarted.has(row.id)) {
       this.coldStarted.add(row.id);
       this.deps.statusEmitter?.emitStatus('cold_start', row.id);
     }
-    return { id: row.id, endpoint: row.endpoint };
+    return { id: row.id, endpoint: row.endpoint, role: row.role as ModelRole };
   }
 
   async chat(req: ChatRequest): Promise<{
@@ -99,17 +107,16 @@ export class ModelGateway {
     tokensOut: number;
     toolCalls: LlamaToolCall[];
   }> {
+    const { id: modelId, endpoint, role: resolvedRole } = await this.resolveEndpoint(req.role, req.modelId);
     const decision = can(
       req.user,
       'model:invoke',
-      { modelRole: req.role },
+      { modelRole: resolvedRole },
       this.deps.policyRules ?? DEFAULT_POLICY_RULES,
     );
     if (!decision.allowed) {
       throw new PolicyDeniedError(decision.reason ?? 'denied');
     }
-
-    const { id: modelId, endpoint } = await this.resolveEndpoint(req.role);
     const breaker = this.breakerFor(endpoint);
     if (!breaker.canAttempt()) {
       throw new Error(`Circuit open for model "${modelId}"`);
@@ -123,6 +130,8 @@ export class ModelGateway {
         tools: req.tools,
         jsonSchema: req.jsonSchema,
         maxTokens: req.budget?.maxTokens,
+        signal: req.signal,
+        onToken: req.onToken,
       });
       breaker.onSuccess();
       await this.deps.spanWriter.writeSpan({
@@ -152,17 +161,16 @@ export class ModelGateway {
   }
 
   async *chatStream(req: ChatRequest): AsyncGenerator<string> {
+    const { id: modelId, endpoint, role: resolvedRole } = await this.resolveEndpoint(req.role, req.modelId);
     const decision = can(
       req.user,
       'model:invoke',
-      { modelRole: req.role },
+      { modelRole: resolvedRole },
       this.deps.policyRules ?? DEFAULT_POLICY_RULES,
     );
     if (!decision.allowed) {
       throw new PolicyDeniedError(decision.reason ?? 'denied');
     }
-
-    const { id: modelId, endpoint } = await this.resolveEndpoint(req.role);
     const breaker = this.breakerFor(endpoint);
     if (!breaker.canAttempt()) {
       throw new Error(`Circuit open for model "${modelId}"`);
@@ -171,7 +179,7 @@ export class ModelGateway {
     const started = Date.now();
     let tokensOut = 0;
     try {
-      for await (const delta of this.fns.chatStream({ endpoint, messages: req.messages })) {
+      for await (const delta of this.fns.chatStream({ endpoint, messages: req.messages, signal: req.signal })) {
         tokensOut += 1; // A1 approximation; real token counts come from /tokenize in A2+
         yield delta;
       }

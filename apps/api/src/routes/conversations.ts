@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { Router, type Response } from 'express';
-import type { CitationEvent, SseEvent } from '@opex/shared';
+import type { CitationEvent, ProgressEvent, SseEvent } from '@opex/shared';
 import { createConversationRequestSchema, postMessageRequestSchema } from '@opex/shared';
 import type { Db } from '../db/client.js';
 import { conversations, messages, projectMembers, projects, traces } from '../db/schema/index.js';
@@ -19,12 +19,22 @@ import { verifyCitations, verifyCodeTask } from '../orchestrator/verifier.js';
 import { answerWithVerification } from '../orchestrator/reviseLoop.js';
 import { planTask } from '../orchestrator/planner.js';
 import { runPlan } from '../orchestrator/scheduler.js';
+import { listChatModels } from './models.js';
 import { buildDocQaPrompt, extractCitedMarkers, projectHasReadyDocuments } from './docQa.js';
 
 const CHAT_SYSTEM_PROMPT_PATH = new URL('../prompts/chat-system.md', import.meta.url);
 
 function sendEvent(res: Response, event: SseEvent): void {
   res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`);
+}
+
+/** Turns a raw model-call failure into something a non-technical user can act on. */
+function describeModelError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : 'model call failed';
+  if (/fetch failed|ECONNREFUSED|llama-server 5\d\d|Circuit open|not available/i.test(raw)) {
+    return "The answer model isn't reachable right now (it may be restarting or out of memory). Try again in a minute, or switch to the Fast model.";
+  }
+  return raw;
 }
 
 async function isProjectMember(db: Db, userId: string, projectId: string): Promise<boolean> {
@@ -169,6 +179,19 @@ export function createConversationsRouter(
       return;
     }
 
+    const chosenOption = parsed.data.modelId
+      ? (await listChatModels(db, user)).find((m) => m.id === parsed.data.modelId)
+      : undefined;
+    if (parsed.data.modelId && !chosenOption) {
+      res.status(400).json({ error: 'that model is not available to you' });
+      return;
+    }
+    const chosenModelId = chosenOption?.id;
+    // The small "Fast" model is only good enough for plain chat; answering
+    // from documents needs the general model, so doc_qa overrides the pick.
+    const docQaModelId = chosenOption && chosenOption.role !== 'general' ? undefined : chosenModelId;
+    const docQaOverridden = Boolean(chosenModelId) && docQaModelId === undefined;
+
     const [trace] = await db.insert(traces).values({ userId: user.id, conversationId: conversation.id }).returning();
     if (!trace) throw new Error('failed to open trace');
 
@@ -186,6 +209,20 @@ export function createConversationsRouter(
       connection: 'keep-alive',
     });
 
+    // Pressing Stop (or closing the tab) aborts the model call itself, so
+    // CPU isn't burnt finishing an answer nobody is reading.
+    const abort = new AbortController();
+    let clientGone = false;
+    res.on('close', () => {
+      if (!res.writableFinished) {
+        clientGone = true;
+        abort.abort();
+      }
+    });
+    const progress = (phase: ProgressEvent['data']['phase'], label: string) =>
+      sendEvent(res, { type: 'progress', data: { phase, label } });
+    progress('routing', 'Understanding your question…');
+
     const history = await db
       .select()
       .from(messages)
@@ -194,7 +231,10 @@ export function createConversationsRouter(
     // The just-inserted user row is last; prior turns exclude it since each
     // path below rebuilds the latest turn itself (doc_qa attaches chunks,
     // the executor path attaches nothing extra).
-    const priorHistory = history.slice(0, -1).map((m) => ({ role: m.role, content: m.content }));
+    const priorHistory = history
+      .slice(0, -1)
+      .filter((m) => !m.content.startsWith('⚠️ '))
+      .map((m) => ({ role: m.role, content: m.content }));
 
     const hasReadyDocuments = await projectHasReadyDocuments(db, conversation.projectId);
 
@@ -252,6 +292,7 @@ export function createConversationsRouter(
 
     let assistantContent = '';
     let traceStatus: 'ok' | 'error' = 'ok';
+    let failureMessage = '';
     let citations: Array<{ marker: number; documentId: string; filename: string; page: number; bbox: unknown }> = [];
     // B4: a paused tool call already set traces.status='awaiting_approval'
     // and left no assistant message to insert — skip the normal
@@ -260,7 +301,8 @@ export function createConversationsRouter(
 
     if (routeDecision.complexity === 'multi_step') {
       try {
-        const plan = await planTask({ gateway, user, traceId: trace.id }, parsed.data.content);
+        progress('planning', 'Planning the steps…');
+        const plan = await planTask({ gateway, user, traceId: trace.id, signal: abort.signal }, parsed.data.content);
         sendEvent(res, {
           type: 'plan',
           data: { steps: plan.steps.map((s) => ({ id: s.id, agent: s.agent, goal: s.goal, inputsFrom: s.inputsFrom })) },
@@ -279,12 +321,21 @@ export function createConversationsRouter(
             workspaceId: conversation.workspaceId,
             projectId: conversation.projectId,
             taskClassification: 0,
+            signal: abort.signal,
           },
           plan,
           userContent,
           {
+            onSynthesisStart: () => progress('generating', 'Writing the final answer…'),
+            onToken: (delta) => {
+              assistantContent += delta;
+              sendEvent(res, { type: 'token', data: { delta } });
+            },
             onStepStart: (step) => sendEvent(res, { type: 'step_start', data: { stepId: step.id, agent: step.agent, goal: step.goal } }),
-            onToolCall: (e) => sendEvent(res, { type: 'tool_call', data: { toolName: e.toolName, callId: e.callId, args: e.args ?? {} } }),
+            onToolCall: (e) => {
+              progress('tool', `Running ${e.toolName}…`);
+              sendEvent(res, { type: 'tool_call', data: { toolName: e.toolName, callId: e.callId, args: e.args ?? {} } });
+            },
             onToolResult: (e) =>
               sendEvent(res, {
                 type: 'tool_result',
@@ -297,15 +348,14 @@ export function createConversationsRouter(
               }),
           },
         );
-        sendEvent(res, { type: 'token', data: { delta: assistantContent } });
+        sendEvent(res, { type: 'replace', data: { text: assistantContent } });
       } catch (err) {
         traceStatus = 'error';
-        sendEvent(res, {
-          type: 'error',
-          data: { message: err instanceof Error ? err.message : 'model call failed' },
-        });
+        failureMessage = describeModelError(err);
+        sendEvent(res, { type: 'error', data: { message: failureMessage } });
       }
     } else if (routeDecision.agent === 'doc_qa') {
+      progress('retrieving', 'Searching your documents…');
       const docQa = await buildDocQaPrompt({
         db,
         gateway,
@@ -333,19 +383,40 @@ export function createConversationsRouter(
         }
         try {
           const validMarkers = new Set(docQa.citationMap.map((c) => c.marker));
-          // Non-streaming throughout: the revise loop needs the complete
-          // answer before groundedness checking can run. The final
-          // accepted string is sent as a single token event once
-          // verification finishes, not token-by-token as it's generated.
+          // Each draft streams live; it is only accepted once groundedness
+          // checking passes on the complete text. A revision clears the
+          // draft on screen (`replace` with '') and streams the new one.
           const verification = await answerWithVerification(
             { gateway, user, traceId: trace.id },
             docQa.systemPrompt,
             docQaMessages,
             docQa.citedChunks,
             validMarkers,
+            {
+              modelId: docQaModelId,
+              signal: abort.signal,
+              onAttemptStart: (attempt) => {
+                assistantContent = '';
+                if (attempt === 0) {
+                  progress(
+                    'generating',
+                    docQaOverridden ? 'Writing the answer (document questions use the Quality model)…' : 'Writing the answer…',
+                  );
+                } else {
+                  sendEvent(res, { type: 'replace', data: { text: '' } });
+                  progress('revising', `Revising unsupported claims (attempt ${attempt + 1} of 3)…`);
+                }
+              },
+              onDraftToken: (delta) => {
+                assistantContent += delta;
+                sendEvent(res, { type: 'token', data: { delta } });
+              },
+              onVerifying: () => progress('verifying', 'Checking the answer against your documents…'),
+            },
           );
           assistantContent = verification.answer;
-          sendEvent(res, { type: 'token', data: { delta: assistantContent } });
+          // Guarantees the client ends on exactly the accepted text.
+          sendEvent(res, { type: 'replace', data: { text: assistantContent } });
 
           const citedMarkers = new Set(extractCitedMarkers(assistantContent));
           citations = docQa.citationMap.filter((c) => citedMarkers.has(c.marker));
@@ -364,10 +435,8 @@ export function createConversationsRouter(
           });
         } catch (err) {
           traceStatus = 'error';
-          sendEvent(res, {
-            type: 'error',
-            data: { message: err instanceof Error ? err.message : 'model call failed' },
-          });
+          failureMessage = describeModelError(err);
+          sendEvent(res, { type: 'error', data: { message: failureMessage } });
         }
       }
     } else if (routeDecision.agent !== 'general') {
@@ -383,6 +452,7 @@ export function createConversationsRouter(
         try {
           const systemPrompt = await loadAgentSystemPrompt(agentConfig);
           const observedToolResults: Array<{ ok: boolean; artifactIds: string[] }> = [];
+          progress('generating', 'Working on it…');
           const executorOutcome = await runExecutor(
             {
               db,
@@ -406,7 +476,19 @@ export function createConversationsRouter(
               // Public, so invariant #10's gate is a no-op until that
               // exists. Documented as Debt.
               taskClassification: 0,
-              onToolCall: (e) => sendEvent(res, { type: 'tool_call', data: { toolName: e.toolName, callId: e.callId, args: e.args ?? {} } }),
+              signal: abort.signal,
+              onToken: (delta) => {
+                assistantContent += delta;
+                sendEvent(res, { type: 'token', data: { delta } });
+              },
+              onDraftReset: () => {
+                assistantContent = '';
+                sendEvent(res, { type: 'replace', data: { text: '' } });
+              },
+              onToolCall: (e) => {
+                progress('tool', `Running ${e.toolName}…`);
+                sendEvent(res, { type: 'tool_call', data: { toolName: e.toolName, callId: e.callId, args: e.args ?? {} } });
+              },
               onToolResult: (e) => {
                 observedToolResults.push({ ok: e.result?.ok ?? false, artifactIds: e.result?.artifactIds ?? [] });
                 sendEvent(res, {
@@ -434,7 +516,7 @@ export function createConversationsRouter(
             });
           } else {
             assistantContent = executorOutcome.answer;
-            sendEvent(res, { type: 'token', data: { delta: assistantContent } });
+            sendEvent(res, { type: 'replace', data: { text: assistantContent } });
             // B3b: a small, detect-only check (no retry loop) — did the
             // tool calls this answer relies on actually succeed.
             const codeCheck = verifyCodeTask(observedToolResults);
@@ -445,17 +527,18 @@ export function createConversationsRouter(
           }
         } catch (err) {
           traceStatus = 'error';
-          sendEvent(res, {
-            type: 'error',
-            data: { message: err instanceof Error ? err.message : 'model call failed' },
-          });
+          failureMessage = describeModelError(err);
+          sendEvent(res, { type: 'error', data: { message: failureMessage } });
         }
       }
     } else {
       const systemPrompt = await readFile(CHAT_SYSTEM_PROMPT_PATH, 'utf8');
       try {
+        progress('generating', 'Writing the answer…');
         for await (const delta of gateway.chatStream({
           role: 'general',
+          modelId: chosenModelId,
+          signal: abort.signal,
           messages: [{ role: 'system', content: systemPrompt }, ...memoryTurns, { role: 'user', content: userContent }],
           user,
           traceId: trace.id,
@@ -465,22 +548,29 @@ export function createConversationsRouter(
         }
       } catch (err) {
         traceStatus = 'error';
-        sendEvent(res, {
-          type: 'error',
-          data: { message: err instanceof Error ? err.message : 'model call failed' },
-        });
+        failureMessage = describeModelError(err);
+        sendEvent(res, { type: 'error', data: { message: failureMessage } });
       }
     }
 
     if (!pausedForApproval) {
       let assistantMessageId = '';
-      if (traceStatus === 'ok') {
+      if (traceStatus === 'ok' || clientGone || failureMessage) {
+        // A stopped answer is still saved (with what was written so far) so
+        // history never ends on an unanswered turn.
+        const storedContent = clientGone
+          ? assistantContent.trim()
+            ? `${assistantContent}\n\n(stopped)`
+            : '(stopped before an answer was written)'
+          : traceStatus === 'error'
+            ? `⚠️ ${failureMessage}`
+            : assistantContent;
         const [assistantRow] = await db
           .insert(messages)
           .values({
             conversationId: conversation.id,
             role: 'assistant',
-            content: assistantContent,
+            content: storedContent,
             traceId: trace.id,
             citations,
           })
@@ -491,10 +581,10 @@ export function createConversationsRouter(
 
       await db
         .update(traces)
-        .set({ status: traceStatus, endedAt: new Date() })
+        .set({ status: clientGone ? 'error' : traceStatus, endedAt: new Date() })
         .where(eq(traces.id, trace.id));
 
-      if (traceStatus === 'ok') {
+      if (traceStatus === 'ok' && !clientGone) {
         sendEvent(res, { type: 'done', data: { messageId: assistantMessageId, traceId: trace.id } });
       }
     }

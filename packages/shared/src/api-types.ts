@@ -24,6 +24,8 @@ export type CreateConversationRequest = z.infer<typeof createConversationRequest
 
 export const postMessageRequestSchema = z.object({
   content: z.string().min(1).max(8000),
+  /** Optional chosen chat model id (see GET /models); defaults to the general model. */
+  modelId: z.string().min(1).max(100).optional(),
 });
 export type PostMessageRequest = z.infer<typeof postMessageRequestSchema>;
 

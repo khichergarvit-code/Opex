@@ -154,6 +154,22 @@ export const approvalRequiredEventSchema = z.object({
 });
 export type ApprovalRequiredEvent = z.infer<typeof approvalRequiredEventSchema>;
 
+export const progressEventSchema = z.object({
+  type: z.literal('progress'),
+  data: z.object({
+    phase: z.enum(['routing', 'retrieving', 'generating', 'verifying', 'revising', 'tool', 'planning']),
+    label: z.string(),
+  }),
+});
+export type ProgressEvent = z.infer<typeof progressEventSchema>;
+
+/** Replaces the whole answer text shown so far (empty string clears it before a revision streams). */
+export const replaceEventSchema = z.object({
+  type: z.literal('replace'),
+  data: z.object({ text: z.string() }),
+});
+export type ReplaceEvent = z.infer<typeof replaceEventSchema>;
+
 export const sseEventSchema = z.discriminatedUnion('type', [
   statusEventSchema,
   tokenEventSchema,
@@ -168,6 +184,8 @@ export const sseEventSchema = z.discriminatedUnion('type', [
   approvalRequiredEventSchema,
   planEventSchema,
   stepStartEventSchema,
+  progressEventSchema,
+  replaceEventSchema,
 ]);
 
 export type SseEvent = z.infer<typeof sseEventSchema>;

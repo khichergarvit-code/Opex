@@ -19,6 +19,7 @@ x-offline-env: &offline-env
 
 services:
   web:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: apps/web/Dockerfile
@@ -30,6 +31,7 @@ services:
       - api
 
   api:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -91,6 +93,7 @@ services:
       retries: 10
 
   llm-small:
+    restart: unless-stopped
     image: ghcr.io/ggml-org/llama.cpp:server
     networks:
       - core
@@ -106,6 +109,7 @@ services:
       start_period: 30s
 
   llm-main:
+    restart: unless-stopped
     image: ghcr.io/ggml-org/llama.cpp:server
     networks:
       - core
@@ -121,6 +125,7 @@ services:
       start_period: 60s
 
   llm-embed:
+    restart: unless-stopped
     image: ghcr.io/ggml-org/llama.cpp:server
     networks:
       - core
@@ -136,6 +141,7 @@ services:
       start_period: 30s
 
   llm-rerank:
+    restart: unless-stopped
     image: ghcr.io/ggml-org/llama.cpp:server
     networks:
       - core

@@ -30,6 +30,10 @@ export interface ExecutorToolEvent {
 export interface ExecutorCallbacks {
   onToolCall?: (event: ExecutorToolEvent) => void;
   onToolResult?: (event: ExecutorToolEvent) => void;
+  /** Live text of the model's reply. */
+  onToken?: (delta: string) => void;
+  /** The reply so far turned out to be a preamble to tool calls — clear it. */
+  onDraftReset?: () => void;
 }
 
 export interface ExecutorInput extends ExecutorCallbacks {
@@ -42,6 +46,8 @@ export interface ExecutorInput extends ExecutorCallbacks {
   workspaceId: string;
   projectId: string;
   taskClassification: number;
+  /** Aborts in-flight model calls when the user presses Stop. */
+  signal?: AbortSignal;
 }
 
 export interface ExecutorOutcomeOk {
@@ -75,6 +81,7 @@ interface LoopCtx {
   workspaceId: string;
   projectId: string;
   taskClassification: number;
+  signal?: AbortSignal;
 }
 
 const toolCallRequestSchema = z.object({
@@ -361,8 +368,17 @@ async function continueLoop(
       return { status: 'ok', answer: 'This took too long and was stopped.', toolCallCount: state.toolCallCount, hitIterationLimit: true };
     }
 
+    if (ctx.signal?.aborted) throw new Error('stopped');
+    let streamedThisTurn = false;
     const result = await deps.gateway.chat({
       role: ctx.agent.modelRole,
+      signal: ctx.signal,
+      onToken: callbacks.onToken
+        ? (delta) => {
+            streamedThisTurn = true;
+            callbacks.onToken?.(delta);
+          }
+        : undefined,
       messages: state.messages,
       tools: toolSchemas.length > 0 ? toolSchemas : undefined,
       user: ctx.user,
@@ -372,6 +388,8 @@ async function continueLoop(
     if (result.toolCalls.length === 0) {
       return { status: 'ok', answer: result.content, toolCallCount: state.toolCallCount, hitIterationLimit: false };
     }
+    // Text streamed before a tool call was only a preamble, not the answer.
+    if (streamedThisTurn) callbacks.onDraftReset?.();
 
     state.messages.push({
       role: 'assistant',
@@ -411,6 +429,7 @@ export async function runExecutor(deps: ExecutorDeps, input: ExecutorInput): Pro
     workspaceId: input.workspaceId,
     projectId: input.projectId,
     taskClassification: input.taskClassification,
+    signal: input.signal,
   };
   return continueLoop(deps, ctx, state, input);
 }

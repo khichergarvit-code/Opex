@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { MeResponse } from '@opex/shared';
 import { Avatar } from './ui/Avatar';
 import { Button } from './ui/Button';
-import { navigate } from '../lib/router';
+import { fetchConversations, type ConversationSummary } from '../lib/api';
+import { navigate, useRoute } from '../lib/router';
 import { SidebarNav, SidebarNavItem, SidebarSection } from './ui/SidebarNav';
 
 const AI_TOOLS_SECTION: Array<{ key: string; label: string }> = [
@@ -47,10 +48,44 @@ export function AppShell({
   children: ReactNode;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [recent, setRecent] = useState<ConversationSummary[]>([]);
+  const route = useRoute();
+
+  // Remember the chat that was open, so "Chat" in the sidebar returns to it
+  // after a trip to Usage/Documents instead of starting from a blank page.
+  useEffect(() => {
+    if (route.name !== 'chat') return;
+    try {
+      if (route.conversationId) sessionStorage.setItem('opex.lastChat', route.conversationId);
+      else sessionStorage.removeItem('opex.lastChat');
+    } catch {
+      // sessionStorage unavailable — Chat just opens a fresh chat
+    }
+  }, [route]);
+
+  // Saved chats live in Postgres; list the latest ones on every page.
+  useEffect(() => {
+    const load = () =>
+      fetchConversations()
+        .then((rows) => setRecent(rows.slice(0, 8)))
+        .catch(() => {});
+    load();
+    window.addEventListener('opex:chats-changed', load);
+    return () => window.removeEventListener('opex:chats-changed', load);
+  }, []);
 
   function onNavigate(key: string) {
     setMenuOpen(false);
-    if (key === 'chat') navigate({ name: 'chat' });
+    if (key === 'chat') {
+      if (route.name === 'chat') return;
+      let last: string | null = null;
+      try {
+        last = sessionStorage.getItem('opex.lastChat');
+      } catch {
+        last = null;
+      }
+      navigate({ name: 'chat', conversationId: last ?? undefined });
+    }
     else if (key === 'documents') navigate({ name: 'documents' });
     else if (key === 'my-memories') navigate({ name: 'memories' });
     else navigate({ name: 'admin', section: key });
@@ -92,6 +127,22 @@ export function AppShell({
             <SidebarNavItem label="Chat" active={activeKey === 'chat'} onClick={() => onNavigate('chat')} />
             <SidebarNavItem label="Documents" active={activeKey === 'documents'} onClick={() => onNavigate('documents')} />
           </SidebarSection>
+
+          {recent.length > 0 && (
+            <SidebarSection label="Recent chats">
+              {recent.map((c) => (
+                <SidebarNavItem
+                  key={c.id}
+                  label={c.title || 'Untitled chat'}
+                  active={route.name === 'chat' && route.conversationId === c.id}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    navigate({ name: 'chat', conversationId: c.id });
+                  }}
+                />
+              ))}
+            </SidebarSection>
+          )}
 
           {isAdmin && (
             <>

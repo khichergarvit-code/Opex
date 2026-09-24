@@ -13,6 +13,10 @@ export interface LlamaChatOptions {
   maxTokens?: number;
   timeoutMs?: number;
   maxRetries?: number;
+  /** Aborts the in-flight request (client disconnected / user pressed Stop). */
+  signal?: AbortSignal;
+  /** When set, the reply is streamed and each text delta is reported here (tool calls are still assembled). */
+  onToken?: (delta: string) => void;
 }
 
 export interface LlamaToolCall {
@@ -32,11 +36,76 @@ async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Reads llama-server's SSE chat stream, reporting text deltas and assembling tool calls + usage. */
+async function readStreamedChat(res: Response, onToken: (delta: string) => void): Promise<LlamaChatResult> {
+  if (!res.body) throw new Error('llama-server returned no body');
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let content = '';
+  let deltas = 0;
+  let tokensIn = 0;
+  let tokensOut = 0;
+  const calls = new Map<number, { id: string; name: string; arguments: string }>();
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) continue;
+      const data = trimmed.slice(5).trim();
+      if (data === '[DONE]') continue;
+      try {
+        const json = JSON.parse(data) as {
+          choices?: Array<{
+            delta?: {
+              content?: string | null;
+              tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>;
+            };
+          }>;
+          usage?: { prompt_tokens?: number; completion_tokens?: number };
+        };
+        if (json.usage) {
+          tokensIn = json.usage.prompt_tokens ?? tokensIn;
+          tokensOut = json.usage.completion_tokens ?? tokensOut;
+        }
+        const delta = json.choices?.[0]?.delta;
+        if (delta?.content) {
+          content += delta.content;
+          deltas += 1;
+          onToken(delta.content);
+        }
+        for (const tc of delta?.tool_calls ?? []) {
+          const idx = tc.index ?? 0;
+          const existing = calls.get(idx) ?? { id: '', name: '', arguments: '' };
+          if (tc.id) existing.id = tc.id;
+          if (tc.function?.name) existing.name += tc.function.name;
+          if (tc.function?.arguments) existing.arguments += tc.function.arguments;
+          calls.set(idx, existing);
+        }
+      } catch {
+        // ignore malformed SSE lines from the model server
+      }
+    }
+  }
+  return {
+    content,
+    tokensIn,
+    tokensOut: tokensOut || deltas,
+    toolCalls: [...calls.entries()].sort((a, b) => a[0] - b[0]).map(([, c]) => c),
+  };
+}
+
 export async function llamaChat(opts: LlamaChatOptions): Promise<LlamaChatResult> {
   const timeoutMs = opts.timeoutMs ?? 60_000;
   const maxRetries = opts.maxRetries ?? 2;
 
   let lastError: unknown;
+  let streamedAny = false;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -44,7 +113,7 @@ export async function llamaChat(opts: LlamaChatOptions): Promise<LlamaChatResult
       const res = await fetch(`${opts.endpoint}/v1/chat/completions`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        signal: controller.signal,
+        signal: opts.signal ? AbortSignal.any([controller.signal, opts.signal]) : controller.signal,
         body: JSON.stringify({
           messages: opts.messages,
           max_tokens: opts.maxTokens,
@@ -52,7 +121,8 @@ export async function llamaChat(opts: LlamaChatOptions): Promise<LlamaChatResult
           response_format: opts.jsonSchema
             ? { type: 'json_schema', json_schema: opts.jsonSchema }
             : undefined,
-          stream: false,
+          stream: opts.onToken ? true : false,
+          ...(opts.onToken ? { stream_options: { include_usage: true } } : {}),
         }),
       });
       clearTimeout(timer);
@@ -63,6 +133,13 @@ export async function llamaChat(opts: LlamaChatOptions): Promise<LlamaChatResult
       if (!res.ok) {
         const body = await res.text();
         throw new Error(`llama-server ${res.status}: ${body}`);
+      }
+
+      if (opts.onToken) {
+        return await readStreamedChat(res, (delta) => {
+          streamedAny = true;
+          opts.onToken?.(delta);
+        });
       }
 
       const json = (await res.json()) as {
@@ -88,6 +165,8 @@ export async function llamaChat(opts: LlamaChatOptions): Promise<LlamaChatResult
     } catch (err) {
       clearTimeout(timer);
       lastError = err;
+      // Retrying after tokens were already shown would duplicate them.
+      if (opts.signal?.aborted || streamedAny) throw err;
       if (attempt < maxRetries) {
         await sleep(2 ** attempt * 250);
         continue;
@@ -101,6 +180,7 @@ export async function* llamaChatStream(opts: LlamaChatOptions): AsyncGenerator<s
   const res = await fetch(`${opts.endpoint}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
+    signal: opts.signal,
     body: JSON.stringify({
       messages: opts.messages,
       max_tokens: opts.maxTokens,

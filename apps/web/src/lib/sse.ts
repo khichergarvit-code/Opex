@@ -8,6 +8,10 @@ export interface StreamMessageHandlers {
   onCitation?: (citation: Citation) => void;
   onDone: (messageId: string, traceId: string) => void;
   onError: (message: string) => void;
+  /** What the server is doing right now (routing, retrieving, verifying…). */
+  onProgress?: (phase: string, label: string) => void;
+  /** Replaces the whole answer shown so far (clears a draft before a revision streams). */
+  onReplace?: (text: string) => void;
   /** Fired for every event (including the ones above) — the timeline builds its log from this. */
   onEvent?: (event: SseEvent) => void;
 }
@@ -21,6 +25,7 @@ export async function streamMessage(
   content: string,
   handlers: StreamMessageHandlers,
   signal?: AbortSignal,
+  modelId?: string,
 ): Promise<void> {
   await fetchEventSource(`/conversations/${conversationId}/messages`, {
     method: 'POST',
@@ -29,7 +34,7 @@ export async function streamMessage(
       'x-csrf-token': getCsrfToken() ?? '',
     },
     credentials: 'same-origin',
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, modelId }),
     signal,
     onmessage(ev) {
       if (!ev.event) return;
@@ -51,6 +56,12 @@ export async function streamMessage(
           break;
         case 'error':
           handlers.onError(event.data.message);
+          break;
+        case 'progress':
+          handlers.onProgress?.(event.data.phase, event.data.label);
+          break;
+        case 'replace':
+          handlers.onReplace?.(event.data.text);
           break;
       }
     },
