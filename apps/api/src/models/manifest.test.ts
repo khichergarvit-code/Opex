@@ -177,3 +177,23 @@ describe('enabled_if_env', () => {
     expect(on.external).toBe(true);
   });
 });
+
+describe('missing model files', () => {
+  it('tell the user how to download them instead of failing with a raw ENOENT', async () => {
+    const file = path.join(dir, 'm.yaml');
+    await writeFile(
+      file,
+      `models:
+  - id: llm-main
+    role: general
+    endpoint: http://llm-main:8082
+    gguf_path: not-downloaded.gguf
+    sha256: "${'0'.repeat(64)}"
+    ctx_len: 1
+    license: l
+    origin: o
+`,
+    );
+    await expect(verifyAndLoadManifest({ manifestPath: file, modelsDir: dir, checkOnly: true, env: {} })).rejects.toThrow(/model-fetch/);
+  });
+});

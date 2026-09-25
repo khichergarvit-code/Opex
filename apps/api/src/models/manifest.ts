@@ -19,6 +19,9 @@ export const manifestEntrySchema = z.object({
   /** Required whenever mmproj_path is set — the projector is model weights too (invariant #3). */
   mmproj_sha256: z.string().length(64).optional(),
   sha256: z.string().length(64),
+  /** Where the setup step downloads the file from (not used at runtime). */
+  source_url: z.string().url().optional(),
+  mmproj_source_url: z.string().url().optional(),
   ctx_len: z.number().int().positive(),
   capabilities: z.array(z.enum(['tools', 'vision', 'json_schema'])).default([]),
   vram_mb: z.number().int().positive().optional(),
@@ -133,7 +136,14 @@ export async function verifyAndLoadManifest(opts: VerifyAndLoadOptions): Promise
   const hashOf = (file: string) => {
     let pending = hashCache.get(file);
     if (!pending) {
-      pending = sha256OfFile(file);
+      pending = sha256OfFile(file).catch((err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOENT') {
+          throw new Error(
+            `Model file missing: ${file}. Download the models first: docker compose --profile setup run --rm model-fetch (see RUNNER.md).`,
+          );
+        }
+        throw err;
+      });
       hashCache.set(file, pending);
     }
     return pending;

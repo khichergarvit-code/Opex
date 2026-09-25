@@ -19,8 +19,9 @@ sha256_of() {
   fi
 }
 
-if ! command -v node >/dev/null 2>&1; then
-  echo "node is required to parse infra/models/manifest.yaml" >&2
+if ! command -v node >/dev/null 2>&1 || [[ ! -d "$ROOT_DIR/node_modules/js-yaml" ]]; then
+  echo "This host-side script needs Node.js and 'pnpm install' first." >&2
+  echo "Easier and OS-independent: docker compose --profile setup run --rm model-fetch (see RUNNER.md)." >&2
   exit 1
 fi
 
@@ -43,7 +44,8 @@ while IFS=$'\t' read -r id gguf_path source_url expected_sha; do
     echo "[$id] already present at $dest"
   else
     echo "[$id] downloading from $source_url ..."
-    curl -sSL --fail -o "$dest.part" "$source_url"
+    # -C - resumes a partial .part file; retries cover flaky connections.
+    curl -SL --fail --retry 10 --retry-delay 5 --retry-all-errors -C - -o "$dest.part" "$source_url"
     mv "$dest.part" "$dest"
   fi
 

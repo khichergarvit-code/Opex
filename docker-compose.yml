@@ -32,6 +32,7 @@ services:
 
   api:
     restart: unless-stopped
+    image: opex-api:local
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -191,6 +192,7 @@ services:
       start_period: 30s
 
   ingest:
+    image: opex-ingest:local
     build:
       context: .
       dockerfile: services/ingest/Dockerfile
@@ -270,3 +272,51 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # ---- One-time setup steps (compose profile "setup"; never started by a normal `up`) ----
+  # These are the only services with internet access (the `edge` network), used once to
+  # download model files and Docling's caches. Every runtime service stays on the internal
+  # `core` network (invariant 1).
+  model-fetch:
+    profiles: ["setup"]
+    image: opex-api:local
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    networks:
+      - edge
+    environment:
+      MODELS_DIR: /models
+      MANIFEST_PATH: /app/infra/models/manifest.yaml
+      DO_NOT_TRACK: "1"
+    volumes:
+      - ./models:/models
+    command: ["node", "dist/scripts/fetchModels.js"]
+
+  docling-warm:
+    profiles: ["setup"]
+    image: opex-ingest:local
+    build:
+      context: .
+      dockerfile: services/ingest/Dockerfile
+    networks:
+      - edge
+    environment:
+      HF_HOME: /hf-cache
+      HF_HUB_OFFLINE: "0"
+      TRANSFORMERS_OFFLINE: "0"
+      DO_NOT_TRACK: "1"
+    volumes:
+      - ./models/docling-cache:/hf-cache
+    command:
+      - python
+      - -c
+      - "from docling.document_converter import DocumentConverter; DocumentConverter(); print('[docling] model cache warmed')"
+
+  sandbox-image:
+    profiles: ["setup"]
+    image: opex/sandbox-python:latest
+    build:
+      context: .
+      dockerfile: services/sandbox-runner/Dockerfile.sandbox-image
+    command: ["true"]

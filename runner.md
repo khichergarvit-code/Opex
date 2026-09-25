@@ -1,41 +1,44 @@
 # Running OpeX on a new machine
 
+Works the same on Windows, macOS and Linux: **Docker is the only thing you need.** The models,
+the document-parsing caches and the demo data are all downloaded/created inside Docker containers.
+No Node, pnpm, Python, uv, curl or make required.
+
 ## Prerequisites
-- Docker + Docker Compose
-- Node.js >=22 and pnpm@9.12.0 (only needed for `pnpm seed` / `pnpm eval` / local dev)
-- ~6.5GB free disk for model weights
-- git
+- Docker with Compose v2 (Docker Desktop on Windows/macOS, Docker Engine on Linux)
+- **About 10 GB of memory available to Docker** (see "Docker memory" below) and ~7 GB free disk for the models
+- Internet only for the two "setup" commands below; the running stack never uses it
 
 ## Setup
 
 ```bash
 git clone <this repo> && cd opex
 
-cp .env.example .env
-# Edit .env: change POSTGRES_PASSWORD and SESSION_SECRET to real random
-# values (the .example defaults are dev-only placeholders).
+cp .env.example .env          # PowerShell: copy .env.example .env
+# Edit .env: set POSTGRES_PASSWORD and SESSION_SECRET to real random values
+# (the defaults are dev-only placeholders).
 
-./scripts/fetch-models.sh
-# Downloads and SHA-256-verifies 4 GGUF files into ./models/ from
-# infra/models/manifest.yaml. This is the one step that needs internet
-# access. ~6GB total:
-#   qwen2.5-0.5b (469MB, router)  Qwen2.5-7B (4.4GB, main chat)
-#   bge-m3 (605MB, embeddings)    bge-reranker-v2-m3 (606MB, rerank)
+docker compose --profile setup build
+docker compose --profile setup run --rm model-fetch     # ~6 GB of models: resumable, SHA-256 verified
+docker compose --profile setup run --rm docling-warm    # document-parsing models (needed to upload PDFs)
 
-corepack enable && corepack use pnpm@9.12.0   # or: npm i -g pnpm@9.12.0
-pnpm install
-
-make up
-# = docker build (sandbox-runner image) + docker compose up -d --build
-# Builds and starts Postgres, 4 llama.cpp servers, api, web, ingest,
-# docker-socket-proxy, sandbox-runner. Migrations run automatically on
-# API boot.
-
-pnpm seed
-# Seeds 5 demo users + a default project. Run once per fresh DB only.
+docker compose up -d --build
+docker compose exec api node dist/db/seed.js            # demo users + project (safe to run twice)
 ```
 
-Open **http://localhost:8080** (web). API is at **http://localhost:3000**.
+`make setup` runs exactly these commands if you have `make`.
+
+Open **http://localhost:8080** (web). API is at **http://localhost:3000**. The first start takes a minute
+or two while the chat model loads; check with `docker compose ps` (wait for `healthy`).
+
+If `model-fetch` is interrupted (network drop, Ctrl+C), run it again: it continues where it stopped.
+
+## Docker memory
+The chat model (Qwen2.5-VL-7B, also used for images and routing) needs about 8 GB by itself, so give Docker about
+10 GB. If a model container keeps restarting (`docker compose ps` shows it exiting) it is out of memory.
+- **Docker Desktop (Windows/macOS):** Settings > Resources > Memory.
+- **Windows with WSL2 backend:** create `%UserProfile%\.wslconfig` containing `[wsl2]` and `memory=10GB`, then run `wsl --shutdown` and restart Docker Desktop.
+- **Linux:** Docker uses the machine's memory; nothing to set.
 
 ## Seeded logins
 
@@ -49,34 +52,33 @@ Password for all: `opex-dev-password`
 | `employee.internal@opex.local` | employee | Internal |
 | `employee.public@opex.local` | employee | Public |
 
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| API exits with "Model file missing … model-fetch" | Run `docker compose --profile setup run --rm model-fetch`, then `docker compose up -d`. |
+| `model-fetch` says "SHA-256 mismatch" | The file is removed automatically; run it again. If it repeats, the download source changed: do not bypass the check. |
+| Chat says "The answer model isn't reachable" or a `llm-*` container keeps restarting | Out of memory: raise Docker's memory (above). Remove old containers from earlier versions: `docker compose rm -sf llm-vision llm-small llm-rerank`. |
+| Uploading a PDF fails | The document-parsing cache is missing: run `docker compose --profile setup run --rm docling-warm`, then `docker compose restart ingest`. |
+| "port is already allocated" (8080 or 3000) | Stop whatever uses the port, or change the published port in `docker-compose.yml`. |
+| Start over from a clean database | `docker compose down -v` (deletes stored data, keeps the downloaded models), then repeat from `docker compose up -d --build`. |
+
 ## Verify offline invariant
 
 ```bash
-./scripts/verify-offline.sh
+./scripts/verify-offline.sh     # bash (Git Bash/WSL on Windows)
 ```
 
 ## Other commands
 
 ```bash
-make down              # stop the stack
-make logs              # follow logs
-make test              # pnpm test + services/ingest + services/sandbox-runner pytest
-pnpm dev                # apps/api + apps/web in watch mode (needs a reachable Postgres)
-pnpm test               # all TS unit/integration tests
-pnpm lint               # eslint, all workspaces
-pnpm typecheck          # tsc --noEmit, all workspaces
-pnpm eval               # runs eval/ suites against a live API, writes eval/results/<date>.md
+docker compose down      # stop the stack (make down)
+docker compose logs -f   # follow logs (make logs)
 ```
 
-## Notes for hardware other than the original dev box
-
-- Model sizes were picked for a 16GB unified-memory box (see
-  `infra/models/manifest.yaml`'s comment). On a machine with a real GPU
-  you'd likely want larger models — edit the manifest and re-run
-  `fetch-models.sh`.
-- Everything is CPU-inference by default (~2-6 tokens/sec measured on the
-  original dev box). A machine with an NVIDIA GPU would need CUDA support
-  wired into llama.cpp's Docker image/compose config — not currently set up.
+Developer commands (need Node >= 22 and `corepack enable && corepack use pnpm@9.12.0`, then `pnpm install`):
+`pnpm dev`, `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm seed`, `pnpm eval`, `pnpm manifest:check`, `make test`.
+`./scripts/fetch-models.sh` is the host-side alternative to `model-fetch` (needs `pnpm install` first).
 
 ## Production: swap models by editing `.env`
 

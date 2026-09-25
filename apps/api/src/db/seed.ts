@@ -83,6 +83,11 @@ async function main() {
   const env = loadEnv();
   const db = createDb(env);
 
+  if ((await db.select({ id: users.id }).from(users).limit(1)).length > 0) {
+    console.log('Database already seeded — nothing to do.');
+    process.exit(0);
+  }
+
   const [workspace] = await db
     .insert(workspaces)
     .values({ name: 'Default Workspace' })
