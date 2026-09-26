@@ -108,7 +108,7 @@ describe('answerWithVerification', () => {
   });
 
   it('gives up after the max attempts and returns low confidence with the last answer', async () => {
-    const gw = fakeGateway(['attempt 1 [1].', 'attempt 2 [1].', 'attempt 3 [1].'], ['unsupported', 'unsupported', 'unsupported']);
+    const gw = fakeGateway(['attempt 1 [1].', 'attempt 2 [1].'], ['unsupported', 'unsupported']);
 
     const result = await answerWithVerification(
       { gateway: gw as never, user: user(), traceId: 't1' },
@@ -119,9 +119,9 @@ describe('answerWithVerification', () => {
     );
 
     expect(result.confidence).toBe('low');
-    expect(result.revisions).toBe(2);
-    expect(result.answer).toBe('attempt 3 [1].');
-    expect(gw.chatStream).toHaveBeenCalledTimes(3);
-    expect(gw.chat).toHaveBeenCalledTimes(3); // each attempt gets its own groundedness check
+    expect(result.revisions).toBe(1);
+    expect(result.answer).toBe('attempt 2 [1].');
+    expect(gw.chatStream).toHaveBeenCalledTimes(2);
+    expect(gw.chat).toHaveBeenCalledTimes(2); // each attempt gets its own groundedness check
   });
 });

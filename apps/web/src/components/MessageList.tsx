@@ -19,6 +19,7 @@ export interface DisplayMessage {
   source?: 'documents' | 'general' | null;
   /** How many remembered facts about the user were given to the model for this answer. */
   memoriesUsed?: number;
+  timings?: { totalMs: number; routeMs?: number; firstTokenMs?: number; tokens: number; tokensPerSecond?: number };
   /** Facts just saved to memory because of the user message this answers. */
   remembered?: Array<{ id: string; text: string }>;
 }
@@ -216,6 +217,15 @@ export function MessageList({
           )}
           {m.role === 'assistant' && m.content !== '' && (
             <div className="flex flex-wrap items-center gap-1 text-xs">
+              {m.timings && (
+                <span
+                  className="mr-1 text-faint"
+                  title={`Total ${(m.timings.totalMs / 1000).toFixed(1)}s${m.timings.routeMs ? ` · routing ${(m.timings.routeMs / 1000).toFixed(1)}s` : ''}${m.timings.tokens ? ` · ${m.timings.tokens} tokens` : ''}`}
+                >
+                  {m.timings.firstTokenMs ? `${(m.timings.firstTokenMs / 1000).toFixed(1)}s to first word` : `${(m.timings.totalMs / 1000).toFixed(1)}s`}
+                  {m.timings.tokensPerSecond ? ` · ${m.timings.tokensPerSecond} tok/s` : ''}
+                </span>
+              )}
               {(m.memoriesUsed ?? 0) > 0 && (
                 <StatusPill tone="info" title="Facts OpeX remembered about you were used for this answer">
                   Used {m.memoriesUsed} {m.memoriesUsed === 1 ? 'memory' : 'memories'}

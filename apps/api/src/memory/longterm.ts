@@ -92,9 +92,10 @@ function renderMemoryBlock(index: number, m: InjectedMemory): string {
  * caller to place in the user turn — never the system prompt.
  */
 export async function buildMemoryBlock(
-  deps: { db: Db; gateway: ModelGateway; spanWriter: SpanWriter; user: AuthedUser; traceId: string },
+  deps: { db: Db; gateway: ModelGateway; spanWriter: SpanWriter; user: AuthedUser; traceId: string; signal?: AbortSignal },
   ctx: { workspaceId: string; projectId: string; query: string; needsMemory: string[] },
 ): Promise<{ block: string; injected: InjectedMemory[] }> {
+  if (deps.signal?.aborted) return { block: '', injected: [] };
   const [queryEmbedding] = await deps.gateway.embed({ texts: [ctx.query], user: deps.user, traceId: deps.traceId });
   if (!queryEmbedding) return { block: '', injected: [] };
   const vectorLiteral = toPgVectorLiteral(queryEmbedding);

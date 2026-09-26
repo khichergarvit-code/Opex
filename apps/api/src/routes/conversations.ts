@@ -33,7 +33,35 @@ const GENERAL_FALLBACK_PROMPT_PATH = new URL('../prompts/general-fallback.md', i
 const CHAT_SYSTEM_PROMPT_PATH = new URL('../prompts/chat-system.md', import.meta.url);
 const VISION_SYSTEM_PROMPT_PATH = new URL('../prompts/vision-system.md', import.meta.url);
 
+interface RunStats {
+  startedAt: number;
+  routeAt?: number;
+  firstTokenAt?: number;
+  tokens: number;
+}
+const runStats = new WeakMap<Response, RunStats>();
+
+function runTimings(res: Response): NonNullable<Extract<SseEvent, { type: 'done' }>['data']['timings']> {
+  const s = runStats.get(res) ?? { startedAt: Date.now(), tokens: 0 };
+  const now = Date.now();
+  const generating = s.firstTokenAt ? now - s.firstTokenAt : 0;
+  return {
+    totalMs: now - s.startedAt,
+    routeMs: s.routeAt ? s.routeAt - s.startedAt : undefined,
+    firstTokenMs: s.firstTokenAt ? s.firstTokenAt - s.startedAt : undefined,
+    tokens: s.tokens,
+    tokensPerSecond: s.tokens > 1 && generating > 0 ? Math.round((s.tokens / (generating / 1000)) * 10) / 10 : undefined,
+  };
+}
+
 function sendEvent(res: Response, event: SseEvent): void {
+  const stats = runStats.get(res) ?? { startedAt: Date.now(), tokens: 0 };
+  runStats.set(res, stats);
+  if (event.type === 'route') stats.routeAt = Date.now();
+  if (event.type === 'token') {
+    stats.firstTokenAt ??= Date.now();
+    stats.tokens += 1;
+  }
   res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`);
 }
 
@@ -75,6 +103,24 @@ export function createConversationsRouter(
   auditWriter?: AuditWriter,
 ): Router {
   const router = Router();
+  // One in-flight run per conversation, so Stop can end it even if the browser connection lingers.
+  const activeRuns = new Map<string, AbortController>();
+
+  router.post('/conversations/:id/stop', requireAuth(db), async (req, res) => {
+    const id = req.params.id as string;
+    const [owned] = await db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(and(eq(conversations.id, id), eq(conversations.userId, req.user!.id)))
+      .limit(1);
+    if (!owned) {
+      res.status(404).json({ error: 'not found' });
+      return;
+    }
+    const run = activeRuns.get(id);
+    run?.abort();
+    res.json({ stopped: Boolean(run) });
+  });
 
   router.post('/conversations', requireAuth(db), async (req, res) => {
     const parsed = createConversationRequestSchema.safeParse(req.body);
@@ -263,6 +309,7 @@ export function createConversationsRouter(
     // Pressing Stop (or closing the tab) aborts the model call itself, so
     // CPU isn't burnt finishing an answer nobody is reading.
     const abort = new AbortController();
+    activeRuns.set(conversation.id, abort);
     let clientGone = false;
     res.on('close', () => {
       if (!res.writableFinished) {
@@ -272,11 +319,12 @@ export function createConversationsRouter(
     });
     const progress = (phase: ProgressEvent['data']['phase'], label: string) =>
       sendEvent(res, { type: 'progress', data: { phase, label } });
+    const notifyTrim = () => progress('generating', 'Long conversation: older context was shortened to fit the model window…');
     if (savedUserMessage) sendEvent(res, { type: 'user_saved', data: { messageId: savedUserMessage.id } });
     // Learn a stated fact right away, in parallel with answering (the model server has two slots).
     const quickMemory: Promise<unknown> = looksLikeSelfStatement(parsed.data.content)
       ? quickExtract(
-          { db, gateway, spanWriter, user, traceId: trace.id },
+          { db, gateway, spanWriter, user, traceId: trace.id, signal: abort.signal },
           { id: conversation.id, projectId: conversation.projectId, workspaceId: conversation.workspaceId },
           parsed.data.content,
         ).then((saved) => {
@@ -341,6 +389,7 @@ export function createConversationsRouter(
             gateway,
             user,
             traceId: trace.id,
+            signal: abort.signal,
           });
     if (documentMode === 'off' && routeDecision.agent === 'doc_qa') {
       routeDecision = { ...routeDecision, taskType: 'chat', agent: 'general', complexity: 'simple', reason: 'documents are turned off for this chat' };
@@ -358,7 +407,7 @@ export function createConversationsRouter(
     // Working memory: last-N raw turns + a rolling summary, folded once the
     // conversation exceeds budget (replaces A1/A2's "send full history").
     const memoryResult = await getWorkingMemory(
-      { gateway, user, traceId: trace.id },
+      { gateway, user, traceId: trace.id, signal: abort.signal },
       priorHistory,
       conversation.workingSummary,
     );
@@ -377,7 +426,7 @@ export function createConversationsRouter(
     const [project] = await db.select().from(projects).where(eq(projects.id, conversation.projectId)).limit(1);
     // Memory is an enhancement: if recall fails, answer without it rather than not at all.
     const { block: longTermMemoryBlock, injected: injectedMemories } = await buildMemoryBlock(
-      { db, gateway, spanWriter, user, traceId: trace.id },
+      { db, gateway, spanWriter, user, traceId: trace.id, signal: abort.signal },
       { workspaceId: conversation.workspaceId, projectId: conversation.projectId, query: parsed.data.content, needsMemory: routeDecision.needs.memory },
     ).catch((err: unknown) => {
       console.error('memory recall failed:', err instanceof Error ? err.message : err);
@@ -404,7 +453,9 @@ export function createConversationsRouter(
     // finalization block entirely rather than overwrite that status.
     let pausedForApproval = false;
 
-    if (summarizeAsk) {
+    if (abort.signal.aborted) {
+      // Stopped before any answer work started: nothing to generate.
+    } else if (summarizeAsk) {
       assistantContent = summarizeAsk;
       answerSource = 'documents';
       sendEvent(res, { type: 'token', data: { delta: assistantContent } });
@@ -458,7 +509,7 @@ export function createConversationsRouter(
       } catch (err) {
         traceStatus = 'error';
         failureMessage = describeModelError(err);
-        sendEvent(res, { type: 'error', data: { message: failureMessage } });
+        if (!abort.signal.aborted) sendEvent(res, { type: 'error', data: { message: failureMessage } });
       }
     } else if (routeDecision.complexity === 'multi_step') {
       try {
@@ -513,7 +564,7 @@ export function createConversationsRouter(
       } catch (err) {
         traceStatus = 'error';
         failureMessage = describeModelError(err);
-        sendEvent(res, { type: 'error', data: { message: failureMessage } });
+        if (!abort.signal.aborted) sendEvent(res, { type: 'error', data: { message: failureMessage } });
       }
     } else if (routeDecision.agent === 'vision') {
       if (attachments.length === 0) {
@@ -524,6 +575,7 @@ export function createConversationsRouter(
         try {
           progress('generating', 'Looking at your image…');
           for await (const delta of gateway.chatStream({
+            onContextTrim: notifyTrim,
             role: 'vision',
             signal: abort.signal,
             messages: [
@@ -540,7 +592,7 @@ export function createConversationsRouter(
         } catch (err) {
           traceStatus = 'error';
           failureMessage = describeModelError(err);
-          sendEvent(res, { type: 'error', data: { message: failureMessage } });
+          if (!abort.signal.aborted) sendEvent(res, { type: 'error', data: { message: failureMessage } });
         }
       }
     } else if (routeDecision.agent === 'doc_qa') {
@@ -571,6 +623,7 @@ export function createConversationsRouter(
         const chatPrompt = await readFile(GENERAL_FALLBACK_PROMPT_PATH, 'utf8');
         try {
           for await (const delta of gateway.chatStream({
+            onContextTrim: notifyTrim,
             role: 'general',
             modelId: chosenModelId,
             signal: abort.signal,
@@ -584,7 +637,7 @@ export function createConversationsRouter(
         } catch (err) {
           traceStatus = 'error';
           failureMessage = describeModelError(err);
-          sendEvent(res, { type: 'error', data: { message: failureMessage } });
+          if (!abort.signal.aborted) sendEvent(res, { type: 'error', data: { message: failureMessage } });
         }
       } else {
         answerSource = 'documents';
@@ -653,7 +706,7 @@ export function createConversationsRouter(
         } catch (err) {
           traceStatus = 'error';
           failureMessage = describeModelError(err);
-          sendEvent(res, { type: 'error', data: { message: failureMessage } });
+          if (!abort.signal.aborted) sendEvent(res, { type: 'error', data: { message: failureMessage } });
         }
       }
     } else if (routeDecision.agent !== 'general') {
@@ -745,7 +798,7 @@ export function createConversationsRouter(
         } catch (err) {
           traceStatus = 'error';
           failureMessage = describeModelError(err);
-          sendEvent(res, { type: 'error', data: { message: failureMessage } });
+          if (!abort.signal.aborted) sendEvent(res, { type: 'error', data: { message: failureMessage } });
         }
       }
     } else {
@@ -753,6 +806,7 @@ export function createConversationsRouter(
       try {
         progress('generating', 'Writing the answer…');
         for await (const delta of gateway.chatStream({
+            onContextTrim: notifyTrim,
           role: 'general',
           modelId: chosenModelId,
           signal: abort.signal,
@@ -766,16 +820,19 @@ export function createConversationsRouter(
       } catch (err) {
         traceStatus = 'error';
         failureMessage = describeModelError(err);
-        sendEvent(res, { type: 'error', data: { message: failureMessage } });
+        if (!abort.signal.aborted) sendEvent(res, { type: 'error', data: { message: failureMessage } });
       }
     }
 
+    // Stopped by closing the tab, pressing Stop, or the stop endpoint — all three abort the same controller.
+    const wasStopped = clientGone || abort.signal.aborted;
+    if (wasStopped) failureMessage = '';
     if (!pausedForApproval) {
       let assistantMessageId = '';
-      if (traceStatus === 'ok' || clientGone || failureMessage) {
+      if (traceStatus === 'ok' || wasStopped || failureMessage) {
         // A stopped answer is still saved (with what was written so far) so
         // history never ends on an unanswered turn.
-        const storedContent = clientGone
+        const storedContent = wasStopped
           ? assistantContent.trim()
             ? `${assistantContent}\n\n(stopped)`
             : '(stopped before an answer was written)'
@@ -800,14 +857,16 @@ export function createConversationsRouter(
 
       await db
         .update(traces)
-        .set({ status: clientGone ? 'error' : traceStatus, endedAt: new Date() })
+        .set({ status: wasStopped ? 'error' : traceStatus, endedAt: new Date() })
         .where(eq(traces.id, trace.id));
 
-      await quickMemory;
-      if (traceStatus === 'ok' && !clientGone) {
-        sendEvent(res, { type: 'done', data: { messageId: assistantMessageId, traceId: trace.id } });
+      // Learning a fact must not delay the answer: wait a moment for the notice, then let it finish in the background.
+      await Promise.race([quickMemory, new Promise((resolve) => setTimeout(resolve, 3000))]);
+      if ((traceStatus === 'ok' || wasStopped) && !clientGone) {
+        sendEvent(res, { type: 'done', data: { messageId: assistantMessageId, traceId: trace.id, timings: runTimings(res) } });
       }
     }
+    if (activeRuns.get(conversation.id) === abort) activeRuns.delete(conversation.id);
     res.end();
   });
 

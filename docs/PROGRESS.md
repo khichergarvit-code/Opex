@@ -17,6 +17,14 @@ model failure, and a user's facts are private, user-scope and recalled in every
 chat and space (team-wide facts also stored project-scope). Interrupted turns
 are closed at boot. Old auto-extracted rows are unchanged (offer to purge).
 
+**M1 (speed/Stop/context) done:** Stop now cancels every phase (signal through
+routing, memory, fold; `POST /conversations/:id/stop`; ended a live run in 1 s);
+plain chat skips the router call (2 ms vs seconds); one revision instead of two;
+memory learning never delays `done` (waits ≤3 s); prompts are trimmed to the
+model window (`models/contextFit.ts`); answers show time-to-first-word and
+tok/s; one 16k slot (`-np 1`); `scripts/run-native-llama.sh` for GPU speed.
+Host RAM pressure (Docker + other apps) dominated measured latency.
+
 ## Decisions
 - **Invariant 3 narrowed, by the user's decision (2026-09-25):** a role's URL
   in `.env` may point at a model served elsewhere on the private network. It
@@ -26,20 +34,7 @@ are closed at boot. Old auto-extracted rows are unchanged (offer to purge).
   it "no support" comes from embedding similarity (threshold 0.45, untuned).
 - Memory: every injected memory goes in a labeled user-turn block, never
   the system prompt (invariant #5); extraction/purge is an in-process interval.
-- B4: the requester or an admin may decide an approval. `persist=true`
-  mounts a per-project host directory — sandbox-runner's bind-mount
-  source must be the real *host* path, not its container-internal view
-  (Docker-outside-of-Docker), fixed via a second, mount-only env var.
-  `docker-socket-proxy` allowlists only `CONTAINERS`+`POST` (+`INFO`
-  for the next milestone's runtime probe).
-- B3: groundedness fails toward the old marker-presence check on a
-  parse failure, not toward maximal distrust. Revise loop: 3 attempts,
-  non-streaming (accepted latency cost). Batch tool calls run via
-  `Promise.allSettled` but still pause on the first approval-required
-  call. The scheduler runs in waves; each step gets its own trace so
-  an approval pause can't fight the top-level turn's finalization.
-- Router: added few-shots for `needs.memory`/`complexity:multi_step` —
-  same schema-echoing lesson already fixed once for doc_qa.
+- B3/B4 decisions: see `docs/archive/b2-b4.md`.
 
 ## Debt
 - Router non-determinism spans `agent`/`needs.memory`/`complexity` —

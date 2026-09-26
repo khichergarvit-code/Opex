@@ -8,6 +8,7 @@ import {
   fetchConversations,
   fetchProjects,
   forgetMemory,
+  stopConversation,
   submitFeedback,
   uploadAttachment,
   type MessageAttachment,
@@ -82,6 +83,7 @@ export function ChatPage({
   const scrollRef = useRef<HTMLDivElement>(null);
   const userMsgIdRef = useRef<string>('');
   const assistantIdRef = useRef<string>('');
+  const activeConvRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const skipLoadForRef = useRef<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -224,6 +226,15 @@ export function ChatPage({
 
   function stopGenerating() {
     abortRef.current?.abort();
+    if (activeConvRef.current) stopConversation(activeConvRef.current).catch(() => {});
+    // Show the result at once; the server finishes closing the turn in the background.
+    setStreaming(false);
+    setProgress(null);
+    setStatus('Stopped');
+    stopElapsedTimer();
+    setMessages((prev) =>
+      prev.map((m) => (m.id === assistantIdRef.current && m.content === '' ? { ...m, content: '(stopped before an answer was written)' } : m)),
+    );
   }
 
   async function handleAttach(files: File[]) {
@@ -273,6 +284,7 @@ export function ChatPage({
   ) {
     if (!projectId) return;
     const convId = await ensureConversation();
+    activeConvRef.current = convId;
     const sentImages = replace ? (replace.attachments ?? []) : pendingImages;
     if (!replace) setPendingImages([]);
     userMsgIdRef.current = crypto.randomUUID();
@@ -365,13 +377,13 @@ export function ChatPage({
             ),
           );
         },
-        onDone: (messageId) => {
+        onDone: (messageId, _traceId, timings) => {
           // The assistant message was rendered under a client-generated id
           // while streaming; swap it for the real server id now so feedback
           // (thumbs up/down) submits against a message that actually exists
           // in the messages table, not a 404.
           setMessages((prev) =>
-            prev.map((m) => (m.id === assistantIdRef.current ? { ...m, id: messageId } : m)),
+            prev.map((m) => (m.id === assistantIdRef.current ? { ...m, id: messageId, timings } : m)),
           );
           setStreaming(false);
           setStatus(null);

@@ -39,6 +39,7 @@ export interface GetWorkingMemoryDeps {
   gateway: ModelGateway;
   user: AuthedUser;
   traceId: string;
+  signal?: AbortSignal;
 }
 
 /**
@@ -55,7 +56,7 @@ export async function getWorkingMemory(
   const totalTokens = historyTokens + summaryTokens;
 
   const overBudget = totalTokens > WORKING_MEMORY_BUDGET_TOKENS * FOLD_THRESHOLD;
-  if (!overBudget || history.length <= RECENT_TURNS_KEPT) {
+  if (!overBudget || history.length <= RECENT_TURNS_KEPT || deps.signal?.aborted) {
     return { summary: existingSummary, recentTurns: history, folded: false };
   }
 
@@ -72,6 +73,7 @@ export async function getWorkingMemory(
     ],
     user: deps.user,
     traceId: deps.traceId,
+    signal: deps.signal,
   });
 
   return { summary: result.content, recentTurns: recent, folded: true };

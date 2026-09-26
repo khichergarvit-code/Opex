@@ -29,6 +29,8 @@ export interface ChatRequest {
   /** Use this specific model (its own role is what policy checks) instead of the role's default. */
   modelId?: string;
   signal?: AbortSignal;
+  /** Called when the prompt had to be shortened to fit the model's context window. */
+  onContextTrim?: (info: { droppedChunks: number; droppedMemories: number; droppedTurns: number; truncated: boolean; tokensBefore: number; tokensAfter: number }) => void;
   /** Stream text deltas while still returning the full result (tool calls included). */
   onToken?: (delta: string) => void;
   user: AuthedUser;

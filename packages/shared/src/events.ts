@@ -34,6 +34,16 @@ export const doneEventSchema = z.object({
   data: z.object({
     messageId: z.string().uuid(),
     traceId: z.string().uuid(),
+    /** Where the time went, measured on the server. */
+    timings: z
+      .object({
+        totalMs: z.number(),
+        routeMs: z.number().optional(),
+        firstTokenMs: z.number().optional(),
+        tokens: z.number(),
+        tokensPerSecond: z.number().optional(),
+      })
+      .optional(),
   }),
 });
 

@@ -61,7 +61,13 @@ export interface RouteInput {
   gateway: ModelGateway;
   user: AuthedUser;
   traceId: string;
+  signal?: AbortSignal;
 }
+
+const GREETING = /^(hi|hello|hey|yo|thanks|thank you|thx|ok|okay|cool|great|nice|bye|good (morning|afternoon|evening|night))\b[\s!.,?]*$/i;
+// Words that suggest tools, files, code or a multi-step job: those go to the classifier.
+const NEEDS_TOOLS_OR_STEPS =
+  /\b(code|script|python|plot|chart|graph|csv|spreadsheet|excel|analy[sz]e|calculate|compute|run|execute|file|folder|directory|create|delete|remove|write|read|open|terminal|shell|command|install|and then|step[- ]by[- ]step|first .+ then)\b/i;
 
 function ruleBasedRoute(input: RouteInput): RouteDecision | null {
   if (input.attachments.some((a) => a.mime.startsWith(IMAGE_MIME_PREFIX))) {
@@ -99,6 +105,17 @@ function ruleBasedRoute(input: RouteInput): RouteDecision | null {
       agent: 'code',
       needs: { documents: false, memory: [], tools: ['code_exec', 'make_chart'] },
       reason: '/code forces the code agent',
+    };
+  }
+  // Plain chat needs no classifier call: on a CPU-only stack every router call costs several seconds.
+  const plainChat = GREETING.test(trimmed) || (!input.hasReadyDocuments && !NEEDS_TOOLS_OR_STEPS.test(trimmed) && trimmed.split(/\s+/).length <= 40);
+  if (plainChat) {
+    return {
+      taskType: 'chat',
+      complexity: 'simple',
+      agent: 'general',
+      needs: { documents: false, memory: [], tools: [] },
+      reason: 'plain chat: no documents, tools or files involved',
     };
   }
   return null;
@@ -219,6 +236,7 @@ function buildRouterSystemPrompt(hasReadyDocuments: boolean): string {
 export async function route(input: RouteInput): Promise<RouteDecision> {
   const ruleMatch = ruleBasedRoute(input);
   if (ruleMatch) return ruleMatch;
+  if (input.signal?.aborted) return fallbackRoute(input, 'stopped by the user');
 
   try {
     const result = await input.gateway.chat({
@@ -230,6 +248,8 @@ export async function route(input: RouteInput): Promise<RouteDecision> {
       jsonSchema: ROUTE_DECISION_SCHEMA,
       user: input.user,
       traceId: input.traceId,
+      signal: input.signal,
+      budget: { maxTokens: 160 },
     });
     const parsed = routerResponseSchema.safeParse(JSON.parse(result.content));
     if (parsed.success) {

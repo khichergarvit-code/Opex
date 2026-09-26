@@ -19,10 +19,10 @@ export interface AnswerWithVerificationResult {
   revisions: number;
 }
 
-// Initial attempt + up to 2 revisions, confirmed with the user as the
-// accepted latency cost on this CPU-only dev machine (each attempt is a
-// full non-streaming completion plus a groundedness-check completion).
-const MAX_ATTEMPTS = 3;
+// Initial attempt + at most one revision. Each attempt costs a full completion plus a
+// groundedness-check completion on a CPU-only stack; a third round rarely fixed
+// anything and roughly doubled the wait.
+const MAX_ATTEMPTS = 2;
 
 /**
  * B3b's revise-with-feedback loop, kept beside docQa.ts rather than

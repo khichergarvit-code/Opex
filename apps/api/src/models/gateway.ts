@@ -1,4 +1,5 @@
 import { and, eq } from 'drizzle-orm';
+import { fitToContext, type FitResult } from './contextFit.js';
 import type { Db } from '../db/client.js';
 import { models as modelsTable } from '../db/schema/index.js';
 import { can } from '../policy/can.js';
@@ -81,7 +82,7 @@ export class ModelGateway {
   private async resolveEndpoint(
     role: ModelRole,
     modelId?: string,
-  ): Promise<{ id: string; endpoint: string; role: ModelRole }> {
+  ): Promise<{ id: string; endpoint: string; role: ModelRole; ctxLen: number }> {
     const rows = await this.deps.db
       .select()
       .from(modelsTable)
@@ -98,7 +99,15 @@ export class ModelGateway {
       this.coldStarted.add(row.id);
       this.deps.statusEmitter?.emitStatus('cold_start', row.id);
     }
-    return { id: row.id, endpoint: row.endpoint, role: row.role as ModelRole };
+    return { id: row.id, endpoint: row.endpoint, role: row.role as ModelRole, ctxLen: row.ctxLen ?? 0 };
+  }
+
+  /** Shortens the prompt when it would not fit the model's window (context = per-request window, reserve = room for the answer). */
+  private fit(req: ChatRequest, ctxLen: number): FitResult {
+    const reserve = req.budget?.maxTokens ?? 1024;
+    const fit = fitToContext(req.messages, ctxLen > 0 ? ctxLen - reserve : 0);
+    if (fit.trimmed) req.onContextTrim?.(fit);
+    return fit;
   }
 
   async chat(req: ChatRequest): Promise<{
@@ -107,7 +116,7 @@ export class ModelGateway {
     tokensOut: number;
     toolCalls: LlamaToolCall[];
   }> {
-    const { id: modelId, endpoint, role: resolvedRole } = await this.resolveEndpoint(req.role, req.modelId);
+    const { id: modelId, endpoint, role: resolvedRole, ctxLen } = await this.resolveEndpoint(req.role, req.modelId);
     const decision = can(
       req.user,
       'model:invoke',
@@ -121,12 +130,13 @@ export class ModelGateway {
     if (!breaker.canAttempt()) {
       throw new Error(`Circuit open for model "${modelId}"`);
     }
+    const fit = this.fit(req, ctxLen);
 
     const started = Date.now();
     try {
       const result = await this.fns.chat({
         endpoint,
-        messages: req.messages,
+        messages: fit.messages,
         tools: req.tools,
         jsonSchema: req.jsonSchema,
         maxTokens: req.budget?.maxTokens,
@@ -143,6 +153,7 @@ export class ModelGateway {
         tokensOut: result.tokensOut,
         latencyMs: Date.now() - started,
         status: 'ok',
+        ...(fit.trimmed ? { attrs: { contextTrimmed: { chunks: fit.droppedChunks, memories: fit.droppedMemories, turns: fit.droppedTurns, truncated: fit.truncated, tokensBefore: fit.tokensBefore, tokensAfter: fit.tokensAfter } } } : {}),
       });
       return result;
     } catch (err) {
@@ -161,7 +172,7 @@ export class ModelGateway {
   }
 
   async *chatStream(req: ChatRequest): AsyncGenerator<string> {
-    const { id: modelId, endpoint, role: resolvedRole } = await this.resolveEndpoint(req.role, req.modelId);
+    const { id: modelId, endpoint, role: resolvedRole, ctxLen } = await this.resolveEndpoint(req.role, req.modelId);
     const decision = can(
       req.user,
       'model:invoke',
@@ -175,11 +186,12 @@ export class ModelGateway {
     if (!breaker.canAttempt()) {
       throw new Error(`Circuit open for model "${modelId}"`);
     }
+    const fit = this.fit(req, ctxLen);
 
     const started = Date.now();
     let tokensOut = 0;
     try {
-      for await (const delta of this.fns.chatStream({ endpoint, messages: req.messages, signal: req.signal })) {
+      for await (const delta of this.fns.chatStream({ endpoint, messages: fit.messages, signal: req.signal })) {
         tokensOut += 1; // A1 approximation; real token counts come from /tokenize in A2+
         yield delta;
       }

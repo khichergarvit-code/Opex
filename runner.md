@@ -80,6 +80,19 @@ Developer commands (need Node >= 22 and `corepack enable && corepack use pnpm@9.
 `pnpm dev`, `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm seed`, `pnpm eval`, `pnpm manifest:check`, `make test`.
 `./scripts/fetch-models.sh` is the host-side alternative to `model-fetch` (needs `pnpm install` first).
 
+## Faster answers: run the model on your GPU (optional, recommended)
+
+Docker on macOS and Windows can only use the CPU, so the bundled model answers at roughly 15 tokens per second.
+Running the same model natively on the host uses the GPU (Metal on Apple silicon, CUDA on NVIDIA) and is typically 5-10x faster.
+
+```bash
+brew install llama.cpp                    # macOS; Windows: winget install llama.cpp
+./scripts/run-native-llama.sh             # keeps running; uses ./models
+```
+
+Then add the three lines it prints (`LLM_MAIN_URL`, `LLM_ROUTER_URL`, `LLM_VISION_URL`, all `http://host.docker.internal:8082`) to `.env` and run
+`docker compose stop llm-main && docker compose up -d api`. The chat model then shows as "unverified (external)" in the admin Models page, because the API cannot hash a file that lives outside Docker.
+
 ## Production: swap models by editing `.env`
 
 Two models run out of the box: **Qwen2.5-VL-7B** (chat, vision and routing, container `llm-main`) and **bge-m3** (embeddings, `llm-embed`). Allocate about 10 GB to Docker.

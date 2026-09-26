@@ -65,6 +65,35 @@ describe('route() — rule pre-checks', () => {
   });
 });
 
+describe('route() — fast rules that skip the classifier', () => {
+  const base = { attachments: [], gateway: { chat: undefined } as never, user: user(), traceId: 't1' };
+  it.each(['hi', 'hello', 'thanks!', 'good morning'])('routes the greeting "%s" to chat without a model call', async (message) => {
+    const chat = vi.fn();
+    const d = await route({ ...base, gateway: { chat } as never, message, hasReadyDocuments: true });
+    expect(d.agent).toBe('general');
+    expect(chat).not.toHaveBeenCalled();
+  });
+  it('routes plain chat to general when there are no documents and no tool words', async () => {
+    const chat = vi.fn();
+    const d = await route({ ...base, gateway: { chat } as never, message: 'explain how a heat exchanger works', hasReadyDocuments: false });
+    expect(d.agent).toBe('general');
+    expect(chat).not.toHaveBeenCalled();
+  });
+  it('still classifies with the model when documents exist or tool words appear', async () => {
+    const chat = vi.fn().mockRejectedValue(new Error('x'));
+    await route({ ...base, gateway: { chat } as never, message: 'explain how a heat exchanger works', hasReadyDocuments: true });
+    await route({ ...base, gateway: { chat } as never, message: 'create a file with the results', hasReadyDocuments: false });
+    expect(chat).toHaveBeenCalledTimes(2);
+  });
+  it('does not call the model once the run was stopped', async () => {
+    const chat = vi.fn();
+    const ctl = new AbortController();
+    ctl.abort();
+    await route({ ...base, gateway: { chat } as never, message: 'flange bolt spec', hasReadyDocuments: true, signal: ctl.signal });
+    expect(chat).not.toHaveBeenCalled();
+  });
+});
+
 describe('route() — llm-small JSON classification', () => {
   it('uses the model classification when it parses successfully', async () => {
     const chat = vi.fn().mockResolvedValue({
@@ -79,7 +108,7 @@ describe('route() — llm-small JSON classification', () => {
       tokensOut: 1,
     });
     const decision = await route({
-      message: 'hello there',
+      message: 'analyze the pump downtime data',
       attachments: [],
       hasReadyDocuments: false,
       gateway: { chat } as never,
@@ -94,7 +123,7 @@ describe('route() — llm-small JSON classification', () => {
   it('falls back to rules when the model returns unparseable JSON', async () => {
     const chat = vi.fn().mockResolvedValue({ content: 'not json at all', tokensIn: 1, tokensOut: 1 });
     const decision = await route({
-      message: 'hello',
+      message: 'analyze this',
       attachments: [],
       hasReadyDocuments: false,
       gateway: { chat } as never,
@@ -108,7 +137,7 @@ describe('route() — llm-small JSON classification', () => {
   it('falls back to doc_qa when the project has ready documents and the model call fails', async () => {
     const chat = vi.fn().mockRejectedValue(new Error('model down'));
     const decision = await route({
-      message: 'hello',
+      message: 'flange bolt spec',
       attachments: [],
       hasReadyDocuments: true,
       gateway: { chat } as never,
@@ -161,7 +190,7 @@ describe('route() — llm-small JSON classification', () => {
       tokensOut: 1,
     });
     await route({
-      message: 'hi',
+      message: 'analyze downtime',
       attachments: [],
       hasReadyDocuments: false,
       gateway: { chat } as never,

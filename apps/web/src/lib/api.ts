@@ -334,6 +334,11 @@ export interface MyMemoryRow {
   createdAt: string;
 }
 
+/** Asks the server to end the in-flight answer for this chat (works even if the stream connection lingers). */
+export async function stopConversation(id: string): Promise<void> {
+  await request(`/conversations/${id}/stop`, { method: 'POST' });
+}
+
 export async function forgetMemory(id: string): Promise<void> {
   await request(`/memory/mine/${id}`, { method: 'DELETE' });
 }

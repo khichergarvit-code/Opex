@@ -6,7 +6,7 @@ export interface StreamMessageHandlers {
   onToken: (delta: string) => void;
   onStatus?: (state: string, model: string) => void;
   onCitation?: (citation: Citation) => void;
-  onDone: (messageId: string, traceId: string) => void;
+  onDone: (messageId: string, traceId: string, timings?: { totalMs: number; routeMs?: number; firstTokenMs?: number; tokens: number; tokensPerSecond?: number }) => void;
   onError: (message: string) => void;
   /** What the server is doing right now (routing, retrieving, verifying…). */
   onProgress?: (phase: string, label: string) => void;
@@ -67,7 +67,7 @@ export async function streamMessage(
           handlers.onCitation?.(event.data);
           break;
         case 'done':
-          handlers.onDone(event.data.messageId, event.data.traceId);
+          handlers.onDone(event.data.messageId, event.data.traceId, event.data.timings);
           break;
         case 'error':
           handlers.onError(event.data.message);
