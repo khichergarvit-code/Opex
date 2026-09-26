@@ -51,6 +51,13 @@ const SEED_AGENTS = [
     toolAllowlist: ['code_exec', 'make_chart'],
   },
   {
+    name: 'image',
+    description: 'Creates new images from a text description using the local image model.',
+    systemPromptTemplate: 'image-system.md',
+    modelRole: 'general' as const,
+    toolAllowlist: ['generate_image'],
+  },
+  {
     name: 'research',
     description: 'Answers multi-document, cross-referencing questions using document search and memory.',
     systemPromptTemplate: 'research-system.md',

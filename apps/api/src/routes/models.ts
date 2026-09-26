@@ -2,6 +2,7 @@ import { inArray } from 'drizzle-orm';
 import { Router } from 'express';
 import type { Db } from '../db/client.js';
 import { models } from '../db/schema/index.js';
+import { pingHealth } from '../models/health.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
 import type { AuthedUser } from '../policy/types.js';
@@ -19,6 +20,8 @@ export interface ChatModelOption {
   /** Short caveat shown next to the name, e.g. what the model is not suited for. */
   note?: string;
   isDefault: boolean;
+  /** Live state of the server behind it (set by GET /models only). */
+  status?: 'up' | 'down';
 }
 
 /**
@@ -50,7 +53,10 @@ export async function listChatModels(db: Db, user: AuthedUser): Promise<ChatMode
 export function createModelsRouter(db: Db): Router {
   const router = Router();
   router.get('/models', requireAuth(db), async (req, res) => {
-    res.json(await listChatModels(db, req.user!));
+    const options = await listChatModels(db, req.user!);
+    // The picker must not claim a model is usable when its server is down or out of memory.
+    const endpoints = new Map((await db.select({ id: models.id, endpoint: models.endpoint }).from(models)).map((m) => [m.id, m.endpoint]));
+    res.json(await Promise.all(options.map(async (o) => ({ ...o, status: await pingHealth(endpoints.get(o.id) ?? '') }))));
   });
   return router;
 }

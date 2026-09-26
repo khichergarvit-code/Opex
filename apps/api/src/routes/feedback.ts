@@ -1,10 +1,10 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { Router } from 'express';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { feedback, messages } from '../db/schema/index.js';
+import { feedback, messages, users } from '../db/schema/index.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
 import type { AuditWriter } from '../audit/writeAudit.js';
@@ -40,16 +40,29 @@ export function createFeedbackRouter(db: Db, auditWriter: AuditWriter): Router {
       res.status(404).json({ error: 'message not found' });
       return;
     }
-    const [row] = await db
-      .insert(feedback)
-      .values({
-        messageId: parsed.data.messageId,
-        traceId: message.traceId,
-        userId: user.id,
-        rating: parsed.data.rating,
-      })
-      .returning();
-    res.status(201).json(row);
+    // Toggle: the same rating again removes it (un-like), the other rating replaces it.
+    const [existing] = await db
+      .select()
+      .from(feedback)
+      .where(and(eq(feedback.messageId, parsed.data.messageId), eq(feedback.userId, user.id)))
+      .limit(1);
+    if (existing && existing.rating === parsed.data.rating) {
+      await db.delete(feedback).where(eq(feedback.id, existing.id));
+      res.json({ rating: null });
+      return;
+    }
+    if (existing) {
+      await db.update(feedback).set({ rating: parsed.data.rating }).where(eq(feedback.id, existing.id));
+      res.json({ rating: parsed.data.rating });
+      return;
+    }
+    await db.insert(feedback).values({
+      messageId: parsed.data.messageId,
+      traceId: message.traceId,
+      userId: user.id,
+      rating: parsed.data.rating,
+    });
+    res.status(201).json({ rating: parsed.data.rating });
   });
 
   router.get('/admin/feedback', requireAuth(db), async (req, res) => {
@@ -59,9 +72,24 @@ export function createFeedbackRouter(db: Db, auditWriter: AuditWriter): Router {
       return;
     }
     const rating = typeof req.query.rating === 'string' ? req.query.rating : undefined;
+    // Include the rated answer and who rated it, so triage shows text instead of ids.
     const rows = await db
-      .select()
+      .select({
+        id: feedback.id,
+        messageId: feedback.messageId,
+        traceId: feedback.traceId,
+        userId: feedback.userId,
+        userEmail: users.email,
+        rating: feedback.rating,
+        rootCauseTag: feedback.rootCauseTag,
+        exportedToEval: feedback.exportedToEval,
+        createdAt: feedback.createdAt,
+        answerText: messages.content,
+        conversationId: messages.conversationId,
+      })
       .from(feedback)
+      .leftJoin(messages, eq(messages.id, feedback.messageId))
+      .leftJoin(users, eq(users.id, feedback.userId))
       .where(rating ? eq(feedback.rating, rating as 'thumbs_up' | 'thumbs_down') : undefined)
       .orderBy(desc(feedback.createdAt));
     res.json(rows);

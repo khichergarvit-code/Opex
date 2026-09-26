@@ -94,6 +94,25 @@ describe('route() — fast rules that skip the classifier', () => {
   });
 });
 
+describe('route() — image requests', () => {
+  const base = { attachments: [], user: user(), traceId: 't1', hasReadyDocuments: true };
+  it.each(['draw a picture of a centrifugal pump', 'Generate an image of a wind turbine at sunset', 'please create a logo for my team', '/image a red valve', 'make me a poster about safety'])(
+    'routes "%s" to the image agent without a model call',
+    async (message) => {
+      const chat = vi.fn();
+      const d = await route({ ...base, gateway: { chat } as never, message });
+      expect(d.agent).toBe('image');
+      expect(d.taskType).toBe('image');
+      expect(chat).not.toHaveBeenCalled();
+    },
+  );
+  it('does not treat a question about documents as an image request', async () => {
+    const chat = vi.fn().mockRejectedValue(new Error('x'));
+    const d = await route({ ...base, gateway: { chat } as never, message: 'what does the drawing on page 3 show?' });
+    expect(d.agent).not.toBe('image');
+  });
+});
+
 describe('route() — llm-small JSON classification', () => {
   it('uses the model classification when it parses successfully', async () => {
     const chat = vi.fn().mockResolvedValue({

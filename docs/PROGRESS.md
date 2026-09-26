@@ -1,14 +1,12 @@
 # Progress
 
 ## Status
-A1–A3: `docs/archive/a1-a3.md`. B1+B5: `docs/archive/b1-b5.md`.
-
-**B2 (Memory), B3 (Orchestration), B4 (Sandbox + tools) are done** — acceptance evidence in `docs/archive/b2-b4.md`.
+A1–A3, B1+B5 and B2–B4 (memory, orchestration, sandbox) are done; evidence in `docs/archive/`.
 
 **Chat + models (this pass):** general-knowledge fallback and per-chat
 Documents mode (Auto/Always/Never), edit/regenerate/copy, document
-summarise (map-reduce, ACL in SQL), and a two-model stack (Qwen2.5-VL-7B
-for chat/vision/routing + bge-m3) with every role's URL set in `.env`.
+summarise (map-reduce, ACL in SQL), and a two-model stack (one VLM for
+chat/vision/routing + bge-m3) with every role's URL set in `.env`.
 
 **Memory layer reworked:** extraction reads only the user's own messages,
 runs immediately for self-statements (`memory_saved` event + Forget), always
@@ -23,7 +21,13 @@ plain chat skips the router call (2 ms vs seconds); one revision instead of two;
 memory learning never delays `done` (waits ≤3 s); prompts are trimmed to the
 model window (`models/contextFit.ts`); answers show time-to-first-word and
 tok/s; one 16k slot (`-np 1`); `scripts/run-native-llama.sh` for GPU speed.
-Host RAM pressure (Docker + other apps) dominated measured latency.
+
+**Demo pass:** native-GPU path (Qwen3-VL-4B default, 33 tok/s on M4; measured greeting 5.5 s,
+document answer 14 s, summary 19 s), tiers `small`/`standard`, `COMPOSE_PROFILES=docker-llm`
+switch, image generation (`image` role/agent/`generate_image`, DreamShaper 8 LCM, ~11 s/image),
+unused models + build cache removed (~18 GB). Bug list `bugs-runner.md`: unlike toggle,
+traces filter, feedback text, sortable tables, models toggle/order, memory admin TTL,
+history search/delete/clear, dates, emoji/dashed boxes fixed; more UI items open.
 
 ## Decisions
 - **Invariant 3 narrowed, by the user's decision (2026-09-25):** a role's URL

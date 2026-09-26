@@ -5,6 +5,7 @@ export const modelRoleEnum = pgEnum('model_role', [
   'general',
   'coder',
   'vision',
+  'image',
   'embed',
   'rerank',
 ]);

@@ -1,10 +1,11 @@
-import { readFile } from 'node:fs/promises';
-import { and, asc, desc, eq, gte, sql } from 'drizzle-orm';
+import { readFile, rm } from 'node:fs/promises';
+import path from 'node:path';
+import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { Router, type Response } from 'express';
 import type { CitationEvent, ProgressEvent, SseEvent } from '@opex/shared';
 import { createConversationRequestSchema, postMessageRequestSchema } from '@opex/shared';
 import type { Db } from '../db/client.js';
-import { conversations, messages, projectMembers, projects, traces } from '../db/schema/index.js';
+import { artifacts, conversations, feedback, messages, projectMembers, projects, traces } from '../db/schema/index.js';
 import type { Env } from '../env.js';
 import { getWorkingMemory, type WorkingMemoryTurn } from '../memory/working.js';
 import { buildMemoryBlock } from '../memory/longterm.js';
@@ -66,6 +67,13 @@ function sendEvent(res: Response, event: SseEvent): void {
 }
 
 /** Turns a raw model-call failure into something a non-technical user can act on. */
+/** Images a tool created this turn, in the shape the chat already uses for message attachments. */
+async function generatedImageAttachments(db: Db, ids: string[]): Promise<Array<{ id: string; filename: string; mime: string }>> {
+  if (ids.length === 0) return [];
+  const rows = await db.select({ id: artifacts.id, filename: artifacts.filename, mime: artifacts.mime }).from(artifacts).where(inArray(artifacts.id, ids));
+  return rows.filter((r) => r.mime.startsWith('image/'));
+}
+
 function describeModelError(err: unknown): string {
   const raw = err instanceof Error ? err.message : 'model call failed';
   if (/No enabled model configured for role "?(vision|image)/i.test(raw)) {
@@ -105,6 +113,45 @@ export function createConversationsRouter(
   const router = Router();
   // One in-flight run per conversation, so Stop can end it even if the browser connection lingers.
   const activeRuns = new Map<string, AbortController>();
+
+  /** Deletes chats (and their stored images/files). What OpeX learned from them stays in memory, by design. */
+  async function deleteChats(userId: string, where: ReturnType<typeof and>): Promise<number> {
+    const doomed = await db.select({ id: conversations.id }).from(conversations).where(where);
+    if (doomed.length === 0) return 0;
+    const ids = doomed.map((c) => c.id);
+    const files = await db.select({ storagePath: artifacts.storagePath }).from(artifacts).where(inArray(artifacts.conversationId, ids));
+    await db.delete(conversations).where(inArray(conversations.id, ids));
+    for (const f of files) {
+      await rm(path.resolve(env.DATA_DIR, f.storagePath), { force: true }).catch(() => {});
+    }
+    await auditWriter?.writeAudit({ actorId: userId, action: 'conversation.delete', resource: ids.length === 1 ? ids[0]! : 'many', details: { count: ids.length } });
+    return ids.length;
+  }
+
+  router.delete('/conversations/:id', requireAuth(db), async (req, res) => {
+    const id = req.params.id as string;
+    if (!/^[0-9a-f-]{36}$/i.test(id)) {
+      res.status(400).json({ error: 'invalid id' });
+      return;
+    }
+    activeRuns.get(id)?.abort();
+    const deleted = await deleteChats(req.user!.id, and(eq(conversations.id, id), eq(conversations.userId, req.user!.id)));
+    if (deleted === 0) {
+      res.status(404).json({ error: 'not found' });
+      return;
+    }
+    res.json({ deleted });
+  });
+
+  // Clear all of your chats (optionally only one project's).
+  router.delete('/conversations', requireAuth(db), async (req, res) => {
+    const projectId = typeof req.query.projectId === 'string' && /^[0-9a-f-]{36}$/i.test(req.query.projectId) ? req.query.projectId : undefined;
+    const deleted = await deleteChats(
+      req.user!.id,
+      and(eq(conversations.userId, req.user!.id), projectId ? eq(conversations.projectId, projectId) : undefined),
+    );
+    res.json({ deleted });
+  });
 
   router.post('/conversations/:id/stop', requireAuth(db), async (req, res) => {
     const id = req.params.id as string;
@@ -207,7 +254,16 @@ export function createConversationsRouter(
       .from(messages)
       .where(eq(messages.conversationId, conversation.id))
       .orderBy(asc(messages.createdAt));
-    res.json({ conversation, messages: history });
+    const myRatings = new Map(
+      (history.length === 0
+        ? []
+        : await db
+            .select({ messageId: feedback.messageId, rating: feedback.rating })
+            .from(feedback)
+            .where(and(eq(feedback.userId, user.id), inArray(feedback.messageId, history.map((m) => m.id))))
+      ).map((f) => [f.messageId, f.rating]),
+    );
+    res.json({ conversation, messages: history.map((m) => ({ ...m, rating: myRatings.get(m.id) ?? null })) });
   });
 
   router.post('/conversations/:id/messages', requireAuth(db), async (req, res) => {
@@ -433,7 +489,8 @@ export function createConversationsRouter(
       return { block: '', injected: [] as Awaited<ReturnType<typeof buildMemoryBlock>>['injected'] };
     });
     const projectNotesBlock = project ? renderProjectNotesBlock(project.notesMd) : null;
-    for (const m of injectedMemories) {
+    // Profile facts are always supplied; only memories matched to this question are worth telling the user about.
+    for (const m of injectedMemories.filter((x) => x.via === 'match')) {
       sendEvent(res, { type: 'memory_used', data: { id: m.id, kind: m.type, score: m.score } });
     }
     if (projectNotesBlock) {
@@ -452,6 +509,8 @@ export function createConversationsRouter(
     // and left no assistant message to insert — skip the normal
     // finalization block entirely rather than overwrite that status.
     let pausedForApproval = false;
+    // Artifacts produced by tools during this turn; images among them are shown inline in the answer.
+    let toolArtifactIds: Array<{ ok: boolean; artifactIds: string[] }> = [];
 
     if (abort.signal.aborted) {
       // Stopped before any answer work started: nothing to generate.
@@ -722,6 +781,7 @@ export function createConversationsRouter(
         try {
           const systemPrompt = await loadAgentSystemPrompt(agentConfig);
           const observedToolResults: Array<{ ok: boolean; artifactIds: string[] }> = [];
+          toolArtifactIds = observedToolResults;
           progress('generating', 'Working on it…');
           const executorOutcome = await runExecutor(
             {
@@ -847,6 +907,7 @@ export function createConversationsRouter(
             content: storedContent,
             traceId: trace.id,
             citations,
+            attachments: await generatedImageAttachments(db, toolArtifactIds.flatMap((r) => (r.ok ? r.artifactIds : []))),
             source: answerSource,
             classification: answerClassification,
           })

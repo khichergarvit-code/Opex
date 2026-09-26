@@ -64,6 +64,8 @@ export interface RouteInput {
   signal?: AbortSignal;
 }
 
+const IMAGE_REQUEST =
+  /^\/image\b|\b(draw|generate|create|make|paint|render|design|produce|sketch)\b.{0,40}\b(image|picture|photo|illustration|drawing|logo|poster|artwork|painting|sketch|icon|wallpaper)\b/i;
 const GREETING = /^(hi|hello|hey|yo|thanks|thank you|thx|ok|okay|cool|great|nice|bye|good (morning|afternoon|evening|night))\b[\s!.,?]*$/i;
 // Words that suggest tools, files, code or a multi-step job: those go to the classifier.
 const NEEDS_TOOLS_OR_STEPS =
@@ -105,6 +107,15 @@ function ruleBasedRoute(input: RouteInput): RouteDecision | null {
       agent: 'code',
       needs: { documents: false, memory: [], tools: ['code_exec', 'make_chart'] },
       reason: '/code forces the code agent',
+    };
+  }
+  if (IMAGE_REQUEST.test(trimmed)) {
+    return {
+      taskType: 'image',
+      complexity: 'simple',
+      agent: 'image',
+      needs: { documents: false, memory: [], tools: ['generate_image'] },
+      reason: 'you asked for a new image to be created',
     };
   }
   // Plain chat needs no classifier call: on a CPU-only stack every router call costs several seconds.

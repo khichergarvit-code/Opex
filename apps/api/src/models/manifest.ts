@@ -11,14 +11,17 @@ import type { AuditWriter } from '../audit/writeAudit.js';
 
 export const manifestEntrySchema = z.object({
   id: z.string(),
-  role: z.enum(['router', 'general', 'coder', 'vision', 'embed', 'rerank']),
+  role: z.enum(['router', 'general', 'coder', 'vision', 'image', 'embed', 'rerank']),
   /** May be `${ENV_VAR:-http://default:port}`; a value other than the default marks the model external. */
   endpoint: z.string(),
-  gguf_path: z.string(),
+  /** Not needed for `external_only` entries (served elsewhere, nothing local to verify). */
+  gguf_path: z.string().optional(),
   mmproj_path: z.string().optional(),
   /** Required whenever mmproj_path is set — the projector is model weights too (invariant #3). */
   mmproj_sha256: z.string().length(64).optional(),
-  sha256: z.string().length(64),
+  sha256: z.string().length(64).optional(),
+  /** Always served by something outside Docker (e.g. the native image server); never hash-verified locally. */
+  external_only: z.boolean().optional(),
   /** Where the setup step downloads the file from (not used at runtime). */
   source_url: z.string().url().optional(),
   mmproj_source_url: z.string().url().optional(),
@@ -30,12 +33,26 @@ export const manifestEntrySchema = z.object({
   enabled: z.boolean().default(true),
   /** Turns a disabled entry on when this env var is set (so a URL in .env is all an optional model needs). */
   enabled_if_env: z.string().optional(),
+  /** Model tier this entry belongs to; only entries of the tier chosen by LLM_TIER (default small) are enabled. */
+  tier: z.enum(['small', 'standard']).optional(),
 });
 export type ManifestEntry = z.infer<typeof manifestEntrySchema>;
 
 
+/** Extra files the setup step can download that are not registry models (e.g. the image model, served natively). */
+export const downloadSchema = z.object({
+  name: z.string(),
+  file: z.string(),
+  url: z.string().url(),
+  sha256: z.string().length(64),
+  /** Downloaded only when this group is switched on (group `image`: OPEX_FETCH_IMAGE=1 or LLM_IMAGE_URL set). */
+  group: z.string(),
+});
+export type ManifestDownload = z.infer<typeof downloadSchema>;
+
 const manifestSchema = z.object({
   models: z.array(manifestEntrySchema),
+  downloads: z.array(downloadSchema).default([]),
 });
 
 export class ManifestHashMismatchError extends Error {
@@ -101,13 +118,25 @@ export function assertInternalHost(rawUrl: string): void {
   }
 }
 
+/** Optional downloads whose group is switched on in `env`. */
+export async function loadDownloads(manifestPath: string, env: NodeJS.ProcessEnv = process.env): Promise<ManifestDownload[]> {
+  const parsed = manifestSchema.parse(yaml.load(await readFile(manifestPath, 'utf8')));
+  const imageOn = env.OPEX_FETCH_IMAGE === '1' || Boolean(env.LLM_IMAGE_URL?.trim());
+  return parsed.downloads.filter((d) => (d.group === 'image' ? imageOn : false));
+}
+
 export async function loadManifest(manifestPath: string, env: NodeJS.ProcessEnv = process.env): Promise<ResolvedManifestEntry[]> {
   const raw = await readFile(manifestPath, 'utf8');
   const parsed = manifestSchema.parse(yaml.load(raw));
   return parsed.models.map((entry) => {
     const { url, external } = resolveEndpoint(entry.endpoint, env);
-    const enabled = entry.enabled || (entry.enabled_if_env ? Boolean(env[entry.enabled_if_env]?.trim()) : false);
-    return { ...entry, enabled, endpoint: url, external };
+    let enabled = entry.enabled || (entry.enabled_if_env ? Boolean(env[entry.enabled_if_env]?.trim()) : false);
+    if (entry.tier) enabled = enabled && entry.tier === (env.LLM_TIER?.trim() || 'small');
+    // The context size the API budgets prompts against must match the server actually running.
+    const ctxOverride = Number(env.LLM_CTX_LEN);
+    const isLlm = entry.role === 'general' || entry.role === 'router' || entry.role === 'vision';
+    const forcedExternal = entry.external_only === true;
+    return { ...entry, enabled, external: external || forcedExternal, ctx_len: isLlm && Number.isInteger(ctxOverride) && ctxOverride > 0 ? ctxOverride : entry.ctx_len, endpoint: url };
   });
 }
 
@@ -154,6 +183,9 @@ export async function verifyAndLoadManifest(opts: VerifyAndLoadOptions): Promise
       assertInternalHost(entry.endpoint);
       continue;
     }
+    if (!entry.gguf_path || !entry.sha256) {
+      throw new Error(`Model "${entry.id}" needs gguf_path and sha256 (or external_only: true)`);
+    }
     const filePath = path.join(opts.modelsDir, entry.gguf_path);
     const actual = await hashOf(filePath);
     if (actual !== entry.sha256) {
@@ -186,9 +218,9 @@ export async function verifyAndLoadManifest(opts: VerifyAndLoadOptions): Promise
           id: entry.id,
           role: entry.role,
           endpoint: entry.endpoint,
-          ggufPath: entry.gguf_path,
+          ggufPath: entry.gguf_path ?? 'external',
           mmprojPath: entry.mmproj_path,
-          sha256: entry.sha256,
+          sha256: entry.sha256 ?? 'external',
           ctxLen: entry.ctx_len,
           capabilities: entry.capabilities,
           vramMb: entry.vram_mb,
@@ -202,9 +234,9 @@ export async function verifyAndLoadManifest(opts: VerifyAndLoadOptions): Promise
           set: {
             role: entry.role,
             endpoint: entry.endpoint,
-            ggufPath: entry.gguf_path,
+            ggufPath: entry.gguf_path ?? 'external',
             mmprojPath: entry.mmproj_path,
-            sha256: entry.sha256,
+            sha256: entry.sha256 ?? 'external',
             ctxLen: entry.ctx_len,
             capabilities: entry.capabilities,
             vramMb: entry.vram_mb,

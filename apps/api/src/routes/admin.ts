@@ -7,9 +7,12 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
 import type { AuditWriter } from '../audit/writeAudit.js';
 
+// Empty strings (an unselected filter) mean "no filter".
+const blankToUndefined = (v: unknown) => (v === '' || v === 'undefined' ? undefined : v);
+
 const logsQuerySchema = z.object({
-  kind: z.enum(['llm', 'retrieval', 'memory', 'tool', 'policy']).optional(),
-  status: z.enum(['ok', 'error']).optional(),
+  kind: z.preprocess(blankToUndefined, z.enum(['llm', 'retrieval', 'memory', 'tool', 'policy']).optional()),
+  status: z.preprocess(blankToUndefined, z.enum(['ok', 'error']).optional()),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 
@@ -107,6 +110,25 @@ export function createAdminRouter(db: Db, auditWriter: AuditWriter): Router {
   // ui.md's Admin section: "chat history (viewing it is audited)" — every
   // successful fetch here writes an audit entry, since this is an admin
   // reading another user's private conversation.
+  // Deleting someone else's conversation is a write action on private data: policy-write admins only, always audited.
+  router.delete('/admin/conversations/:id', requireAuth(db), async (req, res) => {
+    const user = req.user!;
+    const decision = can(user, 'admin:policies:write');
+    if (!decision.allowed) {
+      res.status(403).json({ error: decision.reason ?? 'forbidden' });
+      return;
+    }
+    const id = req.params.id as string;
+    const [row] = await db.select({ id: conversations.id, userId: conversations.userId }).from(conversations).where(eq(conversations.id, id)).limit(1);
+    if (!row) {
+      res.status(404).json({ error: 'not found' });
+      return;
+    }
+    await db.delete(conversations).where(eq(conversations.id, id));
+    await auditWriter.writeAudit({ actorId: user.id, action: 'conversation.admin_delete', resource: id, details: { ownerId: row.userId } });
+    res.json({ deleted: 1 });
+  });
+
   router.get('/admin/conversations/:id/messages', requireAuth(db), async (req, res) => {
     const admin = req.user!;
     const conversationId = req.params.id as string;

@@ -1,6 +1,6 @@
 import type { AuthedUser } from '../policy/types.js';
 
-export type ModelRole = 'router' | 'general' | 'coder' | 'vision' | 'embed' | 'rerank';
+export type ModelRole = 'router' | 'general' | 'coder' | 'vision' | 'image' | 'embed' | 'rerank';
 
 export interface ToolCallRequest {
   id: string;

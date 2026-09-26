@@ -32,3 +32,7 @@ eval/.gen-venv/
 
 # spike scratch output that isn't a committed result
 scripts/spikes/results/.scratch/
+
+# downloaded native tool binaries (llama.cpp, stable-diffusion.cpp)
+tools/
+models/*.safetensors
