@@ -1,19 +1,18 @@
 import type { ButtonHTMLAttributes } from 'react';
-import { ripple } from '../../lib/ripple';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
 // Material 3: filled (primary), tonal (secondary), text (ghost), and a filled error button.
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  primary: 'bg-accent-500 text-on-accent shadow-card hover:bg-accent-600 hover:shadow-lift disabled:bg-accent-500/35 disabled:shadow-none',
-  secondary: 'bg-accent-100 text-accent-700 hover:bg-accent-200 disabled:opacity-50',
-  ghost: 'bg-transparent text-accent-500 hover:bg-accent-50 disabled:opacity-50',
-  danger: 'bg-danger-600 text-on-accent shadow-card hover:bg-danger-700 disabled:bg-danger-600/35 disabled:shadow-none',
+  primary: 'bg-accent-500 text-on-accent hover:bg-accent-600 disabled:opacity-40',
+  secondary: 'border border-line bg-surface text-fg hover:bg-raised disabled:opacity-50',
+  ghost: 'bg-transparent text-fg-2 hover:bg-raised disabled:opacity-50',
+  danger: 'bg-danger-600 text-white hover:bg-danger-700 disabled:opacity-40',
 };
 
 const SIZE_CLASSES = {
-  sm: 'px-4 py-1.5 text-sm',
-  md: 'px-6 py-2.5 text-sm',
+  sm: 'px-3 py-1.5 text-sm',
+  md: 'px-4 py-2 text-sm',
 };
 
 export function Button({
@@ -23,7 +22,6 @@ export function Button({
   disabled,
   className = '',
   children,
-  onPointerDown,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
@@ -33,11 +31,7 @@ export function Button({
   return (
     <button
       disabled={disabled || loading}
-      onPointerDown={(e) => {
-        if (!(disabled || loading)) ripple(e);
-        onPointerDown?.(e);
-      }}
-      className={`relative inline-flex select-none items-center justify-center gap-2 overflow-hidden rounded-full font-medium tracking-[0.01em] transition-[background-color,box-shadow,transform] duration-200 active:scale-[0.97] disabled:cursor-not-allowed ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${className}`}
+      className={`relative inline-flex select-none items-center justify-center gap-2 rounded-lg font-medium transition-colors duration-150 active:translate-y-px disabled:cursor-not-allowed ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${className}`}
       {...props}
     >
       {loading && (

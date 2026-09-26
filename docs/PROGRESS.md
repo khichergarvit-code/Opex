@@ -9,6 +9,8 @@ summarise (map-reduce, ACL in SQL), and a two-model stack (one VLM for
 chat/vision/routing + bge-m3) with every role's URL set in `.env`.
 
 **Memory layer reworked** (user-turn-only extraction, immediate learning, always-on recall): see `docs/archive/b2-b4.md`.
+**Workspace isolation + new look:** admins are workspace-scoped (`users.workspace_id`, `policy/scope.ts`; models/agents/system super-admin only);
+new warm-paper theme (ink + one ember accent, Inter/JetBrains Mono/Newsreader bundled), progress card for "summarise all", animated landing.
 
 **M1 (speed/Stop/context) done:** Stop now cancels every phase (signal through
 routing, memory, fold; `POST /conversations/:id/stop`; ended a live run in 1 s);
@@ -20,9 +22,7 @@ tok/s; one 16k slot (`-np 1`); `scripts/run-native-llama.sh` for GPU speed.
 **Demo pass:** native-GPU path (Qwen3-VL-4B default, 33 tok/s on M4; measured greeting 5.5 s,
 document answer 14 s, summary 19 s), tiers `small`/`standard`, `COMPOSE_PROFILES=docker-llm`
 switch, image generation (`image` role/agent/`generate_image`, DreamShaper 8 LCM, ~11 s/image),
-unused models + build cache removed (~18 GB). Bug list `bugs-runner.md`: unlike toggle,
-traces filter, feedback text, sortable tables, models toggle/order, memory admin TTL,
-history search/delete/clear, dates, emoji/dashed boxes fixed; more UI items open.
+unused models + build cache removed (~18 GB). Bug list: `bugs-runner.md`.
 
 **Files + terminal (this pass):** `files` agent with workspace tools (write/edit/move/delete/
 read/list, `read_memories`), sandboxed `run_shell`; every change or command asks first (approval

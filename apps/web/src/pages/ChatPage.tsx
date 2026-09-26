@@ -25,7 +25,9 @@ import {
 import { navigate } from '../lib/router';
 import { streamMessage } from '../lib/sse';
 import { AppShell } from '../components/AppShell';
+import { Logo } from '../components/ui/Logo';
 import { Composer } from '../components/Composer';
+import { TaskProgressCard, type TaskStep } from '../components/TaskProgressCard';
 import { MessageList, type DisplayMessage } from '../components/MessageList';
 import { AgentTimeline } from '../components/AgentTimeline';
 import { ArtifactsPanel, type DisplayArtifact } from '../components/ArtifactsPanel';
@@ -81,6 +83,7 @@ export function ChatPage({
   const [pendingImages, setPendingImages] = useState<MessageAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const [pendingDocs, setPendingDocs] = useState<PendingDoc[]>([]);
+  const [taskSteps, setTaskSteps] = useState<{ title: string; items: TaskStep[] } | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
   const [chatModels, setChatModels] = useState<ChatModelOption[]>([]);
   const [modelId, setModelId] = useState<string>(() => {
@@ -392,6 +395,7 @@ export function ChatPage({
     setStreaming(true);
     setStatus(null);
     setTimelineEvents([]);
+    setTaskSteps(null);
     setPendingApproval(null);
 
     const controller = new AbortController();
@@ -422,6 +426,7 @@ export function ChatPage({
               }
             }
           }
+          if (event.type === 'steps') setTaskSteps(event.data);
           if (event.type === 'memory_used' && event.data.kind !== 'project') {
             setMessages((prev) => prev.map((m) => (m.id === assistantIdRef.current ? { ...m, memoriesUsed: (m.memoriesUsed ?? 0) + 1 } : m)));
           }
@@ -592,8 +597,6 @@ export function ChatPage({
   }, [projectId, projects.length]);
 
   const greetingName = user.email.split('@')[0] ?? user.email;
-  const hour = new Date().getHours();
-  const timeOfDay = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
 
   const suggestionTiles = [
     {
@@ -726,10 +729,11 @@ export function ChatPage({
           {messages.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-6">
               <div className="text-center">
-                <p className="text-[40px] font-normal leading-tight tracking-tight text-fg">
-                  Good {timeOfDay}, {greetingName}
+                <Logo markClassName="mx-auto h-9 w-9" textClassName="sr-only" />
+                <p className="mx-auto mt-6 max-w-lg font-serif text-2xl italic leading-snug text-fg-2">
+                  Ask it to read, write, or reason over your files, {greetingName}. It runs on local models and shows its sources.
                 </p>
-                <p className="mt-2 text-base text-muted">How can I help you today?</p>
+                <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.1em] text-faint">Local models only · nothing leaves the room</p>
               </div>
               <div className="w-full max-w-2xl">
                 {chatModels.find((m) => m.id === modelId)?.status === 'down' && (
@@ -750,11 +754,10 @@ export function ChatPage({
                     initial={{ opacity: 0, y: 14 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.12 + i * 0.06, duration: 0.3, ease: [0.2, 0, 0, 1] }}
-                    whileHover={{ y: -3 }}
-                    whileTap={{ scale: 0.98 }}
+                    whileTap={{ scale: 0.99 }}
                     onClick={tile.onClick}
                     disabled={!projectId}
-                    className="rounded-3xl bg-surface p-5 text-left shadow-card transition-shadow hover:shadow-lift disabled:opacity-50"
+                    className="rounded-xl border border-line bg-surface p-4 text-left transition-colors hover:bg-raised disabled:opacity-50"
                   >
                     <p className="text-sm font-medium text-fg">{tile.title}</p>
                     <p className="mt-1 text-xs text-muted">{tile.description}</p>
@@ -787,6 +790,21 @@ export function ChatPage({
                   onOpenCitation={(c) => onOpenCitation(c.documentId, c.page, c.bbox)}
                   onFeedback={(messageId, rating) => submitFeedback(messageId, rating)}
                 />
+                {streaming && taskSteps && (
+                  <div className="mt-3">
+                    <TaskProgressCard
+                      title={taskSteps.title}
+                      items={taskSteps.items}
+                      elapsedMs={elapsedMs}
+                      onStop={stopGenerating}
+                      onBackground={() => {
+                        // The server keeps going; leave this chat and it fills in when reopened from history.
+                        notifyChatsChanged();
+                        startNewChat();
+                      }}
+                    />
+                  </div>
+                )}
                 {status && <p className="mt-2 text-xs text-faint">{status}</p>}
                 {pendingApproval && (
                   <ApprovalPrompt

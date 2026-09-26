@@ -220,10 +220,10 @@ export function MessageList({
           <div
             className={`whitespace-pre-wrap text-[15px] leading-7 ${
               m.role === 'user'
-                ? 'rounded-3xl rounded-br-lg bg-accent-100 px-5 py-3 text-fg'
+                ? 'rounded-2xl bg-raised px-4 py-2.5 text-fg'
                 : m.content.startsWith('⚠️ ')
-                  ? 'flex items-start gap-2.5 rounded-3xl rounded-bl-lg bg-danger-50 px-5 py-3 text-danger-700'
-                  : 'rounded-3xl rounded-bl-lg bg-surface px-5 py-3 text-fg shadow-card'
+                  ? 'flex items-start gap-2.5 rounded-xl bg-danger-50 px-4 py-3 text-danger-700'
+                  : 'py-1 text-fg'
             }`}
           >
             {m.role === 'assistant' && m.content.startsWith('⚠️ ') ? (
