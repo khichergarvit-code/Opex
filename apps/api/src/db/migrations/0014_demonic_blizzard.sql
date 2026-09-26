@@ -1,0 +1,1 @@
+ALTER TYPE "public"."model_role" ADD VALUE 'image' BEFORE 'embed';

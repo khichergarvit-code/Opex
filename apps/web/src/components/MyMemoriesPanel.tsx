@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ApiError, fetchMyMemories, forgetAllMemories, forgetMemory, type MyMemoryRow } from '../lib/api';
 import { Button } from './ui/Button';
+import { Icon } from './ui/Icon';
 import { Card } from './ui/Card';
 import { StatusPill } from './ui/Badge';
 import { EmptyState } from './ui/EmptyState';
@@ -24,28 +25,37 @@ export function MyMemoriesPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="mx-auto max-w-2xl p-6">
-      <Button variant="ghost" onClick={onBack} className="mb-4">
-        ← Back
-      </Button>
-      <h2 className="text-xl font-semibold text-fg">What OpeX remembers</h2>
-      <p className="mt-1 text-sm text-muted">
-        Facts and preferences OpeX has picked up from what you told it. They are private to you and are used in every chat and space. Forget anything you don't want kept.
-      </p>
-      {rows && rows.length > 0 && (
-        <Button
-          variant="danger"
-          size="sm"
-          className="mt-3"
-          onClick={() => {
-            if (!window.confirm('Forget everything OpeX has learned about you?')) return;
-            forgetAllMemories()
-              .then(() => setRows([]))
-              .catch((err) => setError(err instanceof ApiError ? err.message : 'could not forget memories'));
-          }}
+      <div className="flex items-start gap-3">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back"
+          title="Back"
+          className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-full text-fg-2 transition-colors hover:bg-raised"
         >
-          Forget everything
-        </Button>
-      )}
+          <Icon name="arrowLeft" />
+        </button>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-xl font-semibold text-fg">What OpeX remembers</h2>
+          <p className="mt-1 text-sm text-muted">
+            Facts and preferences OpeX has picked up from what you told it. They are private to you and are used in every chat and space.
+          </p>
+        </div>
+        {rows && rows.length > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              if (!window.confirm('Forget everything OpeX has learned about you?')) return;
+              forgetAllMemories()
+                .then(() => setRows([]))
+                .catch((err) => setError(err instanceof ApiError ? err.message : 'could not forget memories'));
+            }}
+            className="shrink-0 rounded-full px-3 py-1.5 text-sm text-muted transition-colors hover:bg-danger-50 hover:text-danger-700"
+          >
+            Forget all
+          </button>
+        )}
+      </div>
 
       {error && <Alert className="mt-4">{error}</Alert>}
 

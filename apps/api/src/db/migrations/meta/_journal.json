@@ -99,6 +99,13 @@
       "when": 1790280651171,
       "tag": "0013_mute_proemial_gods",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790399104320,
+      "tag": "0014_demonic_blizzard",
+      "breakpoints": true
     }
   ]
 }

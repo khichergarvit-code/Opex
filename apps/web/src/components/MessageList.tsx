@@ -17,6 +17,8 @@ export interface DisplayMessage {
   confidence?: 'high' | 'low';
   revisions?: number;
   source?: 'documents' | 'general' | null;
+  /** The signed-in user's saved rating of this answer (persisted on the server). */
+  rating?: 'thumbs_up' | 'thumbs_down' | null;
   /** How many remembered facts about the user were given to the model for this answer. */
   memoriesUsed?: number;
   timings?: { totalMs: number; routeMs?: number; firstTokenMs?: number; tokens: number; tokensPerSecond?: number };
@@ -130,7 +132,7 @@ export function MessageList({
 }: {
   messages: DisplayMessage[];
   onOpenCitation: (c: Citation) => void;
-  onFeedback?: (messageId: string, rating: 'thumbs_up' | 'thumbs_down') => void;
+  onFeedback?: (messageId: string, rating: 'thumbs_up' | 'thumbs_down') => Promise<'thumbs_up' | 'thumbs_down' | null> | void;
   /** Edit a sent user message and re-run from there (drops later turns). */
   onEdit?: (messageId: string, text: string) => void;
   /** Re-run the answer to the user message before this assistant message. */
@@ -142,10 +144,17 @@ export function MessageList({
 }) {
   const lastId = messages[messages.length - 1]?.id;
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [rated, setRated] = useState<Record<string, 'thumbs_up' | 'thumbs_down'>>({});
-  const rate = (id: string, rating: 'thumbs_up' | 'thumbs_down') => {
-    setRated((prev) => ({ ...prev, [id]: rating }));
-    onFeedback?.(id, rating);
+  const [rated, setRated] = useState<Record<string, 'thumbs_up' | 'thumbs_down' | null>>({});
+  // Clicking the same rating again removes it (un-like); the server is the source of truth.
+  const ratingOf = (m: DisplayMessage) => (m.id in rated ? rated[m.id] : m.rating) ?? null;
+  const rate = (m: DisplayMessage, rating: 'thumbs_up' | 'thumbs_down') => {
+    const next = ratingOf(m) === rating ? null : rating;
+    setRated((prev) => ({ ...prev, [m.id]: next }));
+    Promise.resolve(onFeedback?.(m.id, rating))
+      .then((saved) => {
+        if (saved !== undefined) setRated((prev) => ({ ...prev, [m.id]: saved }));
+      })
+      .catch(() => setRated((prev) => ({ ...prev, [m.id]: ratingOf(m) })));
   };
   const progressLine = (m: DisplayMessage) =>
     pending && m.id === lastId && m.role === 'assistant' ? (
@@ -165,10 +174,17 @@ export function MessageList({
           className={`flex flex-col gap-1.5 ${m.role === 'user' ? 'max-w-[80%] self-end items-end' : 'max-w-[92%] self-start items-start'}`}
         >
           {m.attachments && m.attachments.length > 0 && (
-            <div className="flex flex-wrap justify-end gap-2">
+            <div className={`flex flex-wrap gap-2 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               {m.attachments.map((a) => (
                 <a key={a.id} href={`/artifacts/${a.id}`} target="_blank" rel="noreferrer">
-                  <img src={`/artifacts/${a.id}`} alt={a.filename} className="max-h-52 max-w-[16rem] rounded-2xl object-cover shadow-card" />
+                  <img
+                    src={`/artifacts/${a.id}`}
+                    alt={a.filename}
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                    className={`rounded-2xl object-cover shadow-card ${m.role === 'assistant' ? 'max-h-80 max-w-[min(24rem,100%)]' : 'max-h-52 max-w-[16rem]'}`}
+                  />
                 </a>
               ))}
             </div>
@@ -187,10 +203,21 @@ export function MessageList({
             className={`whitespace-pre-wrap text-[15px] leading-7 ${
               m.role === 'user'
                 ? 'rounded-3xl rounded-br-lg bg-accent-100 px-5 py-3 text-fg'
-                : 'rounded-3xl rounded-bl-lg bg-surface px-5 py-3 text-fg shadow-card'
+                : m.content.startsWith('⚠️ ')
+                  ? 'flex items-start gap-2.5 rounded-3xl rounded-bl-lg bg-danger-50 px-5 py-3 text-danger-700'
+                  : 'rounded-3xl rounded-bl-lg bg-surface px-5 py-3 text-fg shadow-card'
             }`}
           >
-            {m.content === '' && progressLine(m) ? progressLine(m) : renderContentWithCitations(m.content, m.citations ?? [], onOpenCitation)}
+            {m.role === 'assistant' && m.content.startsWith('⚠️ ') ? (
+              <>
+                <Icon name="alert" className="mt-1.5 h-4 w-4 shrink-0" />
+                <span>{m.content.slice(3)}</span>
+              </>
+            ) : m.content === '' && progressLine(m) ? (
+              progressLine(m)
+            ) : (
+              renderContentWithCitations(m.content, m.citations ?? [], onOpenCitation)
+            )}
           </div>
           )}
           {m.content !== '' && progressLine(m)}
@@ -250,23 +277,23 @@ export function MessageList({
                 <>
                   <button
                     type="button"
-                    onClick={() => rate(m.id, 'thumbs_up')}
-                    aria-pressed={rated[m.id] === 'thumbs_up'}
-                    title="Good answer"
+                    onClick={() => rate(m, 'thumbs_up')}
+                    aria-pressed={ratingOf(m) === 'thumbs_up'}
+                    title={ratingOf(m) === 'thumbs_up' ? 'Remove your like' : 'Good answer'}
                     aria-label="Good answer"
-                    className={`grid h-8 w-8 place-items-center rounded-full transition-colors active:scale-90 ${rated[m.id] === 'thumbs_up' ? 'bg-accent-100 text-accent-700' : 'text-muted hover:bg-accent-100 hover:text-accent-700'}`}
+                    className={`grid h-8 w-8 place-items-center rounded-full transition-colors active:scale-90 ${ratingOf(m) === 'thumbs_up' ? 'bg-accent-100 text-accent-700' : 'text-muted hover:bg-accent-100 hover:text-accent-700'}`}
                   >
-                    <Icon name="thumbs" className={`h-4 w-4 ${rated[m.id] === 'thumbs_up' ? 'fill-current' : ''}`} />
+                    <Icon name="thumbs" className={`h-4 w-4 ${ratingOf(m) === 'thumbs_up' ? 'fill-current' : ''}`} />
                   </button>
                   <button
                     type="button"
-                    onClick={() => rate(m.id, 'thumbs_down')}
-                    aria-pressed={rated[m.id] === 'thumbs_down'}
-                    title="Bad answer"
+                    onClick={() => rate(m, 'thumbs_down')}
+                    aria-pressed={ratingOf(m) === 'thumbs_down'}
+                    title={ratingOf(m) === 'thumbs_down' ? 'Remove your dislike' : 'Bad answer'}
                     aria-label="Bad answer"
-                    className={`grid h-8 w-8 place-items-center rounded-full transition-colors active:scale-90 ${rated[m.id] === 'thumbs_down' ? 'bg-danger-50 text-danger-700' : 'text-muted hover:bg-danger-50 hover:text-danger-700'}`}
+                    className={`grid h-8 w-8 place-items-center rounded-full transition-colors active:scale-90 ${ratingOf(m) === 'thumbs_down' ? 'bg-danger-50 text-danger-700' : 'text-muted hover:bg-danger-50 hover:text-danger-700'}`}
                   >
-                    <Icon name="thumbs" className={`h-4 w-4 rotate-180 ${rated[m.id] === 'thumbs_down' ? 'fill-current' : ''}`} />
+                    <Icon name="thumbs" className={`h-4 w-4 rotate-180 ${ratingOf(m) === 'thumbs_down' ? 'fill-current' : ''}`} />
                   </button>
                 </>
               )}

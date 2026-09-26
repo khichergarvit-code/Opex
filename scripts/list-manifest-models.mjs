@@ -15,6 +15,7 @@ const doc = yaml.load(readFileSync(manifestPath, 'utf8'));
 const seen = new Set();
 for (const entry of doc.models) {
   if (entry.enabled === false || seen.has(entry.gguf_path)) continue;
+  if (entry.tier && entry.tier !== (process.env.LLM_TIER || 'small')) continue;
   seen.add(entry.gguf_path);
   console.log([entry.id, entry.gguf_path, entry.source_url ?? '', entry.sha256 ?? ''].join('\t'));
   if (entry.mmproj_path) {

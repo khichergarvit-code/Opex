@@ -1,0 +1,44 @@
+Bugs
+- [x] 1.-default project should be in perfect position and change its ui
+- [x] 2.:-we have to history from current position and change its ui
+- [x] 3:-real time search
+- [x] 4: copy /edit button for text (buttons exist on every message; check hover on your screen)
+- [x] 5:-when i give new command it should scroll down to the newest msg in the particular convo (auto-scroll on send changed only in logic; please confirm on screen)
+- [x] 6:- for a particular chat it is retrieving from the document not from the general know
+- [x] 7:-spacing probelm in the chat space (scrollbar gutter + spacing tuned; check visually)
+- [x] 8:current model is not looking good
+- [ ] Document model (unclear what was meant: please explain)
+- [x] Create the logo of open (new OpeX mark, favicon)
+- [x] Taking lot of time in the 
+- [x] Image description is failed but shows that current model is vision model
+- [x] If we like a particular chat then we can’t unlike we have to dislike only but can’t help with unlike it
+- [x] In the new chat there box which does not good around the chat we are going to type (single clean border, focus ring, wider; check visually)
+- [x] After every reply it shows it shows 1 memory used does it necessary to show this
+- [x] While closing the history tab we have to again click on history not closing by clicking anywhere
+- [x] Document default projects is not working properly
+- [x] Scroll bar is very near to the text means it is overlapping it
+- [x] In the models when we enable/disable a model then its position is changed which irritates
+- [x] And in models instead of enable/disable we will put fluid feature like in apple
+- [x] I understand less about the policies and agents so pls check about this
+- [x] In users while creating the account there is bad box spacing problem and while selecting the employee box the checkbox is of different design it should be of same design as the all ui
+- [x] And active is green colour and the design is also of green colour so we have think the solution of this
+- [x]  In the groups also when selecting the member of the group there is box spacing problem
+- [x] Through discussion we can disscuss that in access request and approvals that dotted box we have to keep or not (decided: dashed boxes removed)
+- [x] In traces Ig there is problem of status error it is not showing anything and it is showing “invalid query params”
+- [x] And in traces can’t we add the sorting in the tokens and the latency for the comparison purposes 
+- [x] Same sorting thing in the usage 
+- [x] In the feedback triggers can’t we show directly the msg instead of the code of the msg
+- [x] In system the warning="⚠️ disk usage is high: 93.8% used” in this ig ⚠️ is looking odd
+- [x] In the memory the when the memory is so much then there will be lots of time wasted to scroll down to get down for TTL so we can put another scroll bar for the memory history
+- [x] In the TTL there is 2 blank what does that mean as we have to set time one time we can do from 1 blank what is use of another
+- [x] In the conversation we can have good way to show 2026-09-26T00:49:24.359Z date and time  (history, traces, feedback, conversation viewer)
+- [x] Can’t we add the delete the convo option in it to not ruin its feed in the ai (chat history and the admin conversation viewer)
+- [x] And same for deleting the history and if we add delete history will the memory will use data used in the deleted history (Clear all chats; memories are kept, as decided)
+- [x] In the logo of the admin we can the logos like in the GitHub
+- [x] In the last 3 option In the admin bar we give some more dark so that It can be differentiate (last three now sit in a darker 'Data and system' panel)
+- [x]  In what open remembers the back is looking so odd and forgot everything is also looking bad
+- [x] Can do better login page and home/enter page (redesigned; check visually)
+- [ ]
+
+Still open: only 'Document model' (unclear what was meant).
+Status key: [x] = fixed in code; UI items were not seen in a browser by the author, please confirm visually.

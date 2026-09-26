@@ -34,7 +34,7 @@ export function MemoryPage({ onBack: _onBack }: { onBack: () => void }) {
   const [longTerm, setLongTerm] = useState<LongTermMemoryRow[]>([]);
   const [longTermLoading, setLongTermLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [workspaceId, setWorkspaceId] = useState('');
+  const [ttlSaved, setTtlSaved] = useState(false);
   const [episodicDays, setEpisodicDays] = useState('90');
   const [semanticDays, setSemanticDays] = useState('180');
 
@@ -60,6 +60,15 @@ export function MemoryPage({ onBack: _onBack }: { onBack: () => void }) {
     }
   }
 
+  useEffect(() => {
+    request<{ memoryTtlDays: { episodic: number | null; semantic: number | null } }>('/admin/memory/ttl')
+      .then((r) => {
+        setEpisodicDays(r.memoryTtlDays.episodic === null ? '' : String(r.memoryTtlDays.episodic));
+        setSemanticDays(r.memoryTtlDays.semantic === null ? '' : String(r.memoryTtlDays.semantic));
+      })
+      .catch(() => {});
+  }, []);
+
   async function deleteMemory(id: string) {
     try {
       await request(`/admin/memory/long-term/${id}`, { method: 'DELETE' });
@@ -75,7 +84,6 @@ export function MemoryPage({ onBack: _onBack }: { onBack: () => void }) {
       await request('/admin/memory/ttl', {
         method: 'PUT',
         body: JSON.stringify({
-          workspaceId,
           memoryTtlDays: {
             episodic: episodicDays === '' ? null : Number(episodicDays),
             semantic: semanticDays === '' ? null : Number(semanticDays),
@@ -84,7 +92,10 @@ export function MemoryPage({ onBack: _onBack }: { onBack: () => void }) {
       });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'failed to save TTL');
+      return;
     }
+    setTtlSaved(true);
+    setTimeout(() => setTtlSaved(false), 2500);
   }
 
   return (
@@ -96,7 +107,49 @@ export function MemoryPage({ onBack: _onBack }: { onBack: () => void }) {
       {error && <Alert>{error}</Alert>}
 
       <Card className="mb-6">
+        <h3 className="text-sm font-semibold text-fg">How long memories are kept</h3>
+        <p className="mt-1 max-w-2xl text-sm text-muted">
+          Memories older than this are removed automatically every night. Leave a box empty to keep that kind of memory forever.
+        </p>
+        <form onSubmit={saveTtl} className="mt-4 flex flex-wrap items-end gap-4">
+          <label className="flex flex-col gap-1.5 text-sm text-fg-2">
+            Episodic (what happened in a chat)
+            <span className="flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                placeholder="forever"
+                value={episodicDays}
+                onChange={(e) => setEpisodicDays(e.target.value)}
+                className="w-28 rounded-xl border border-line bg-canvas px-3 py-2 text-sm outline-none focus:border-accent-400"
+              />
+              days
+            </span>
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm text-fg-2">
+            Semantic (lasting facts and preferences)
+            <span className="flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                placeholder="forever"
+                value={semanticDays}
+                onChange={(e) => setSemanticDays(e.target.value)}
+                className="w-28 rounded-xl border border-line bg-canvas px-3 py-2 text-sm outline-none focus:border-accent-400"
+              />
+              days
+            </span>
+          </label>
+          <Button type="submit" variant="primary">
+            Save
+          </Button>
+          {ttlSaved && <span className="pb-2 text-sm text-accent-700">Saved</span>}
+        </form>
+      </Card>
+
+      <Card className="mb-6">
         <h3 className="mb-3 text-sm font-semibold text-fg">Long-term memory (episodic / semantic)</h3>
+        <div className="max-h-[26rem] overflow-y-auto pr-1">
         <DataTable
           emptyMessage="No long-term memories yet"
           loading={longTermLoading}
@@ -122,32 +175,7 @@ export function MemoryPage({ onBack: _onBack }: { onBack: () => void }) {
             },
           ]}
         />
-
-        <h4 className="mb-2 mt-6 text-sm font-medium text-fg-2">Set TTL (days; blank = never expires)</h4>
-        <form onSubmit={saveTtl} className="flex flex-wrap gap-2">
-          <input
-            placeholder="workspace id"
-            value={workspaceId}
-            onChange={(e) => setWorkspaceId(e.target.value)}
-            required
-            className="rounded-lg border border-line px-2 py-1 text-sm"
-          />
-          <input
-            placeholder="episodic days"
-            value={episodicDays}
-            onChange={(e) => setEpisodicDays(e.target.value)}
-            className="w-32 rounded-lg border border-line px-2 py-1 text-sm"
-          />
-          <input
-            placeholder="semantic days"
-            value={semanticDays}
-            onChange={(e) => setSemanticDays(e.target.value)}
-            className="w-32 rounded-lg border border-line px-2 py-1 text-sm"
-          />
-          <Button type="submit" variant="primary" size="sm">
-            Save TTL
-          </Button>
-        </form>
+        </div>
       </Card>
 
       <Card>

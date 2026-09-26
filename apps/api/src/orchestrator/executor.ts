@@ -103,7 +103,7 @@ const agentConfigSchema = z.object({
   version: z.number(),
   description: z.string(),
   systemPromptTemplate: z.string(),
-  modelRole: z.enum(['router', 'general', 'coder', 'vision', 'embed', 'rerank']),
+  modelRole: z.enum(['router', 'general', 'coder', 'vision', 'image', 'embed', 'rerank']),
   toolAllowlist: z.array(z.string()),
   maxIterations: z.number(),
   requiresApprovalTools: z.array(z.string()),

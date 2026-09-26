@@ -98,6 +98,8 @@ export interface StoredMessage {
   citations: Citation[];
   attachments?: MessageAttachment[];
   source?: 'documents' | 'general' | null;
+  /** The signed-in user's saved rating of this answer. */
+  rating?: 'thumbs_up' | 'thumbs_down' | null;
   createdAt: string;
 }
 
@@ -135,6 +137,7 @@ export interface ChatModelOption {
   detail: string;
   note?: string;
   isDefault: boolean;
+  status?: 'up' | 'down';
 }
 
 export async function fetchChatModels(): Promise<ChatModelOption[]> {
@@ -177,7 +180,7 @@ export interface AdminUsageRow {
 }
 
 export async function fetchAdminLogs(params: { kind?: string; status?: string } = {}): Promise<AdminSpanRow[]> {
-  const qs = new URLSearchParams(params as Record<string, string>).toString();
+  const qs = new URLSearchParams(Object.entries(params).filter((e): e is [string, string] => Boolean(e[1]))).toString();
   return request<AdminSpanRow[]>(`/admin/logs${qs ? `?${qs}` : ''}`);
 }
 
@@ -301,8 +304,10 @@ export async function decideApproval(id: string, decision: 'approved' | 'denied'
   });
 }
 
-export async function submitFeedback(messageId: string, rating: 'thumbs_up' | 'thumbs_down'): Promise<void> {
-  await request('/feedback', { method: 'POST', body: JSON.stringify({ messageId, rating }) });
+/** Toggles: sending the same rating again removes it. Returns the rating now stored (null = none). */
+export async function submitFeedback(messageId: string, rating: 'thumbs_up' | 'thumbs_down'): Promise<'thumbs_up' | 'thumbs_down' | null> {
+  const res = await request<{ rating: 'thumbs_up' | 'thumbs_down' | null }>('/feedback', { method: 'POST', body: JSON.stringify({ messageId, rating }) });
+  return res.rating;
 }
 
 export async function uploadDocument(projectId: string, file: File): Promise<ApiDocument> {
@@ -332,6 +337,18 @@ export interface MyMemoryRow {
   confidence: number;
   classification: number;
   createdAt: string;
+}
+
+export async function adminDeleteConversation(id: string): Promise<void> {
+  await request(`/admin/conversations/${id}`, { method: 'DELETE' });
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+  await request(`/conversations/${id}`, { method: 'DELETE' });
+}
+
+export async function deleteAllConversations(projectId?: string): Promise<{ deleted: number }> {
+  return request<{ deleted: number }>(`/conversations${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`, { method: 'DELETE' });
 }
 
 /** Asks the server to end the in-flight answer for this chat (works even if the stream connection lingers). */

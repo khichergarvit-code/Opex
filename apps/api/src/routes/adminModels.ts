@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { models } from '../db/schema/index.js';
+import { pingHealth } from '../models/health.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
 import type { AuditWriter } from '../audit/writeAudit.js';
@@ -11,18 +12,6 @@ const patchModelSchema = z.object({
   enabled: z.boolean().optional(),
   groupAllowlist: z.array(z.string().uuid()).optional(),
 });
-
-async function pingHealth(endpoint: string): Promise<'up' | 'down'> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000);
-    const res = await fetch(`${endpoint}/health`, { signal: controller.signal });
-    clearTimeout(timeout);
-    return res.ok ? 'up' : 'down';
-  } catch {
-    return 'down';
-  }
-}
 
 /** ui.md's Admin §B5: "Models and tools: status, VRAM, license and origin, an enable toggle, and a group allowlist." */
 export function createAdminModelsRouter(db: Db, auditWriter: AuditWriter): Router {
@@ -34,7 +23,7 @@ export function createAdminModelsRouter(db: Db, auditWriter: AuditWriter): Route
       res.status(403).json({ error: decision.reason ?? 'forbidden' });
       return;
     }
-    const rows = await db.select().from(models);
+    const rows = await db.select().from(models).orderBy(models.role, models.id);
     const withStatus = await Promise.all(
       rows.map(async (m) => ({
         ...m,

@@ -8,6 +8,7 @@ import { ModelGateway } from './models/gateway.js';
 import { createDbAuditWriter } from './audit/writeAudit.js';
 import { createDbSpanWriter } from './spans/writeSpan.js';
 import { startMemoryScheduler } from './memory/scheduler.js';
+import { ensureBuiltInAgents } from './orchestrator/builtinAgents.js';
 import { recoverInterruptedTurns } from './orchestrator/recoverInterrupted.js';
 import { startApprovalTimeoutSweep } from './orchestrator/approvalSweep.js';
 
@@ -25,6 +26,7 @@ async function main() {
     auditWriter: createDbAuditWriter(db),
   });
 
+  await ensureBuiltInAgents(db);
   const recovered = await recoverInterruptedTurns(db);
   if (recovered > 0) console.log(`Recovered ${recovered} chat(s) left without an answer by a restart.`);
 

@@ -1,6 +1,7 @@
 import { useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from 'react';
 import type { ChatModelOption, MessageAttachment } from '../lib/api';
 import { Icon } from './ui/Icon';
+import { shortModelName } from '../lib/format';
 
 export function Composer({
   disabled,
@@ -82,7 +83,7 @@ export function Composer({
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
       onSubmit={handleSubmit}
-      className={`flex flex-col gap-2 rounded-[28px] border ${dragging ? 'border-accent-500 bg-accent-50' : 'border-line/60 bg-surface'} px-4 pb-3 pt-3 shadow-card transition-[border-color,box-shadow] duration-200 focus-within:border-accent-400 focus-within:shadow-lift`}
+      className={`flex flex-col gap-2 rounded-[28px] border ${dragging ? 'border-accent-500 bg-accent-50' : 'border-line bg-surface'} px-4 pb-3 pt-3 shadow-card transition-[border-color,box-shadow] duration-200 focus-within:border-accent-400 focus-within:ring-4 focus-within:ring-accent-100`}
     >
       {(attachments.length > 0 || uploading) && (
         <div className="flex w-full flex-wrap gap-2">
@@ -173,15 +174,20 @@ export function Composer({
               onChange={(e) => onModelChange(e.target.value)}
               aria-label="Model"
               title="Choose which model writes the answer. Fast is for plain chat; document, tool and multi-step answers use Quality."
-              className={`${chip} max-w-[15rem] truncate`}
+              className={`${chip} max-w-[15rem] truncate pl-7`}
             >
               {models.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.label} · {m.detail}
-                  {m.note ? ` (${m.note})` : ''}
+                  {m.label} · {shortModelName(m.detail)}
+                  {m.status === 'down' ? ' (not running)' : m.note ? ` (${m.note})` : ''}
                 </option>
               ))}
             </select>
+            <span
+              aria-hidden="true"
+              title={models.find((m) => m.id === modelId)?.status === 'down' ? 'This model is not running right now' : 'Model is running'}
+              className={`pointer-events-none absolute left-3 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full ${models.find((m) => m.id === modelId)?.status === 'down' ? 'bg-danger-600' : 'bg-accent-500'}`}
+            />
             <Icon name="arrowDown" className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted" />
           </div>
         )}

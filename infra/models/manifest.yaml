@@ -1,68 +1,88 @@
-# Model registry, loaded into the `models` table at API boot (models.md
-# §Registry). Every entry's gguf_path is verified against sha256 before it's
-# trusted (invariant #3) — see scripts/manifest-check.ts.
+# Model registry, loaded into the `models` table at API boot. Every enabled local
+# entry's file is verified against its pinned SHA-256 (invariant 3) — see
+# scripts/manifest-check.ts.
 #
-# `source_url` is not part of models.md's registry shape (it's ignored by the
-# API's manifest loader); it exists only so scripts/fetch-models.sh has a
-# single source of truth for where to download each file from.
+# One vision-language model serves chat, vision and routing (llm-main, llm-router and
+# llm-vision are three roles on the same file/URL), plus bge-m3 for embeddings.
+# It comes in two TIERS, selected with LLM_TIER in .env (default `small`):
+#   small     Qwen3-VL-4B   Apache-2.0, ~3 GB, fastest; fits a 4 GB GPU and any Mac
+#   standard  Qwen2.5-VL-7B Apache-2.0, ~5.5 GB, higher quality; needs an 8 GB+ GPU / 16 GB Mac
+# Benchmarked on an Apple M4 (scripts/bench_models.py): 4B = 33 tok/s, routing 0.5 s;
+# 7B = 21 tok/s, routing 1.1 s; both 6/7 on the mini suite (maths word-problems are
+# answered exactly through the code tool, not by mental arithmetic).
 #
-# Two models run today: one Qwen2.5-VL-7B that serves chat, vision and routing
-# (llm-main, llm-router and llm-vision are three roles on the same file/URL)
-# plus bge-m3 for embeddings. Every endpoint reads `${LLM_<ROLE>_URL:-default}`
-# from the environment: pointing a role at another server is a .env change only
-# (internal hosts only, shown as "unverified" — see docs/PROGRESS.md Decisions).
+# Every endpoint reads `${LLM_<ROLE>_URL:-default}` from the environment: pointing a role at
+# another server (or a natively running llama-server) is a .env change only — internal hosts
+# only, shown as "unverified". LLM_CTX_LEN overrides the context size the API assumes.
 #
-# A1 pick rationale (see docs/PROGRESS.md Decisions): small, Apache-2.0,
-# single-file GGUFs that fit this dev machine's 16GB unified memory, chosen
-# over the exact classes models.md's reference build names because that
-# reference build assumes a 16-24GB Linux/NVIDIA box. llm-main is text-only
-# for A1 — Spike B's vision check is deferred (see spike results).
-models:
-  # Bundled chat + vision model. Its files are hash-pinned (invariant 3).
-  - id: llm-main
-    role: general
-    endpoint: "${LLM_MAIN_URL:-http://llm-main:8082}"
+# `source_url` / `mmproj_source_url` are used only by the setup step (model-fetch).
+x-templates:
+  small: &small
+    tier: small
+    gguf_path: Qwen3VL-4B-Instruct-Q4_K_M.gguf
+    sha256: "66358cb18bb6b3b1b6675aa412c7a88ef01d228f481184d13668e5201c730a0a"
+    mmproj_path: mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf
+    mmproj_sha256: "30ba2c7dd3127a4561b6cba9d13d0f711c91bdb38742e2f56d73c8cb596bd06d"
+    ctx_len: 8192
+    vram_mb: 3200
+    license: apache-2.0
+    origin: Qwen/Qwen3-VL-4B-Instruct-GGUF
+    source_url: https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen3VL-4B-Instruct-Q4_K_M.gguf
+    mmproj_source_url: https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf
+  standard: &standard
+    tier: standard
     gguf_path: Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf
     sha256: "9258bf05b12686d097ff3b6b18d968ab393649780aa2b3cd67fec43d50554392"
     mmproj_path: mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf
     mmproj_sha256: "2ddb555391bae966e412deab9e07b58afa18bcc06930ba0f1c78a3695ab9e506"
     ctx_len: 16384
-    capabilities: [json_schema, tools, vision]
-    vram_mb: 7000
+    vram_mb: 6000
     license: apache-2.0
     origin: ggml-org/Qwen2.5-VL-7B-Instruct-GGUF
-    enabled: true
     source_url: https://huggingface.co/ggml-org/Qwen2.5-VL-7B-Instruct-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf
     mmproj_source_url: https://huggingface.co/ggml-org/Qwen2.5-VL-7B-Instruct-GGUF/resolve/main/mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf
 
-  # Same model serving the router role. Set LLM_ROUTER_URL to use another (e.g. a small fast) model.
+models:
+  - id: llm-main
+    role: general
+    endpoint: "${LLM_MAIN_URL:-http://llm-main:8082}"
+    <<: *small
+    capabilities: [json_schema, tools, vision]
+    enabled: true
+
   - id: llm-router
     role: router
     endpoint: "${LLM_ROUTER_URL:-http://llm-main:8082}"
-    gguf_path: Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf
-    sha256: "9258bf05b12686d097ff3b6b18d968ab393649780aa2b3cd67fec43d50554392"
-    mmproj_path: mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf
-    mmproj_sha256: "2ddb555391bae966e412deab9e07b58afa18bcc06930ba0f1c78a3695ab9e506"
-    ctx_len: 16384
+    <<: *small
     capabilities: [json_schema, tools]
-    vram_mb: 7000
-    license: apache-2.0
-    origin: ggml-org/Qwen2.5-VL-7B-Instruct-GGUF
     enabled: true
 
-  # Same model serving the vision role. Set LLM_VISION_URL to use another vision model.
   - id: llm-vision
     role: vision
     endpoint: "${LLM_VISION_URL:-http://llm-main:8082}"
-    gguf_path: Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf
-    sha256: "9258bf05b12686d097ff3b6b18d968ab393649780aa2b3cd67fec43d50554392"
-    mmproj_path: mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf
-    mmproj_sha256: "2ddb555391bae966e412deab9e07b58afa18bcc06930ba0f1c78a3695ab9e506"
-    ctx_len: 16384
+    <<: *small
     capabilities: [vision]
-    vram_mb: 7000
-    license: apache-2.0
-    origin: ggml-org/Qwen2.5-VL-7B-Instruct-GGUF
+    enabled: true
+
+  - id: llm-main-standard
+    role: general
+    endpoint: "${LLM_MAIN_URL:-http://llm-main:8082}"
+    <<: *standard
+    capabilities: [json_schema, tools, vision]
+    enabled: true
+
+  - id: llm-router-standard
+    role: router
+    endpoint: "${LLM_ROUTER_URL:-http://llm-main:8082}"
+    <<: *standard
+    capabilities: [json_schema, tools]
+    enabled: true
+
+  - id: llm-vision-standard
+    role: vision
+    endpoint: "${LLM_VISION_URL:-http://llm-main:8082}"
+    <<: *standard
+    capabilities: [vision]
     enabled: true
 
   - id: llm-embed
@@ -93,3 +113,25 @@ models:
     enabled: false
     enabled_if_env: LLM_RERANK_URL
     source_url: https://huggingface.co/gpustack/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-Q8_0.gguf
+
+  # Image generation (optional). Served by a native stable-diffusion.cpp server on the GPU
+  # (scripts/run-native-imagegen.*); enabled by setting LLM_IMAGE_URL in .env.
+  # DreamShaper 8 LCM: Stable-Diffusion-1.5 class with 4-step LCM baked in (CreativeML OpenRAIL-M, commercial use
+  # allowed with the licence's use restrictions), fp16 single file ~2.1 GB, fits a 4 GB GPU.
+  - id: llm-image
+    role: image
+    endpoint: "${LLM_IMAGE_URL:-http://host.docker.internal:8090}"
+    external_only: true
+    ctx_len: 1
+    license: creativeml-openrail-m
+    origin: Lykon/dreamshaper-8-lcm
+    enabled: false
+    enabled_if_env: LLM_IMAGE_URL
+
+# Files fetched by the setup step but not registered as chat models.
+downloads:
+  - name: image-model
+    group: image
+    file: DreamShaper8_LCM.safetensors
+    url: https://huggingface.co/Lykon/dreamshaper-8-lcm/resolve/main/DreamShaper8_LCM.safetensors
+    sha256: "a4f3e1526c5dc4fcbe342f5c410d83ae202c7a415fcefcbb92e0f93fcd0a87c3"

@@ -3,6 +3,8 @@ import type { ApprovalRequiredEvent, Bbox, Citation, MeResponse, Project, SseEve
 import {
   createConversation,
   decideApproval,
+  deleteAllConversations,
+  deleteConversation,
   fetchConversation,
   fetchChatModels,
   fetchConversations,
@@ -27,6 +29,10 @@ import { Card } from '../components/ui/Card';
 import { Alert } from '../components/ui/Alert';
 import { AnimatePresence, motion } from 'motion/react';
 import { Icon } from '../components/ui/Icon';
+import { useDismiss } from '../lib/useDismiss';
+import { pickProject, storeProjectId } from '../lib/activeProject';
+import { ProjectSwitcher } from '../components/ProjectSwitcher';
+import { formatDateTime, formatFullDateTime } from '../lib/format';
 
 const STATUS_LABELS: Record<string, string> = {
   cold_start: 'Warming up the model',
@@ -89,20 +95,30 @@ export function ChatPage({
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [history, setHistory] = useState<ConversationSummary[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [historyQuery, setHistoryQuery] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState<string | 'all' | null>(null);
+  const historyRef = useRef<HTMLDivElement>(null);
+  useDismiss(historyRef, showHistory, () => setShowHistory(false));
+  const visibleHistory = history.filter((c) => (c.title || 'Untitled chat').toLowerCase().includes(historyQuery.trim().toLowerCase()));
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    fetchChatModels()
-      .then((list) => {
-        setChatModels(list);
-        setModelId((current) => (list.some((m) => m.id === current) ? current : (list.find((m) => m.isDefault) ?? list[0])?.id ?? ''));
-      })
-      .catch(() => {});
+    const loadModels = () =>
+      fetchChatModels()
+        .then((list) => {
+          setChatModels(list);
+          setModelId((current) => (list.some((m) => m.id === current) ? current : (list.find((m) => m.isDefault) ?? list[0])?.id ?? ''));
+        })
+        .catch(() => {});
+    void loadModels();
+    // Keep the model status honest (a model container can restart or run out of memory).
+    const modelPoll = setInterval(() => void loadModels(), 20_000);
     fetchProjects().then((rows) => {
       setProjects(rows);
-      setProjectId((current) => current || rows[0]?.id || '');
+      setProjectId((current) => current || pickProject(rows)?.id || '');
     });
     return () => {
+      clearInterval(modelPoll);
       if (pollRef.current !== null) clearInterval(pollRef.current);
       if (elapsedTimerRef.current !== null) clearInterval(elapsedTimerRef.current);
       abortRef.current?.abort();
@@ -137,6 +153,19 @@ export function ChatPage({
     setDocumentMode('auto');
   }
 
+  async function removeChats(target: string | 'all') {
+    try {
+      if (target === 'all') await deleteAllConversations(projectId || undefined);
+      else await deleteConversation(target);
+      setConfirmDelete(null);
+      refreshHistory();
+      notifyChatsChanged();
+      if (target === 'all' || target === conversationId) startNewChat();
+    } catch {
+      setStatus('could not delete that chat');
+    }
+  }
+
   function startNewChat() {
     resetChatState();
     setShowHistory(false);
@@ -162,9 +191,10 @@ export function ChatPage({
         .then(({ conversation, messages: stored }) => {
           if (cancelled) return true;
           setProjectId(conversation.projectId);
+          storeProjectId(conversation.projectId);
           setDocumentMode(conversation.documentMode ?? 'auto');
           const visible = stored.filter((m) => m.role !== 'system');
-          setMessages(visible.map((m) => ({ id: m.id, role: m.role as 'user' | 'assistant', content: m.content, citations: m.citations ?? [], attachments: m.attachments ?? [], source: m.source ?? null })));
+          setMessages(visible.map((m) => ({ id: m.id, role: m.role as 'user' | 'assistant', content: m.content, citations: m.citations ?? [], attachments: m.attachments ?? [], source: m.source ?? null, rating: m.rating ?? null })));
           const last = visible[visible.length - 1];
           return !last || last.role === 'assistant';
         })
@@ -320,7 +350,19 @@ export function ChatPage({
           }
           if (event.type === 'tool_result') {
             const newArtifacts = event.data.artifactIds.map((id) => ({ id, toolName: 'tool' }));
-            if (newArtifacts.length > 0) setArtifacts((prev) => [...prev, ...newArtifacts]);
+            if (newArtifacts.length > 0) {
+              setArtifacts((prev) => [...prev, ...newArtifacts]);
+              // Show created images inline in the answer (non-images are hidden by the <img> error handler).
+              if (event.data.status === 'ok') {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantIdRef.current
+                      ? { ...m, attachments: [...(m.attachments ?? []), ...event.data.artifactIds.map((id) => ({ id, filename: 'generated image', mime: 'image/png' }))] }
+                      : m,
+                  ),
+                );
+              }
+            }
           }
           if (event.type === 'memory_used' && event.data.kind !== 'project') {
             setMessages((prev) => prev.map((m) => (m.id === assistantIdRef.current ? { ...m, memoriesUsed: (m.memoriesUsed ?? 0) + 1 } : m)));
@@ -529,21 +571,16 @@ export function ChatPage({
       <div className="mx-auto flex h-full max-w-5xl flex-col gap-6 p-4 md:flex-row md:p-6">
         <div className="flex flex-1 flex-col">
           <div className="mb-4 flex items-center justify-between">
-            <select
+            <ProjectSwitcher
+              projects={projects}
               value={projectId}
-              onChange={(e) => {
-                setProjectId(e.target.value);
+              onChange={(id) => {
+                setProjectId(id);
+                storeProjectId(id);
                 startNewChat();
               }}
-              className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm"
-            >
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            <div className="relative">
+            />
+            <div className="relative" ref={historyRef}>
               <button
                 onClick={() => setShowHistory((v) => !v)}
                 aria-expanded={showHistory}
@@ -552,24 +589,71 @@ export function ChatPage({
                 History
               </button>
               {showHistory && (
-                <div className="absolute left-0 top-full z-20 mt-1 max-h-80 w-72 overflow-y-auto rounded-xl border border-line bg-surface p-1 shadow-lg">
+                <div className="absolute left-0 top-full z-20 mt-1 w-80 rounded-2xl border border-line bg-surface p-2 shadow-lg">
+                  <input
+                    autoFocus
+                    value={historyQuery}
+                    onChange={(e) => setHistoryQuery(e.target.value)}
+                    placeholder="Search chats…"
+                    aria-label="Search chats"
+                    className="mb-1 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm outline-none focus:border-accent-400"
+                  />
+                  <div className="max-h-72 overflow-y-auto pr-1">
                   {history.length === 0 ? (
                     <p className="px-3 py-2 text-sm text-faint">No saved chats yet.</p>
+                  ) : visibleHistory.length === 0 ? (
+                    <p className="px-3 py-2 text-sm text-faint">No chats match “{historyQuery}”.</p>
                   ) : (
-                    history.map((c) => (
-                      <button
-                        key={c.id}
-                        onClick={() => {
-                          setShowHistory(false);
-                          navigate({ name: 'chat', conversationId: c.id });
-                        }}
-                        className={`block w-full truncate rounded-lg px-3 py-2 text-left text-sm hover:bg-raised ${c.id === conversationId ? 'bg-accent-50 font-medium text-accent-700' : 'text-fg-2'}`}
-                      >
-                        {c.title || 'Untitled chat'}
-                        <span className="block text-xs font-normal text-faint">{new Date(c.updatedAt).toLocaleString()}</span>
-                      </button>
+                    visibleHistory.map((c) => (
+                      <div key={c.id} className={`group flex items-center gap-1 rounded-lg hover:bg-raised ${c.id === conversationId ? 'bg-accent-50' : ''}`}>
+                        {confirmDelete === c.id ? (
+                          <div className="flex w-full items-center justify-between gap-2 px-3 py-2 text-sm">
+                            <span className="text-fg-2">Delete this chat? What OpeX learned from it is kept.</span>
+                            <span className="flex shrink-0 gap-1">
+                              <button onClick={() => removeChats(c.id)} className="rounded-full bg-danger-600 px-3 py-1 text-xs font-medium text-white">Delete</button>
+                              <button onClick={() => setConfirmDelete(null)} className="rounded-full px-3 py-1 text-xs text-fg-2 hover:bg-line/50">Cancel</button>
+                            </span>
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => {
+                                setShowHistory(false);
+                                navigate({ name: 'chat', conversationId: c.id });
+                              }}
+                              className={`min-w-0 flex-1 truncate px-3 py-2 text-left text-sm ${c.id === conversationId ? 'font-medium text-accent-700' : 'text-fg-2'}`}
+                            >
+                              {c.title || 'Untitled chat'}
+                              <span className="block text-xs font-normal text-faint" title={formatFullDateTime(c.updatedAt)}>{formatDateTime(c.updatedAt)}</span>
+                            </button>
+                            <button
+                              onClick={() => setConfirmDelete(c.id)}
+                              aria-label={`Delete chat ${c.title || 'Untitled chat'}`}
+                              title="Delete chat"
+                              className="mr-1 grid h-8 w-8 shrink-0 place-items-center rounded-full text-faint opacity-0 transition hover:bg-danger-50 hover:text-danger-700 focus-visible:opacity-100 group-hover:opacity-100"
+                            >
+                              <Icon name="trash" className="h-4 w-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     ))
                   )}
+                  </div>
+                  {history.length > 0 &&
+                    (confirmDelete === 'all' ? (
+                      <div className="mt-2 flex items-center justify-between gap-2 border-t border-line px-2 pt-2 text-sm">
+                        <span className="text-fg-2">Delete all chats? Memories are kept.</span>
+                        <span className="flex gap-1">
+                          <button onClick={() => removeChats('all')} className="rounded-full bg-danger-600 px-3 py-1 text-xs font-medium text-white">Delete all</button>
+                          <button onClick={() => setConfirmDelete(null)} className="rounded-full px-3 py-1 text-xs text-fg-2 hover:bg-line/50">Cancel</button>
+                        </span>
+                      </div>
+                    ) : (
+                      <button onClick={() => setConfirmDelete('all')} className="mt-2 w-full border-t border-line px-2 pt-2 text-left text-xs text-muted hover:text-danger-700">
+                        Clear all chats…
+                      </button>
+                    ))}
                 </div>
               )}
             </div>
@@ -589,7 +673,10 @@ export function ChatPage({
                 </p>
                 <p className="mt-2 text-base text-muted">How can I help you today?</p>
               </div>
-              <div className="w-full max-w-xl">
+              <div className="w-full max-w-2xl">
+                {chatModels.find((m) => m.id === modelId)?.status === 'down' && (
+                  <Alert className="mb-2">The chat model isn't running right now. If it is starting, wait a minute; otherwise start it (see RUNNER.md).</Alert>
+                )}
                 {status && <Alert className="mb-2">{status}</Alert>}
                 <Composer disabled={!projectId} onSend={handleSend} models={chatModels} modelId={modelId} onModelChange={changeModel} attachments={pendingImages} uploading={uploading} onAttach={handleAttach} onRemoveAttachment={(id) => setPendingImages((prev) => prev.filter((a) => a.id !== id))} documents={documentMode} onDocumentsChange={setDocumentMode} />
                 {!projectId && projects.length === 0 && (
@@ -598,7 +685,7 @@ export function ChatPage({
                   </p>
                 )}
               </div>
-              <div className="grid w-full max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
                 {suggestionTiles.map((tile, i) => (
                   <motion.button
                     key={tile.title}
@@ -626,7 +713,7 @@ export function ChatPage({
                   const el = e.currentTarget;
                   setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
                 }}
-                className="flex-1 overflow-y-auto"
+                className="flex-1 overflow-y-auto pr-3 [scrollbar-gutter:stable]"
               >
                 <MessageList
                   busy={streaming}
@@ -640,9 +727,7 @@ export function ChatPage({
                   pending={streaming && progress ? { label: progress, elapsedMs } : null}
                   messages={messages}
                   onOpenCitation={(c) => onOpenCitation(c.documentId, c.page, c.bbox)}
-                  onFeedback={(messageId, rating) => {
-                    submitFeedback(messageId, rating).catch(() => {});
-                  }}
+                  onFeedback={(messageId, rating) => submitFeedback(messageId, rating)}
                 />
                 {status && <p className="mt-2 text-xs text-faint">{status}</p>}
                 {pendingApproval && (
@@ -671,6 +756,9 @@ export function ChatPage({
               </AnimatePresence>
               </div>
               <div className="mt-4">
+                {chatModels.find((m) => m.id === modelId)?.status === 'down' && (
+                  <Alert className="mb-2">The chat model isn't running right now. If it is starting, wait a minute; otherwise start it (see RUNNER.md).</Alert>
+                )}
                 {status && /upload|attach|image|vision/i.test(status) && <Alert className="mb-2">{status}</Alert>}
                 <Composer
                   disabled={!projectId || Boolean(pendingApproval)}

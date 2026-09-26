@@ -76,7 +76,7 @@ export type CitationEvent = z.infer<typeof citationEventSchema>;
 export const routeEventSchema = z.object({
   type: z.literal('route'),
   data: z.object({
-    taskType: z.enum(['chat', 'doc_qa', 'analysis', 'code', 'research', 'vision']),
+    taskType: z.enum(['chat', 'doc_qa', 'analysis', 'code', 'research', 'vision', 'image']),
     agent: z.string(),
     complexity: z.enum(['simple', 'multi_step']),
     reason: z.string(),

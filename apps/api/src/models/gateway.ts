@@ -258,6 +258,62 @@ export class ModelGateway {
     }
   }
 
+  /**
+   * Generates one image with the image model (a native stable-diffusion.cpp server). Goes through the
+   * same policy check and span logging as every other model call.
+   */
+  async generateImage(req: {
+    prompt: string;
+    width?: number;
+    height?: number;
+    user: ChatRequest['user'];
+    traceId: string;
+    signal?: AbortSignal;
+  }): Promise<{ png: Buffer; model: string }> {
+    const decision = can(req.user, 'model:invoke', { modelRole: 'image' }, this.deps.policyRules ?? DEFAULT_POLICY_RULES);
+    if (!decision.allowed) throw new PolicyDeniedError(decision.reason ?? 'denied');
+    const { id: modelId, endpoint } = await this.resolveEndpoint('image');
+    const breaker = this.breakerFor(endpoint);
+    if (!breaker.canAttempt()) throw new Error(`Circuit open for model "${modelId}"`);
+    const started = Date.now();
+    try {
+      const size = `${req.width ?? 512}x${req.height ?? 512}`;
+      const res = await fetch(`${endpoint}/v1/images/generations`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: req.prompt, n: 1, size, response_format: 'b64_json' }),
+        signal: req.signal,
+      });
+      if (!res.ok) throw new Error(`image server ${res.status}`);
+      const json = (await res.json()) as { data?: Array<{ b64_json?: string }> };
+      const b64 = json.data?.[0]?.b64_json;
+      if (!b64) throw new Error('image server returned no image');
+      breaker.onSuccess();
+      await this.deps.spanWriter.writeSpan({
+        traceId: req.traceId,
+        kind: 'llm',
+        name: 'gateway.generateImage',
+        model: modelId,
+        latencyMs: Date.now() - started,
+        status: 'ok',
+        attrs: { size },
+      });
+      return { png: Buffer.from(b64, 'base64'), model: modelId };
+    } catch (err) {
+      breaker.onFailure();
+      await this.deps.spanWriter.writeSpan({
+        traceId: req.traceId,
+        kind: 'llm',
+        name: 'gateway.generateImage',
+        model: modelId,
+        latencyMs: Date.now() - started,
+        status: 'error',
+        attrs: { error: err instanceof Error ? err.message : String(err) },
+      });
+      throw err;
+    }
+  }
+
   /** True when an enabled model is registered for the role (e.g. rerank is optional). */
   async hasRole(role: ModelRole): Promise<boolean> {
     const rows = await this.deps.db.select({ enabled: modelsTable.enabled }).from(modelsTable).where(eq(modelsTable.role, role)).limit(1);

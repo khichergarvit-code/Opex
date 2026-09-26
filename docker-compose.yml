@@ -55,11 +55,14 @@ services:
       MANIFEST_PATH: /app/infra/models/manifest.yaml
       # Model URLs. Empty = the bundled container from infra/models/manifest.yaml. To use a
       # model served elsewhere on the private network, set the URL in .env and restart the API.
+      LLM_TIER: ${LLM_TIER:-small}
+      LLM_CTX_LEN: ${LLM_CTX_LEN:-}
       LLM_MAIN_URL: ${LLM_MAIN_URL:-}
       LLM_ROUTER_URL: ${LLM_ROUTER_URL:-}
       LLM_VISION_URL: ${LLM_VISION_URL:-}
       LLM_EMBED_URL: ${LLM_EMBED_URL:-}
       LLM_RERANK_URL: ${LLM_RERANK_URL:-}
+      LLM_IMAGE_URL: ${LLM_IMAGE_URL:-}
       DATA_DIR: /data
       SANDBOX_RUNNER_URL: http://sandbox-runner:8000
       SANDBOX_SHARED_SECRET: ${SANDBOX_SHARED_SECRET:-dev_only_change_me}
@@ -118,6 +121,9 @@ services:
       start_period: 30s
 
   llm-main:
+    # Bundled CPU model. Enabled by COMPOSE_PROFILES=docker-llm in .env; leave that out when a native GPU
+    # model is used (scripts/run-native-llama.*), so no second copy is started.
+    profiles: ["docker-llm"]
     restart: unless-stopped
     image: ghcr.io/ggml-org/llama.cpp:server
     networks:
@@ -125,10 +131,10 @@ services:
     environment: *offline-env
     volumes:
       - ./models:/models:ro
-    # One Qwen2.5-VL-7B serves chat, vision and routing. One slot (-np 1) gives each request the full
+    # One vision-language model (tier small = Qwen3-VL-4B, standard = Qwen2.5-VL-7B; see .env) serves chat, vision and routing. One slot (-np 1) gives each request the full
     # 16k window and all CPU threads; calls are queued. Sized for a ~10 GB Docker VM.
     mem_limit: 8g
-    command: ["-m", "/models/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf", "--mmproj", "/models/mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf", "--host", "0.0.0.0", "--port", "8082", "-c", "16384", "-np", "1", "--cache-reuse", "256", "--jinja"]
+    command: ["-m", "/models/${LLM_MODEL_FILE:-Qwen3VL-4B-Instruct-Q4_K_M.gguf}", "--mmproj", "/models/${LLM_MMPROJ_FILE:-mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf}", "--host", "0.0.0.0", "--port", "8082", "-c", "${LLM_CTX_LEN:-8192}", "-np", "1", "--cache-reuse", "256", "--jinja"]
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8082/health || exit 1"]
       interval: 5s
@@ -290,6 +296,7 @@ services:
     environment:
       MODELS_DIR: /models
       MANIFEST_PATH: /app/infra/models/manifest.yaml
+      LLM_TIER: ${LLM_TIER:-small}
       DO_NOT_TRACK: "1"
     volumes:
       - ./models:/models

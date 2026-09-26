@@ -2,7 +2,7 @@ import { desc, eq, isNotNull, isNull } from 'drizzle-orm';
 import { Router } from 'express';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { conversations, memories, policies, users } from '../db/schema/index.js';
+import { conversations, memories, policies, users, workspaces } from '../db/schema/index.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
 import { policyRulesSchema } from '../policy/rules.js';
@@ -11,7 +11,8 @@ import { runExtractionForConversation } from '../memory/extraction.js';
 import type { AuditWriter } from '../audit/writeAudit.js';
 
 const putTtlSchema = z.object({
-  workspaceId: z.string().uuid(),
+  // Optional: with a single workspace (the normal case) the admin never needs to know its id.
+  workspaceId: z.string().uuid().optional(),
   memoryTtlDays: z.object({ episodic: z.number().nullable(), semantic: z.number().nullable() }),
 });
 
@@ -119,6 +120,24 @@ export function createAdminMemoryRouter(db: Db, gateway: ModelGateway, spanWrite
     res.status(204).end();
   });
 
+  async function resolveWorkspaceId(explicit?: string): Promise<string | null> {
+    if (explicit) return explicit;
+    const [ws] = await db.select({ id: workspaces.id }).from(workspaces).orderBy(workspaces.createdAt).limit(1);
+    return ws?.id ?? null;
+  }
+
+  router.get('/admin/memory/ttl', requireAuth(db), async (req, res) => {
+    const decision = can(req.user!, 'admin:policies:write');
+    if (!decision.allowed) {
+      res.status(403).json({ error: decision.reason ?? 'forbidden' });
+      return;
+    }
+    const workspaceId = await resolveWorkspaceId();
+    const [existing] = workspaceId ? await db.select().from(policies).where(eq(policies.workspaceId, workspaceId)).limit(1) : [];
+    const rules = existing ? policyRulesSchema.parse(existing.rules) : policyRulesSchema.parse({});
+    res.json({ memoryTtlDays: rules.memoryTtlDays });
+  });
+
   router.put('/admin/memory/ttl', requireAuth(db), async (req, res) => {
     const user = req.user!;
     const decision = can(user, 'admin:policies:write');
@@ -131,15 +150,20 @@ export function createAdminMemoryRouter(db: Db, gateway: ModelGateway, spanWrite
       res.status(400).json({ error: 'invalid request body' });
       return;
     }
-    const [existing] = await db.select().from(policies).where(eq(policies.workspaceId, parsed.data.workspaceId)).limit(1);
+    const workspaceId = await resolveWorkspaceId(parsed.data.workspaceId);
+    if (!workspaceId) {
+      res.status(404).json({ error: 'no workspace found' });
+      return;
+    }
+    const [existing] = await db.select().from(policies).where(eq(policies.workspaceId, workspaceId)).limit(1);
     const rules = existing ? policyRulesSchema.parse(existing.rules) : policyRulesSchema.parse({});
     const updatedRules = { ...rules, memoryTtlDays: parsed.data.memoryTtlDays };
     if (existing) {
       await db.update(policies).set({ rules: updatedRules, updatedAt: new Date() }).where(eq(policies.id, existing.id));
     } else {
-      await db.insert(policies).values({ workspaceId: parsed.data.workspaceId, name: 'default', rules: updatedRules });
+      await db.insert(policies).values({ workspaceId, name: 'default', rules: updatedRules });
     }
-    await auditWriter.writeAudit({ actorId: user.id, action: 'memory.ttl.update', resource: parsed.data.workspaceId, details: parsed.data.memoryTtlDays });
+    await auditWriter.writeAudit({ actorId: user.id, action: 'memory.ttl.update', resource: workspaceId, details: parsed.data.memoryTtlDays });
     res.json(updatedRules);
   });
 

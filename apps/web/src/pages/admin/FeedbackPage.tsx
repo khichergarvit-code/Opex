@@ -7,12 +7,15 @@ import { StatusPill } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { Alert } from '../../components/ui/Alert';
+import { formatDateTime, formatFullDateTime } from '../../lib/format';
 
 interface AdminFeedbackRow {
   id: string;
   messageId: string;
   traceId: string | null;
   userId: string;
+  userEmail: string | null;
+  answerText: string | null;
   rating: 'thumbs_up' | 'thumbs_down';
   rootCauseTag: string | null;
   exportedToEval: boolean;
@@ -74,9 +77,11 @@ export function FeedbackPage({ onBack: _onBack }: { onBack: () => void }) {
         <div className="flex flex-col gap-3">
           {rows.map((r) => (
             <Card key={r.id}>
-              <p className="text-sm text-muted">
-                message <span className="font-mono text-xs">{r.messageId}</span> — trace{' '}
-                <span className="font-mono text-xs">{r.traceId ?? '—'}</span> — {r.createdAt}
+              <p className="text-sm text-fg">
+                {r.answerText ? (r.answerText.length > 240 ? `${r.answerText.slice(0, 240)}…` : r.answerText) : 'The rated message was deleted.'}
+              </p>
+              <p className="mt-2 text-xs text-muted" title={`message ${r.messageId} · trace ${r.traceId ?? 'none'} · ${formatFullDateTime(r.createdAt)}`}>
+                {r.userEmail ?? 'unknown user'} · {formatDateTime(r.createdAt)}
                 {r.exportedToEval && (
                   <StatusPill tone="success" title="Exported to eval">
                     exported

@@ -152,6 +152,37 @@ describe('assertInternalHost', () => {
   );
 });
 
+describe('model tiers and context override', () => {
+  const yaml = (tier: string) => `models:
+  - id: llm-main-${tier}
+    role: general
+    endpoint: http://llm-main:8082
+    tier: ${tier}
+    gguf_path: a.gguf
+    sha256: "${'0'.repeat(64)}"
+    ctx_len: 8192
+    license: l
+    origin: o
+`;
+  it('enables only the entries of the chosen tier (default small)', async () => {
+    const { loadManifest } = await import('./manifest.js');
+    const small = path.join(dir, 's.yaml');
+    const standard = path.join(dir, 'st.yaml');
+    await writeFile(small, yaml('small'));
+    await writeFile(standard, yaml('standard'));
+    expect((await loadManifest(small, {}))[0]!.enabled).toBe(true);
+    expect((await loadManifest(standard, {}))[0]!.enabled).toBe(false);
+    expect((await loadManifest(standard, { LLM_TIER: 'standard' }))[0]!.enabled).toBe(true);
+  });
+  it('LLM_CTX_LEN overrides the context the API budgets against, for chat roles only', async () => {
+    const { loadManifest } = await import('./manifest.js');
+    const f = path.join(dir, 's.yaml');
+    await writeFile(f, yaml('small'));
+    expect((await loadManifest(f, { LLM_CTX_LEN: '4096' }))[0]!.ctx_len).toBe(4096);
+    expect((await loadManifest(f, { LLM_CTX_LEN: 'abc' }))[0]!.ctx_len).toBe(8192);
+  });
+});
+
 describe('enabled_if_env', () => {
   it('enables an otherwise disabled optional model when its URL is set', async () => {
     const { loadManifest } = await import('./manifest.js');

@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, readFile, rename, rm, stat, statfs } from 'node:fs/promises';
 import path from 'node:path';
-import { loadManifest } from '../models/manifest.js';
+import { loadDownloads, loadManifest, type ManifestDownload } from '../models/manifest.js';
 
 export interface DownloadItem {
   name: string;
@@ -18,7 +18,10 @@ export interface DownloadItem {
 }
 
 /** One item per distinct file (router/vision aliases share the chat model's files). Disabled and external entries are skipped. */
-export function planDownloads(entries: Awaited<ReturnType<typeof loadManifest>>): { items: DownloadItem[]; missingUrl: string[] } {
+export function planDownloads(
+  entries: Awaited<ReturnType<typeof loadManifest>>,
+  extras: ManifestDownload[] = [],
+): { items: DownloadItem[]; missingUrl: string[] } {
   const items: DownloadItem[] = [];
   const missingUrl: string[] = [];
   const seen = new Set<string>();
@@ -36,6 +39,7 @@ export function planDownloads(entries: Awaited<ReturnType<typeof loadManifest>>)
     add(e.id, e.gguf_path, e.source_url, e.sha256);
     add(`${e.id}-mmproj`, e.mmproj_path, e.mmproj_source_url, e.mmproj_sha256);
   }
+  for (const d of extras) add(d.name, d.file, d.url, d.sha256);
   return { items, missingUrl };
 }
 
@@ -113,7 +117,7 @@ async function main() {
   const modelsDir = process.env.MODELS_DIR ?? './models';
   const manifestPath = process.env.MANIFEST_PATH ?? './infra/models/manifest.yaml';
   await mkdir(modelsDir, { recursive: true });
-  const { items, missingUrl } = planDownloads(await loadManifest(manifestPath));
+  const { items, missingUrl } = planDownloads(await loadManifest(manifestPath), await loadDownloads(manifestPath));
   for (const f of missingUrl) console.warn(`[skip] ${f}: no source_url/sha256 in the manifest — provide the file manually.`);
 
   const todo: DownloadItem[] = [];

@@ -6,7 +6,7 @@ No Node, pnpm, Python, uv, curl or make required.
 
 ## Prerequisites
 - Docker with Compose v2 (Docker Desktop on Windows/macOS, Docker Engine on Linux)
-- **About 10 GB of memory available to Docker** (see "Docker memory" below) and ~7 GB free disk for the models
+- **About 10 GB of memory available to Docker** if you use the bundled CPU model (see "Docker memory" below), and ~4 GB free disk for the models (~7 GB for the `standard` tier, +2 GB for image generation)
 - Internet only for the two "setup" commands below; the running stack never uses it
 
 ## Setup
@@ -19,7 +19,7 @@ cp .env.example .env          # PowerShell: copy .env.example .env
 # (the defaults are dev-only placeholders).
 
 docker compose --profile setup build
-docker compose --profile setup run --rm model-fetch     # ~6 GB of models: resumable, SHA-256 verified
+docker compose --profile setup run --rm model-fetch     # ~3.5 GB of models (small tier): resumable, SHA-256 verified
 docker compose --profile setup run --rm docling-warm    # document-parsing models (needed to upload PDFs)
 
 docker compose up -d --build
@@ -33,9 +33,9 @@ or two while the chat model loads; check with `docker compose ps` (wait for `hea
 
 If `model-fetch` is interrupted (network drop, Ctrl+C), run it again: it continues where it stopped.
 
-## Docker memory
-The chat model (Qwen2.5-VL-7B, also used for images and routing) needs about 8 GB by itself, so give Docker about
-10 GB. If a model container keeps restarting (`docker compose ps` shows it exiting) it is out of memory.
+## Docker memory (bundled CPU model only)
+The bundled chat model needs about 6 GB (small tier) or 8 GB (standard) inside Docker, so give Docker about 10 GB.
+Not needed when the model runs natively on the GPU. If a model container keeps restarting (`docker compose ps` shows it exiting) it is out of memory.
 - **Docker Desktop (Windows/macOS):** Settings > Resources > Memory.
 - **Windows with WSL2 backend:** create `%UserProfile%\.wslconfig` containing `[wsl2]` and `memory=10GB`, then run `wsl --shutdown` and restart Docker Desktop.
 - **Linux:** Docker uses the machine's memory; nothing to set.
@@ -80,22 +80,76 @@ Developer commands (need Node >= 22 and `corepack enable && corepack use pnpm@9.
 `pnpm dev`, `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm seed`, `pnpm eval`, `pnpm manifest:check`, `make test`.
 `./scripts/fetch-models.sh` is the host-side alternative to `model-fetch` (needs `pnpm install` first).
 
-## Faster answers: run the model on your GPU (optional, recommended)
+## Which model, and how fast (tiers)
 
-Docker on macOS and Windows can only use the CPU, so the bundled model answers at roughly 15 tokens per second.
-Running the same model natively on the host uses the GPU (Metal on Apple silicon, CUDA on NVIDIA) and is typically 5-10x faster.
+One vision-language model does chat, reading images, routing and tool-calling; bge-m3 does document embeddings.
+Pick a tier with `LLM_TIER` in `.env` (default `small`):
 
+| Tier | Model (Apache-2.0) | Size | Fits | Measured on an Apple M4 GPU |
+|---|---|---|---|---|
+| `small` (default) | Qwen3-VL-4B-Instruct | ~3 GB | any Mac, **NVIDIA 4 GB+ (RTX 3050)** | 33 tokens/s, routing in 0.5 s |
+| `standard` | Qwen2.5-VL-7B-Instruct | ~5.5 GB | 16 GB Mac, NVIDIA 8 GB+ | 21 tokens/s, routing in 1.1 s |
+
+Both scored 6/7 on the built-in mini benchmark (`python3 scripts/bench_models.py --model ... --mmproj ...`);
+word-problem arithmetic is answered exactly through the code tool rather than by the model's mental maths.
+Document parsing (Docling) is a separate CPU service and works with either tier.
+
+## Fast path (recommended): run the model on your GPU
+
+Docker on macOS and Windows can only use the CPU (roughly 2-15 tokens/s under load). Running the same model natively uses
+the GPU (Metal on Apple silicon, CUDA on NVIDIA). Measured end to end on the M4 with this stack:
+greeting 5.5 s, general question 8 s, document answer 14 s, full document summary 19 s.
+
+**macOS**
 ```bash
-brew install llama.cpp                    # macOS; Windows: winget install llama.cpp
-./scripts/run-native-llama.sh             # keeps running; uses ./models
+brew install llama.cpp
+docker compose --profile setup run --rm model-fetch     # once
+./scripts/run-native-llama.sh                           # leave running in its own terminal
 ```
 
-Then add the three lines it prints (`LLM_MAIN_URL`, `LLM_ROUTER_URL`, `LLM_VISION_URL`, all `http://host.docker.internal:8082`) to `.env` and run
-`docker compose stop llm-main && docker compose up -d api`. The chat model then shows as "unverified (external)" in the admin Models page, because the API cannot hash a file that lives outside Docker.
+**Windows (RTX 3050 or any NVIDIA GPU)** in PowerShell:
+```powershell
+docker compose --profile setup run --rm model-fetch
+powershell -ExecutionPolicy Bypass -File scripts\run-native-llama.ps1
+```
+The script downloads llama.cpp's CUDA build once, reads the GPU's memory, and for a 4 GB card automatically
+uses a 4096-token context and a compressed cache so the model fits; 8 GB cards use the normal context. Keep other
+GPU-heavy apps closed. (The Windows script has not been run on real hardware by the authors: please report problems.)
+
+Both scripts print the lines to put in `.env`. In short, set:
+```
+COMPOSE_PROFILES=                          # no bundled CPU model container
+LLM_TIER=small                             # or standard
+LLM_CTX_LEN=<value the script printed>     # the API trims prompts to this size
+LLM_MAIN_URL=http://host.docker.internal:8082
+LLM_ROUTER_URL=http://host.docker.internal:8082
+LLM_VISION_URL=http://host.docker.internal:8082
+```
+then `docker compose up -d`. The model then shows as "unverified (external)" in the admin Models page, because the API cannot
+hash a file outside Docker. To go back to the bundled CPU model, restore `COMPOSE_PROFILES=docker-llm` and empty the three URLs.
+
+For the `standard` tier with the bundled container also set `LLM_MODEL_FILE=Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf` and
+`LLM_MMPROJ_FILE=mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf`, and run `model-fetch` with `LLM_TIER=standard` set.
+
+## Image generation (optional)
+
+"Draw / generate an image of ..." is handled by an image agent using a separate diffusion model, served natively on the GPU
+(Metal on Mac, CUDA on Windows) by stable-diffusion.cpp. Model: DreamShaper 8 LCM (Stable Diffusion 1.5 class, 4 steps,
+CreativeML OpenRAIL-M licence, ~2.1 GB). Measured on the M4: about 11 s per 512x512 image; ~26 s from request to answer.
+
+```bash
+docker compose --profile setup run --rm -e OPEX_FETCH_IMAGE=1 model-fetch   # downloads + verifies the image model once
+./scripts/run-native-imagegen.sh                                            # macOS (downloads the ~35 MB server on first run)
+# Windows: powershell -ExecutionPolicy Bypass -File scripts\run-native-imagegen.ps1
+```
+Then set `LLM_IMAGE_URL=http://host.docker.internal:8090` in `.env` and `docker compose up -d api`. Without it the image agent
+answers "image generation is not running". On a 4 GB GPU the chat model and the image model cannot both stay in GPU memory:
+the Windows script uses `--offload-to-cpu` for cards under 6 GB (slower but works). Generated images are saved as artifacts
+and appear inside the chat answer.
 
 ## Production: swap models by editing `.env`
 
-Two models run out of the box: **Qwen2.5-VL-7B** (chat, vision and routing, container `llm-main`) and **bge-m3** (embeddings, `llm-embed`). Allocate about 10 GB to Docker.
+Two models run out of the box: the tier's vision-language model (**Qwen3-VL-4B** by default: chat, vision and routing, container `llm-main` or a native GPU server) and **bge-m3** (embeddings, `llm-embed`).
 
 To use a different or bigger model, install it on any server that speaks the OpenAI-compatible API (llama.cpp `llama-server`, vLLM, ...) and set the role's URL in `.env`, then `docker compose up -d api`:
 

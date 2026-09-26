@@ -28,9 +28,9 @@ export type PolicyRules = z.infer<typeof policyRulesSchema>;
 
 export const DEFAULT_POLICY_RULES: PolicyRules = {
   allowedModelsByRole: {
-    super_admin: ['router', 'general', 'coder', 'vision', 'embed', 'rerank'],
-    workspace_admin: ['router', 'general', 'coder', 'vision', 'embed', 'rerank'],
-    employee: ['router', 'general', 'vision', 'embed', 'rerank'],
+    super_admin: ['router', 'general', 'coder', 'vision', 'image', 'embed', 'rerank'],
+    workspace_admin: ['router', 'general', 'coder', 'vision', 'image', 'embed', 'rerank'],
+    employee: ['router', 'general', 'vision', 'image', 'embed', 'rerank'],
   },
   dailyTokenQuota: {},
   allowedTools: {},

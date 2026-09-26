@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ApiError, request } from '../../lib/api';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
-import { Button } from '../../components/ui/Button';
+import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import { StatusPill } from '../../components/ui/Badge';
 import { DataTable } from '../../components/ui/DataTable';
 import { Alert } from '../../components/ui/Alert';
@@ -21,6 +21,10 @@ interface AdminModelRow {
   vramLive: string;
 }
 
+const ROLE_ORDER = ['general', 'router', 'vision', 'coder', 'image', 'embed', 'rerank'];
+const byRoleThenId = (a: AdminModelRow, b: AdminModelRow) =>
+  (ROLE_ORDER.indexOf(a.role) + 1 || 99) - (ROLE_ORDER.indexOf(b.role) + 1 || 99) || a.id.localeCompare(b.id);
+
 export function ModelsPage({ onBack: _onBack }: { onBack: () => void }) {
   const [rows, setRows] = useState<AdminModelRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,7 +33,7 @@ export function ModelsPage({ onBack: _onBack }: { onBack: () => void }) {
   function reload() {
     setError(null);
     request<AdminModelRow[]>('/admin/models')
-      .then(setRows)
+      .then((r) => setRows([...r].sort(byRoleThenId)))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to load models'))
       .finally(() => setLoading(false));
   }
@@ -37,10 +41,12 @@ export function ModelsPage({ onBack: _onBack }: { onBack: () => void }) {
   useEffect(reload, []);
 
   async function toggleEnabled(id: string, enabled: boolean) {
+    // Update in place (no reload) so the row never jumps to another position.
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, enabled } : r)));
     try {
       await request(`/admin/models/${id}`, { method: 'PATCH', body: JSON.stringify({ enabled }) });
-      reload();
     } catch (err) {
+      setRows((prev) => prev.map((r) => (r.id === id ? { ...r, enabled: !enabled } : r)));
       setError(err instanceof ApiError ? err.message : 'failed to update model');
     }
   }
@@ -78,12 +84,8 @@ export function ModelsPage({ onBack: _onBack }: { onBack: () => void }) {
             },
             {
               key: 'enabled',
-              label: '',
-              render: (r) => (
-                <Button size="sm" onClick={() => toggleEnabled(r.id, !r.enabled)}>
-                  {r.enabled ? 'Disable' : 'Enable'}
-                </Button>
-              ),
+              label: 'Enabled',
+              render: (r) => <ToggleSwitch checked={r.enabled} onChange={(v) => toggleEnabled(r.id, v)} label={`${r.enabled ? 'Disable' : 'Enable'} ${r.id}`} />,
             },
           ]}
         />
