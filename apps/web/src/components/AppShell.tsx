@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { MeResponse } from '@opex/shared';
 import { Avatar } from './ui/Avatar';
+import { Logo } from './ui/Logo';
 import { Icon, type IconName } from './ui/Icon';
 import { ripple } from '../lib/ripple';
 import { fetchConversations, type ConversationSummary } from '../lib/api';
@@ -99,11 +100,15 @@ export function AppShell({
 
   const navContent = (
     <>
-      <div className="flex items-center gap-3 px-5 pb-3 pt-5">
-        <span className="grid h-9 w-9 place-items-center rounded-full bg-accent-500 text-sm font-bold text-on-accent shadow-card" aria-hidden="true">
-          O
-        </span>
-        <span className="text-xl font-medium tracking-tight text-fg">OpeX</span>
+      <div className="flex items-center gap-2 px-5 pb-3 pt-5">
+        <Logo />
+        {isAdmin && (
+          // GitHub-style breadcrumb: the product mark, a slash, then the area you are in.
+          <span className="flex items-center gap-2 text-sm text-muted">
+            <span aria-hidden="true" className="text-lg font-light text-faint">/</span>
+            <span className="rounded-full border border-line px-2.5 py-0.5 text-xs font-medium text-fg-2">{activeKey === 'chat' || activeKey === 'documents' || activeKey === 'my-memories' ? 'workspace' : 'admin'}</span>
+          </span>
+        )}
       </div>
 
       <div className="px-3 pb-2">
@@ -146,7 +151,12 @@ export function AppShell({
         {isAdmin && (
           <>
             <SidebarSection label="AI tools">{AI_TOOLS_SECTION.map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
-            <SidebarSection label="Administration">{ADMIN_SECTION.map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
+            <SidebarSection label="Administration">{ADMIN_SECTION.slice(0, 4).map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
+            <SidebarSection label="Monitoring">{ADMIN_SECTION.slice(4, 8).map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
+            {/* The last three get a darker panel so they read as a separate, more technical group. */}
+            <div className="mb-3 rounded-3xl bg-raised/80 p-1.5">
+              <SidebarSection label="Data and system">{ADMIN_SECTION.slice(8).map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
+            </div>
           </>
         )}
       </SidebarNav>
@@ -171,8 +181,7 @@ export function AppShell({
     <div className="flex h-screen flex-col bg-side md:flex-row">
       <header className="flex items-center justify-between bg-side px-4 py-3 md:hidden">
         <div className="flex items-center gap-2.5">
-          <span className="grid h-8 w-8 place-items-center rounded-full bg-accent-500 text-xs font-bold text-on-accent" aria-hidden="true">O</span>
-          <span className="text-lg font-medium text-fg">OpeX</span>
+          <Logo markClassName="h-8 w-8" textClassName="text-lg" />
         </div>
         <button
           type="button"

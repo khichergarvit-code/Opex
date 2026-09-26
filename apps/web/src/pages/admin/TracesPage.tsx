@@ -3,6 +3,7 @@ import { ApiError, fetchAdminLogs, type AdminSpanRow } from '../../lib/api';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { DataTable } from '../../components/ui/DataTable';
+import { formatDateTime } from '../../lib/format';
 import { StatusPill } from '../../components/ui/Badge';
 import { Alert } from '../../components/ui/Alert';
 
@@ -63,12 +64,12 @@ export function TracesPage({ onBack: _onBack }: { onBack: () => void }) {
           error={error}
           rows={rows}
           columns={[
-            { key: 'time', label: 'Time', render: (r) => new Date(r.createdAt).toLocaleTimeString() },
+            { key: 'time', label: 'Time', sortValue: (r) => new Date(r.createdAt).getTime(), render: (r) => formatDateTime(r.createdAt) },
             { key: 'kind', label: 'Kind' },
             { key: 'name', label: 'Name' },
             { key: 'model', label: 'Model', render: (r) => r.model ?? '—' },
-            { key: 'tokens', label: 'Tokens', render: (r) => `${r.tokensIn ?? '—'} / ${r.tokensOut ?? '—'}` },
-            { key: 'latency', label: 'Latency', render: (r) => (r.latencyMs ? `${r.latencyMs}ms` : '—') },
+            { key: 'tokens', label: 'Tokens', sortValue: (r) => (r.tokensIn ?? 0) + (r.tokensOut ?? 0), render: (r) => `${r.tokensIn ?? '—'} / ${r.tokensOut ?? '—'}` },
+            { key: 'latency', label: 'Latency', sortValue: (r) => r.latencyMs ?? 0, render: (r) => (r.latencyMs ? `${r.latencyMs}ms` : '—') },
             {
               key: 'status',
               label: 'Status',

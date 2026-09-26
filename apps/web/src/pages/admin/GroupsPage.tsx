@@ -13,6 +13,7 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Skeleton } from '../../components/ui/Skeleton';
+import { SelectField, TextField } from '../../components/ui/Field';
 import { Alert } from '../../components/ui/Alert';
 
 export function GroupsPage({ onBack: _onBack }: { onBack: () => void }) {
@@ -77,14 +78,8 @@ export function GroupsPage({ onBack: _onBack }: { onBack: () => void }) {
       {error && <Alert>{error}</Alert>}
 
       <Card className="mb-4">
-        <form onSubmit={handleCreate} className="flex gap-2">
-          <input
-            placeholder="group name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            className="rounded-lg border border-line px-3 py-1.5 text-sm"
-          />
+        <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-4">
+          <TextField label="Group name" placeholder="e.g. Maintenance" value={name} onChange={(e) => setName(e.target.value)} required className="w-full max-w-sm" />
           <Button type="submit" variant="primary">
             Create group
           </Button>
@@ -104,9 +99,9 @@ export function GroupsPage({ onBack: _onBack }: { onBack: () => void }) {
               </button>
               {expanded === g.id && (
                 <div className="mt-3 flex flex-col gap-2 text-sm">
-                  <ul className="flex flex-col gap-1">
+                  <ul className="flex flex-col divide-y divide-line/60">
                     {g.memberIds.map((uid) => (
-                      <li key={uid} className="flex items-center justify-between">
+                      <li key={uid} className="flex items-center justify-between py-2">
                         <span>{userEmailById.get(uid) ?? uid}</span>
                         <Button size="sm" onClick={() => handleRemoveMember(g.id, uid)}>
                           Remove
@@ -114,20 +109,18 @@ export function GroupsPage({ onBack: _onBack }: { onBack: () => void }) {
                       </li>
                     ))}
                   </ul>
-                  <div className="flex gap-2">
-                    <select
-                      value={addUserId}
-                      onChange={(e) => setAddUserId(e.target.value)}
-                      className="rounded-lg border border-line px-2 py-1 text-sm"
-                    >
-                      <option value="">select user…</option>
-                      {users.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.email}
-                        </option>
-                      ))}
-                    </select>
-                    <Button size="sm" variant="primary" onClick={() => handleAddMember(g.id)}>
+                  <div className="mt-2 flex flex-wrap items-end gap-3 border-t border-line pt-4">
+                    <SelectField label="Add a member" value={addUserId} onChange={(e) => setAddUserId(e.target.value)} className="w-full max-w-sm">
+                      <option value="">Select a user…</option>
+                      {users
+                        .filter((u) => !g.memberIds.includes(u.id))
+                        .map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.email}
+                          </option>
+                        ))}
+                    </SelectField>
+                    <Button variant="primary" onClick={() => handleAddMember(g.id)} disabled={!addUserId}>
                       Add member
                     </Button>
                   </div>

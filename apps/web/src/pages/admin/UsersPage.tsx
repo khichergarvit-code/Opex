@@ -6,6 +6,7 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { StatusPill } from '../../components/ui/Badge';
 import { DataTable } from '../../components/ui/DataTable';
+import { SelectField, TextField } from '../../components/ui/Field';
 import { Alert } from '../../components/ui/Alert';
 
 export function UsersPage({ onBack: _onBack }: { onBack: () => void }) {
@@ -57,47 +58,26 @@ export function UsersPage({ onBack: _onBack }: { onBack: () => void }) {
       {error && <Alert>{error}</Alert>}
 
       <Card className="mb-4">
-        <form onSubmit={handleCreate} className="flex flex-wrap gap-2">
-          <input
-            placeholder="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="rounded-lg border border-line px-3 py-1.5 text-sm"
-          />
-          <input
-            placeholder="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            className="rounded-lg border border-line px-3 py-1.5 text-sm"
-          />
-          <input
-            placeholder="password (min 12 chars)"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="rounded-lg border border-line px-3 py-1.5 text-sm"
-          />
-          <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="rounded-lg border border-line px-3 py-1.5 text-sm">
-            <option value="employee">employee</option>
-            <option value="workspace_admin">workspace_admin</option>
-            <option value="super_admin">super_admin</option>
-          </select>
-          <select
-            value={clearance}
-            onChange={(e) => setClearance(Number(e.target.value))}
-            className="rounded-lg border border-line px-3 py-1.5 text-sm"
-          >
-            <option value={0}>0 Public</option>
-            <option value={1}>1 Internal</option>
-            <option value={2}>2 Confidential</option>
-            <option value={3}>3 Restricted</option>
-          </select>
-          <Button type="submit" variant="primary">
-            Create user
-          </Button>
+        <form onSubmit={handleCreate} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <TextField label="Email" type="email" placeholder="name@company.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <TextField label="Name" placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} required />
+          <TextField label="Password" type="password" placeholder="At least 12 characters" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          <SelectField label="Role" value={role} onChange={(e) => setRole(e.target.value as Role)}>
+            <option value="employee">Employee</option>
+            <option value="workspace_admin">Workspace admin</option>
+            <option value="super_admin">Super admin</option>
+          </SelectField>
+          <SelectField label="Clearance" hint="The most sensitive documents this person may read." value={clearance} onChange={(e) => setClearance(Number(e.target.value))}>
+            <option value={0}>0 · Public</option>
+            <option value={1}>1 · Internal</option>
+            <option value={2}>2 · Confidential</option>
+            <option value={3}>3 · Restricted</option>
+          </SelectField>
+          <div className="flex items-end">
+            <Button type="submit" variant="primary">
+              Create user
+            </Button>
+          </div>
         </form>
       </Card>
 
@@ -115,7 +95,7 @@ export function UsersPage({ onBack: _onBack }: { onBack: () => void }) {
             {
               key: 'status',
               label: 'Status',
-              render: (r) => <StatusPill tone={r.status === 'active' ? 'success' : 'neutral'}>{r.status}</StatusPill>,
+              render: (r) => <StatusPill tone={r.status === 'active' ? 'active' : 'danger'}>{r.status === 'active' ? 'Active' : 'Disabled'}</StatusPill>,
             },
             {
               key: 'actions',

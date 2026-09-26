@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { DataTable } from '../../components/ui/DataTable';
 import { Skeleton } from '../../components/ui/Skeleton';
+import { Icon } from '../../components/ui/Icon';
 import { Alert } from '../../components/ui/Alert';
 
 interface AdminSystemResponse {
@@ -35,7 +36,10 @@ export function SystemPage({ onBack: _onBack }: { onBack: () => void }) {
           {data.alerts.length > 0 && (
             <div className="mb-4 flex flex-col gap-1 rounded-xl bg-danger-50 p-3 text-sm text-danger-700">
               {data.alerts.map((a, i) => (
-                <div key={i}>⚠️ {a}</div>
+                <div key={i} className="flex items-center gap-2">
+                  <Icon name="alert" className="h-4 w-4 shrink-0" />
+                  {a}
+                </div>
               ))}
             </div>
           )}

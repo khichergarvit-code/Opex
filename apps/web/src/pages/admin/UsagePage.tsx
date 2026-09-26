@@ -32,12 +32,12 @@ export function UsagePage({ onBack: _onBack }: { onBack: () => void }) {
           error={error}
           rows={rows.map((r, i) => ({ ...r, id: `${r.userId}-${r.model}-${r.day}-${i}` }))}
           columns={[
-            { key: 'day', label: 'Day' },
+            { key: 'day', label: 'Day', sortValue: (r) => r.day },
             { key: 'userEmail', label: 'User' },
             { key: 'model', label: 'Model', render: (r) => r.model ?? '—' },
-            { key: 'callCount', label: 'Calls' },
-            { key: 'tokensIn', label: 'Tokens in' },
-            { key: 'tokensOut', label: 'Tokens out' },
+            { key: 'callCount', label: 'Calls', sortValue: (r) => r.callCount },
+            { key: 'tokensIn', label: 'Tokens in', sortValue: (r) => r.tokensIn },
+            { key: 'tokensOut', label: 'Tokens out', sortValue: (r) => r.tokensOut },
           ]}
         />
       </Card>

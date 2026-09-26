@@ -5,6 +5,7 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { StatusPill } from '../../components/ui/Badge';
 import { Alert } from '../../components/ui/Alert';
+import { InfoBox } from '../../components/ui/InfoBox';
 
 interface AdminAgentRow {
   id: string;
@@ -89,6 +90,11 @@ export function AgentsPage({ onBack: _onBack }: { onBack: () => void }) {
     <div>
       <PageHeader title="Agents" description="Prompt versions, a diff view, and a test chat." />
       {error && <Alert>{error}</Alert>}
+
+      <InfoBox title="What is an agent?">
+        <p>An agent is a specialist assistant: a system prompt (its instructions), the model role it runs on, and the short list of tools it is allowed to use. OpeX reads each message and hands it to the best agent: <b>general</b> for chat, <b>doc_qa</b> for questions about your documents, <b>vision</b> for images you attach, <b>analysis</b>/<b>code</b> for data and calculations, <b>image</b> for drawing pictures, <b>research</b> for multi-document questions.</p>
+        <p>Each row below is a version of an agent. You can compare two versions side by side (load as A / load as B) and try one in the test chat before enabling it.</p>
+      </InfoBox>
 
       <div className="flex flex-col gap-3">
         {[...byName.entries()].map(([agentName, versions]) => (

@@ -11,6 +11,7 @@ import { ClassificationBanner } from '../components/ui/ClassificationBanner';
 import { Skeleton } from '../components/ui/Skeleton';
 import { Alert } from '../components/ui/Alert';
 import { navigate } from '../lib/router';
+import { ProjectSwitcher } from '../components/ProjectSwitcher';
 
 const CLASSIFICATION_LABELS = ['Public', 'Internal', 'Confidential', 'Restricted'];
 const CLASSIFICATION_TONES: PillTone[] = ['neutral', 'info', 'warning', 'danger'];
@@ -129,9 +130,13 @@ function RequestAccessButton({ documentId }: { documentId: string }) {
 
 export function DocumentsPage({
   project,
+  projects,
+  onProjectChange,
   onOpenDocument,
 }: {
   project: Project;
+  projects: Project[];
+  onProjectChange: (projectId: string) => void;
   onOpenDocument: (documentId: string) => void;
 }) {
   const [docs, setDocs] = useState<ApiDocument[]>([]);
@@ -177,8 +182,11 @@ export function DocumentsPage({
     <div>
       {docs.length > 0 && <ClassificationBanner level={highestClassification} />}
       <div className="mx-auto max-w-4xl p-6">
+      <div className="mb-2">
+        <ProjectSwitcher projects={projects} value={project.id} onChange={onProjectChange} />
+      </div>
       <PageHeader
-        title={`Documents — ${project.name}`}
+        title="Documents"
         actions={
           <label>
             <input

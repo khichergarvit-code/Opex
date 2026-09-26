@@ -5,6 +5,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Alert } from '../../components/ui/Alert';
+import { InfoBox } from '../../components/ui/InfoBox';
 
 interface AdminPolicyRow {
   id: string;
@@ -71,6 +72,17 @@ export function PoliciesPage({ onBack: _onBack }: { onBack: () => void }) {
     <div>
       <PageHeader title="Policies" description="Editable policy rules, plus a 'what can this user do' preview." />
       {error && <Alert>{error}</Alert>}
+
+      <InfoBox title="What is a policy?">
+        <p>A policy is the rulebook for who may do what in OpeX. The active rules are applied to every request: which models a role may use, which tools an agent may call, upload limits, and how long memories are kept.</p>
+        <ul className="list-disc pl-5">
+          <li><b>allowedModelsByRole</b>: which model roles (chat, vision, image, ...) each user role may use.</li>
+          <li><b>allowedTools</b>: tools a role may use, when set (empty means "the agent's own list decides").</li>
+          <li><b>uploadLimitMb</b>: largest file a user may upload. <b>webAccess</b> and <b>egressCapableTools</b>: anything that could leave the building; OpeX keeps these off.</li>
+          <li><b>memoryTtlDays</b>: how long learned memories live (also editable on the Memory page).</li>
+        </ul>
+        <p>Edit the rules as JSON below, then use the preview to check what a given user could do before relying on a change.</p>
+      </InfoBox>
 
       <div className="flex flex-col gap-3">
         {rows.map((r) => (

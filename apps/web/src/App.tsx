@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { pickProject, storeProjectId } from './lib/activeProject';
 import type { MeResponse, Project } from '@opex/shared';
 import { fetchMe, fetchProjects, logout } from './lib/api';
 import { navigate, useRoute } from './lib/router';
@@ -18,6 +19,7 @@ export function App() {
   const [user, setUser] = useState<MeResponse | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
   const route = useRoute();
 
   useEffect(() => {
@@ -35,7 +37,10 @@ export function App() {
   useEffect(() => {
     if (!user) return;
     fetchProjects()
-      .then((rows) => setActiveProject((current) => current ?? rows[0] ?? null))
+      .then((rows) => {
+        setAllProjects(rows);
+        setActiveProject((current) => current ?? pickProject(rows) ?? null);
+      })
       .catch(() => {});
   }, [user]);
 
@@ -96,6 +101,11 @@ export function App() {
       activeProject ? (
         <DocumentsPage
           project={activeProject}
+          projects={allProjects}
+          onProjectChange={(id) => {
+            storeProjectId(id);
+            setActiveProject(allProjects.find((p) => p.id === id) ?? activeProject);
+          }}
           onOpenDocument={(documentId) => navigate({ name: 'viewer', documentId })}
         />
       ) : (
