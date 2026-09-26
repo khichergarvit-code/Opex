@@ -1,56 +1,114 @@
 @import 'tailwindcss';
-@import '@fontsource-variable/roboto-flex';
+@import '@fontsource-variable/inter';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+@import '@fontsource/newsreader/400-italic.css';
 
-/* Material Tonal · Teal — OpeX's design tokens (Tailwind v4 CSS-first).
-   Every colour utility in the app (bg-canvas, text-fg, border-line,
-   bg-accent-500 …) resolves to these, so re-theming is a change to this
-   block only. The font is an npm package bundled by Vite (no CDN). */
+/* OpeX design tokens (Tailwind v4 CSS-first). Warm paper neutrals, near-black ink for primary
+   actions, and one restrained ember accent for the active step, progress and the wordmark's X.
+   Token names are unchanged from the earlier theme, so every component re-themes from this block.
+   Fonts are npm packages bundled by Vite (no CDN, works offline). */
 @theme {
-  --font-sans: 'Roboto Flex Variable', system-ui, sans-serif;
+  --font-sans: 'Inter Variable', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-serif: 'Newsreader', Georgia, serif;
 
-  /* Surfaces: tonal elevation instead of heavy borders. */
-  --color-canvas: #f5faf9;
-  --color-side: #eef5f4;
-  --color-surface: #e9f0ef;
-  --color-raised: #dde6e5;
-  --color-line: #cbd6d5;
+  /* Corners: tighter than before. `rounded-full` stays a true pill (avatars, dots, small tags). */
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.625rem;
+  --radius-2xl: 0.75rem;
+  --radius-3xl: 0.875rem;
 
-  --color-fg: #191c1c;
-  --color-fg-2: #3f4948;
-  --color-muted: #566261;
-  --color-faint: #6b7776;
+  /* Surfaces: hairlines and tone, not shadows. */
+  --color-canvas: #f6f5f1;
+  --color-side: #efede7;
+  --color-surface: #ffffff;
+  --color-raised: #ecebe5;
+  --color-line: #dedbd2;
+
+  --color-fg: #171717;
+  --color-fg-2: #3f3f3b;
+  --color-muted: #66665f;
+  --color-faint: #7d7d75;
   --color-on-accent: #ffffff;
 
-  /* Teal. 50–200 are tonal containers, 500 is the primary, 600–700 are the
-     pressed/text shades. */
-  --color-accent-50: #e2f3f2;
-  --color-accent-100: #cde8e7;
-  --color-accent-200: #a9d8d7;
-  --color-accent-300: #6fb8b7;
-  --color-accent-400: #2f9090;
-  --color-accent-500: #006a6a;
-  --color-accent-600: #005757;
-  --color-accent-700: #004a4a;
+  /* "accent" is the ink scale: 500 is the primary action, 50-200 are quiet tonal fills. */
+  --color-accent-50: #f0efe9;
+  --color-accent-100: #e7e5dd;
+  --color-accent-200: #d6d3c9;
+  --color-accent-300: #a9a69b;
+  --color-accent-400: #6d6b63;
+  --color-accent-500: #1c1c1a;
+  --color-accent-600: #000000;
+  --color-accent-700: #1c1c1a;
 
-  --color-success-50: #ddf3e4;
-  --color-success-600: #1b6c3a;
-  --color-success-700: #0f5228;
+  /* Ember: the single highlight colour. */
+  --color-ember-50: #fcebe2;
+  --color-ember-500: #d4541b;
+  --color-ember-600: #b84413;
 
-  --color-danger-50: #ffdad6;
-  --color-danger-600: #ba1a1a;
-  --color-danger-700: #93000a;
+  --color-success-50: #e3f0e8;
+  --color-success-600: #2f6f4f;
+  --color-success-700: #24593f;
 
-  --color-warning-50: #ffe8c7;
-  --color-warning-600: #8b5000;
-  --color-warning-700: #6b3d00;
+  --color-danger-50: #f8e1de;
+  --color-danger-600: #b3261e;
+  --color-danger-700: #8c1d18;
 
-  --shadow-card: 0 1px 2px rgba(25, 28, 28, 0.08), 0 1px 3px rgba(25, 28, 28, 0.05);
-  --shadow-lift: 0 6px 16px -6px rgba(0, 70, 70, 0.28), 0 2px 4px rgba(25, 28, 28, 0.08);
+  --color-warning-50: #f6e8c9;
+  --color-warning-600: #9a6700;
+  --color-warning-700: #7a5200;
+
+  --shadow-card: 0 0 0 1px rgba(23, 23, 23, 0.04);
+  --shadow-lift: 0 8px 24px -12px rgba(23, 23, 23, 0.25), 0 0 0 1px rgba(23, 23, 23, 0.05);
+}
+
+/* Dark: the same tokens on warm charcoal. Follows the system setting. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-canvas: #141412;
+    --color-side: #1a1a17;
+    --color-surface: #1d1c19;
+    --color-raised: #262521;
+    --color-line: #34322d;
+
+    --color-fg: #efede6;
+    --color-fg-2: #cfcdc4;
+    --color-muted: #a3a197;
+    --color-faint: #8b8980;
+    --color-on-accent: #141412;
+
+    --color-accent-50: #23221e;
+    --color-accent-100: #2c2b26;
+    --color-accent-200: #3a3833;
+    --color-accent-300: #6d6b63;
+    --color-accent-400: #a3a197;
+    --color-accent-500: #efede6;
+    --color-accent-600: #ffffff;
+    --color-accent-700: #efede6;
+
+    --color-ember-50: #3a2115;
+    --color-ember-500: #ee7a45;
+    --color-ember-600: #f28d5d;
+
+    --color-success-50: #1b2b22;
+    --color-success-600: #6bbf8f;
+    --color-success-700: #8fd1ab;
+    --color-danger-50: #3a1f1c;
+    --color-danger-600: #f0857d;
+    --color-danger-700: #f4a39d;
+    --color-warning-50: #33280f;
+    --color-warning-600: #e2b458;
+    --color-warning-700: #ecc77f;
+  }
+  html {
+    color-scheme: dark;
+  }
 }
 
 @layer base {
   html {
-    color-scheme: light;
+    color-scheme: light dark;
     background-color: var(--color-canvas);
   }
   body {
@@ -73,17 +131,17 @@
   textarea:focus {
     outline: none;
     border-color: var(--color-accent-500);
-    box-shadow: 0 0 0 3px var(--color-accent-100);
+    box-shadow: 0 0 0 3px var(--color-accent-200);
   }
   ::placeholder {
     color: var(--color-faint);
   }
   ::selection {
-    background-color: var(--color-accent-200);
+    background-color: var(--color-ember-50);
     color: var(--color-fg);
   }
   * {
-    scrollbar-color: #b7c4c3 transparent;
+    scrollbar-color: var(--color-accent-300) transparent;
   }
 }
 

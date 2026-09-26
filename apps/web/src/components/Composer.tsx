@@ -83,7 +83,7 @@ export function Composer({
   }
 
   const chip =
-    'appearance-none rounded-full border border-line bg-canvas py-1.5 pl-3 pr-7 text-xs text-fg-2 outline-none transition-colors hover:border-accent-300 focus-visible:border-accent-400 disabled:opacity-50';
+    'appearance-none rounded-lg border border-line bg-canvas py-1.5 pl-3 pr-7 text-xs text-fg-2 outline-none transition-colors hover:border-accent-300 focus-visible:border-accent-400 disabled:opacity-50';
   const canSend = !disabled && !streaming && !uploading && !docsBusy && (value.trim() !== '' || attachments.length > 0 || docs.some((d) => d.status === 'ready'));
   return (
     <form
@@ -91,7 +91,7 @@ export function Composer({
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
       onSubmit={handleSubmit}
-      className={`flex flex-col gap-2 rounded-[28px] border ${dragging ? 'border-accent-500 bg-accent-50' : 'border-line bg-surface'} px-4 pb-3 pt-3 shadow-card transition-[border-color,box-shadow] duration-200 focus-within:border-accent-400 focus-within:ring-4 focus-within:ring-accent-100`}
+      className={`flex flex-col gap-2 rounded-2xl border ${dragging ? 'border-accent-500 bg-accent-50' : 'border-line bg-surface'} px-4 pb-3 pt-3 shadow-card transition-[border-color,box-shadow] duration-200 focus-within:border-accent-400 focus-within:ring-4 focus-within:ring-accent-100`}
     >
       {docs.length > 0 && (
         <div className="flex w-full flex-wrap gap-2">
@@ -176,7 +176,7 @@ export function Composer({
               title="Attach an image (PNG, JPEG, WebP) or a document (PDF, DOCX, PPTX, XLSX, CSV, HTML). Documents are saved to the project. You can also drop files here."
               disabled={disabled || uploading}
               onClick={() => fileRef.current?.click()}
-              className="grid h-9 w-9 place-items-center rounded-full text-fg-2 transition-colors hover:bg-accent-100 hover:text-accent-700 disabled:opacity-50"
+              className="grid h-9 w-9 place-items-center rounded-lg text-fg-2 transition-colors hover:bg-accent-100 hover:text-accent-700 disabled:opacity-50"
             >
               <Icon name="attach" />
             </button>
@@ -229,7 +229,7 @@ export function Composer({
             onClick={onStop}
             aria-label="Stop generating"
             title="Stop generating"
-            className="grid h-10 w-10 place-items-center rounded-full bg-danger-600 text-white transition-transform hover:scale-105 active:scale-95"
+            className="grid h-10 w-10 place-items-center rounded-lg bg-danger-600 text-white transition-transform hover:scale-105 active:scale-95"
           >
             <Icon name="stop" className="h-4 w-4" />
           </button>
@@ -239,7 +239,7 @@ export function Composer({
             disabled={!canSend}
             aria-label="Send"
             title="Send (Enter)"
-            className="grid h-10 w-10 place-items-center rounded-full bg-accent-600 text-on-accent transition-all hover:scale-105 hover:bg-accent-700 active:scale-95 disabled:scale-100 disabled:opacity-40"
+            className="grid h-10 w-10 place-items-center rounded-lg bg-accent-600 text-on-accent transition-all hover:scale-105 hover:bg-accent-700 active:scale-95 disabled:scale-100 disabled:opacity-40"
           >
             <Icon name="send" className="h-4 w-4" />
           </button>

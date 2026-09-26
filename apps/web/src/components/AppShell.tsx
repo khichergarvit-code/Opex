@@ -4,8 +4,7 @@ import type { MeResponse } from '@opex/shared';
 import { Avatar } from './ui/Avatar';
 import { Logo } from './ui/Logo';
 import { Icon, type IconName } from './ui/Icon';
-import { ripple } from '../lib/ripple';
-import { fetchConversations, type ConversationSummary } from '../lib/api';
+import { fetchChatModels, fetchConversations, type ChatModelOption, type ConversationSummary } from '../lib/api';
 import { navigate, useRoute } from '../lib/router';
 import { SidebarNav, SidebarNavItem, SidebarSection } from './ui/SidebarNav';
 
@@ -36,6 +35,19 @@ const ADMIN_SECTION: Array<{ key: string; label: string; icon: IconName }> = [
  * already makes (ADMIN_ROLES.has(user.role)) and passes down; AppShell
  * never re-derives that permission decision itself.
  */
+function StatusRow({ label, value, tone }: { label: string; value: string; tone: 'ok' | 'bad' | 'off' }) {
+  const dot = tone === 'ok' ? 'bg-success-600' : tone === 'bad' ? 'bg-danger-600' : 'bg-faint';
+  return (
+    <div className="flex items-center justify-between">
+      <dt>{label}</dt>
+      <dd className="flex items-center gap-2 text-fg-2">
+        {value}
+        <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden="true" />
+      </dd>
+    </div>
+  );
+}
+
 export function AppShell({
   user,
   activeKey,
@@ -53,6 +65,7 @@ export function AppShell({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [recent, setRecent] = useState<ConversationSummary[]>([]);
+  const [models, setModels] = useState<ChatModelOption[]>([]);
   const route = useRoute();
 
   // Remember the chat that was open, so "Chat" in the sidebar returns to it
@@ -76,6 +89,14 @@ export function AppShell({
     load();
     window.addEventListener('opex:chats-changed', load);
     return () => window.removeEventListener('opex:chats-changed', load);
+  }, []);
+
+  // Live model state for the status footer.
+  useEffect(() => {
+    const load = () => fetchChatModels().then(setModels).catch(() => {});
+    load();
+    const timer = setInterval(load, 15000);
+    return () => clearInterval(timer);
   }, []);
 
   function onNavigate(key: string) {
@@ -108,7 +129,7 @@ export function AppShell({
           // GitHub-style breadcrumb: the product mark, a slash, then the area you are in.
           <span className="flex items-center gap-2 text-sm text-muted">
             <span aria-hidden="true" className="text-lg font-light text-faint">/</span>
-            <span className="rounded-full border border-line px-2.5 py-0.5 text-xs font-medium text-fg-2">{activeKey === 'chat' || activeKey === 'documents' || activeKey === 'my-memories' ? 'workspace' : 'admin'}</span>
+            <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-fg-2">{activeKey === 'chat' || activeKey === 'documents' || activeKey === 'my-memories' ? 'workspace' : 'admin'}</span>
           </span>
         )}
       </div>
@@ -116,14 +137,13 @@ export function AppShell({
       <div className="px-3 pb-2">
         <button
           type="button"
-          onPointerDown={ripple}
           onClick={() => {
             setMenuOpen(false);
             onNewChat();
           }}
-          className="relative flex w-full items-center gap-3 overflow-hidden rounded-2xl bg-accent-100 px-5 py-3.5 text-sm font-medium text-accent-700 shadow-card transition-[box-shadow,transform,background-color] duration-200 hover:bg-accent-200 hover:shadow-lift active:scale-[0.98]"
+          className="flex w-full items-center gap-2.5 rounded-lg border border-line bg-surface px-3 py-2 font-mono text-xs font-medium uppercase tracking-[0.1em] text-fg transition-colors hover:bg-raised"
         >
-          <Icon name="plus" />
+          <Icon name="plus" className="h-4 w-4" />
           New chat
         </button>
       </div>
@@ -165,7 +185,17 @@ export function AppShell({
         )}
       </SidebarNav>
 
-      <div className="mx-3 mb-3 rounded-3xl bg-surface p-3">
+      <dl className="mx-3 mb-2 flex flex-col gap-1.5 border-t border-line px-1 pt-3 font-mono text-[11px] uppercase tracking-[0.06em] text-muted">
+        <StatusRow
+          label="Model"
+          value={models.length === 0 ? '—' : models.some((m) => m.status === 'down') ? 'down' : 'ready'}
+          tone={models.length === 0 ? 'off' : models.some((m) => m.status === 'down') ? 'bad' : 'ok'}
+        />
+        <StatusRow label="Memory" value="on" tone="ok" />
+        <StatusRow label="Network" value="closed" tone="ok" />
+      </dl>
+
+      <div className="mx-3 mb-3 rounded-xl border border-line bg-surface p-3">
         <div className="mb-2 flex items-center gap-3 px-1">
           <Avatar email={user.email} />
           <div className="min-w-0">
@@ -192,7 +222,7 @@ export function AppShell({
           aria-label="Open navigation menu"
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen(true)}
-          className="grid h-10 w-10 place-items-center rounded-full text-fg-2 transition-colors hover:bg-raised"
+          className="grid h-10 w-10 place-items-center rounded-lg text-fg-2 transition-colors hover:bg-raised"
         >
           <Icon name="menu" className="h-6 w-6" />
         </button>
@@ -213,7 +243,7 @@ export function AppShell({
             />
             <motion.aside
               key="drawer"
-              className="fixed inset-y-0 left-0 z-40 flex w-72 max-w-[85vw] flex-col rounded-r-[28px] bg-side shadow-lift md:hidden"
+              className="fixed inset-y-0 left-0 z-40 flex w-72 max-w-[85vw] flex-col rounded-r-2xl bg-side shadow-lift md:hidden"
               initial={{ x: '-100%' }}
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
@@ -233,7 +263,7 @@ export function AppShell({
         )}
       </AnimatePresence>
 
-      <main className="min-h-0 flex-1 overflow-y-auto bg-canvas md:m-2 md:ml-0 md:rounded-[28px] md:border md:border-line/40 md:shadow-card">
+      <main className="min-h-0 flex-1 overflow-y-auto bg-canvas md:m-2 md:ml-0 md:rounded-xl md:border md:border-line">
         <motion.div
           className="h-full"
           initial={{ opacity: 0, y: 10 }}

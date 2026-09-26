@@ -202,6 +202,24 @@ export const userSavedEventSchema = z.object({
 });
 export type UserSavedEvent = z.infer<typeof userSavedEventSchema>;
 
+/** Live state of a multi-item task (e.g. summarising several documents): drives the progress card. */
+export const stepsEventSchema = z.object({
+  type: z.literal('steps'),
+  data: z.object({
+    title: z.string(),
+    items: z.array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        kind: z.string(),
+        state: z.enum(['queued', 'running', 'done', 'failed']),
+        detail: z.string().optional(),
+      }),
+    ),
+  }),
+});
+export type StepsEvent = z.infer<typeof stepsEventSchema>;
+
 export const sseEventSchema = z.discriminatedUnion('type', [
   statusEventSchema,
   tokenEventSchema,
@@ -221,6 +239,7 @@ export const sseEventSchema = z.discriminatedUnion('type', [
   replaceEventSchema,
   sourceEventSchema,
   userSavedEventSchema,
+  stepsEventSchema,
 ]);
 
 export type SseEvent = z.infer<typeof sseEventSchema>;

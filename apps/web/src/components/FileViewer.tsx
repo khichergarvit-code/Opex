@@ -52,7 +52,7 @@ export function FileViewer({ name, src, downloadUrl, onClose }: { name: string; 
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-fg/40 p-4" role="dialog" aria-modal="true" aria-label={`Open ${name}`}>
-      <div ref={ref} className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-[28px] bg-surface shadow-lift">
+      <div ref={ref} className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-surface shadow-lift">
         <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
           <Icon name="file" className="h-5 w-5 text-accent-600" />
           <p className="min-w-0 flex-1 truncate font-medium text-fg">{name}</p>

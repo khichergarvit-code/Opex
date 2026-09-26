@@ -15,6 +15,18 @@ export const MAX_INPUT_TOKENS = 12000;
 
 const SUMMARIZE_INTENT = /\b(summari[sz]e|summari[sz]ation|summary|tl;?dr|recap|give me (an )?overview|key points)\b/i;
 
+const SUMMARIZE_ALL = /\b(all|every|each|everything)\b/i;
+
+/** "Summarise all documents": several documents, not one. */
+export function isSummarizeAllRequest(message: string): boolean {
+  return isSummarizeRequest(message) && SUMMARIZE_ALL.test(message);
+}
+
+/** Section markers like [2] are per-document, so a combined answer removes them rather than mislead. */
+export function stripMarkers(text: string): string {
+  return text.replace(/\s?\[\d+(?:,\s*\d+)*\]/g, '');
+}
+
 export function isSummarizeRequest(message: string): boolean {
   return SUMMARIZE_INTENT.test(message);
 }
