@@ -1,10 +1,11 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { Router } from 'express';
 import { decideApprovalSchema } from '@opex/shared';
 import type { Db } from '../db/client.js';
-import { approvals } from '../db/schema/index.js';
+import { approvals, users } from '../db/schema/index.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
+import { inScopeUsers, sameWorkspace } from '../policy/scope.js';
 import type { AuditWriter } from '../audit/writeAudit.js';
 import type { ModelGateway, SpanWriter } from '../models/gateway.js';
 import { settleApproval } from '../orchestrator/settleApproval.js';
@@ -28,9 +29,9 @@ export function createApprovalsRouter(db: Db, gateway: ModelGateway, spanWriter:
     const rows = await db
       .select()
       .from(approvals)
-      .where(eq(approvals.status, 'pending'))
+      .where(and(eq(approvals.status, 'pending'), isAdmin ? inScopeUsers(user, approvals.requesterId) : eq(approvals.requesterId, user.id)))
       .orderBy(desc(approvals.createdAt));
-    res.json(isAdmin ? rows : rows.filter((r) => r.requesterId === user.id));
+    res.json(rows);
   });
 
   router.get('/admin/approvals', requireAuth(db), async (req, res) => {
@@ -44,7 +45,7 @@ export function createApprovalsRouter(db: Db, gateway: ModelGateway, spanWriter:
     const rows = await db
       .select()
       .from(approvals)
-      .where(status ? eq(approvals.status, status as 'pending' | 'approved' | 'denied') : undefined)
+      .where(and(status ? eq(approvals.status, status as 'pending' | 'approved' | 'denied') : undefined, inScopeUsers(user, approvals.requesterId)))
       .orderBy(desc(approvals.createdAt));
     res.json(rows);
   });
@@ -62,6 +63,13 @@ export function createApprovalsRouter(db: Db, gateway: ModelGateway, spanWriter:
     if (!row) {
       res.status(404).json({ error: 'approval not found' });
       return;
+    }
+    if (row.requesterId !== user.id) {
+      const [requester] = await db.select({ workspaceId: users.workspaceId }).from(users).where(eq(users.id, row.requesterId)).limit(1);
+      if (!requester || !sameWorkspace(user, requester.workspaceId)) {
+        res.status(404).json({ error: 'approval not found' });
+        return;
+      }
     }
     if (row.status !== 'pending') {
       res.status(409).json({ error: 'approval was already decided' });

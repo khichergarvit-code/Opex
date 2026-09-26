@@ -33,6 +33,7 @@ export function requireAuth(db: Db) {
       role: row.role,
       clearance: row.clearance as AuthedUser['clearance'],
       status: row.status,
+      workspaceId: row.workspaceId,
     };
     next();
   };

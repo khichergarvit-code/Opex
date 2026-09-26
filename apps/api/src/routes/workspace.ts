@@ -7,6 +7,8 @@ import type { AuditWriter } from '../audit/writeAudit.js';
 import { projectMembers, projects, users } from '../db/schema/index.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { resolveInWorkspace, workspaceRoot } from '../orchestrator/tools/workspace.js';
+import { inScopeWorkspace, sameWorkspace } from '../policy/scope.js';
+import type { AuthedUser } from '../policy/types.js';
 
 const UUID = /^[0-9a-f-]{36}$/i;
 const MAX_VIEW_BYTES = 512_000;
@@ -37,12 +39,17 @@ export function createWorkspaceRouter(db: Db, auditWriter: AuditWriter, dataDir:
   const router = Router();
 
   async function authorize(
-    user: { id: string; role: string },
+    user: AuthedUser,
     projectId: string,
     targetUserId: string,
   ): Promise<'self' | 'admin' | null> {
     if (!UUID.test(projectId) || !UUID.test(targetUserId)) return null;
-    if (isAdminRole(user.role)) return targetUserId === user.id ? 'self' : 'admin';
+    if (isAdminRole(user.role)) {
+      if (targetUserId === user.id) return 'self';
+      // A workspace admin reaches only files inside their own workspace (a foreign project looks like it does not exist).
+      const [proj] = await db.select({ workspaceId: projects.workspaceId }).from(projects).where(eq(projects.id, projectId)).limit(1);
+      return proj && sameWorkspace(user, proj.workspaceId) ? 'admin' : null;
+    }
     if (targetUserId !== user.id) return null;
     const [m] = await db.select().from(projectMembers).where(and(eq(projectMembers.userId, user.id), eq(projectMembers.projectId, projectId))).limit(1);
     return m ? 'self' : null;
@@ -72,7 +79,7 @@ export function createWorkspaceRouter(db: Db, auditWriter: AuditWriter, dataDir:
   // List files: your own for a project, or (admins) everyone's with ?all=1.
   router.get('/workspace/files', requireAuth(db), async (req, res) => {
     const user = req.user!;
-    const projectRows = await db.select({ id: projects.id, name: projects.name }).from(projects);
+    const projectRows = await db.select({ id: projects.id, name: projects.name }).from(projects).where(isAdminRole(user.role) ? inScopeWorkspace(user, projects.workspaceId) : undefined);
     const names = new Map(projectRows.map((p) => [p.id, p.name]));
 
     if (req.query.all === '1') {
@@ -82,7 +89,7 @@ export function createWorkspaceRouter(db: Db, auditWriter: AuditWriter, dataDir:
       for (const p of await readdir(base, { withFileTypes: true }).catch(() => [])) {
         if (!p.isDirectory() || !UUID.test(p.name)) continue;
         for (const u of await readdir(path.join(base, p.name), { withFileTypes: true }).catch(() => [])) {
-          if (u.isDirectory() && UUID.test(u.name)) found.push({ projectId: p.name, userId: u.name });
+          if (u.isDirectory() && UUID.test(u.name) && names.has(p.name)) found.push({ projectId: p.name, userId: u.name });
         }
       }
       const emails = new Map(

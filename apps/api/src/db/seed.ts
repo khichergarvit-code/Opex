@@ -76,7 +76,7 @@ const SEED_AGENTS = [
 
 const DEV_PASSWORD = 'opex-dev-password';
 
-const SEED_USERS = [
+const ALL_SEED_USERS = [
   { email: 'admin@opex.local', name: 'Admin', role: 'super_admin', clearance: 3 },
   { email: 'wsadmin@opex.local', name: 'Workspace Admin', role: 'workspace_admin', clearance: 2 },
   {
@@ -93,6 +93,9 @@ const SEED_USERS = [
   },
   { email: 'employee.public@opex.local', name: 'Employee (Public)', role: 'employee', clearance: 0 },
 ] as const;
+
+/** Only the admin by default; set SEED_DEMO_USERS=1 to also create the demo employees and workspace admin. */
+const SEED_USERS = process.env.SEED_DEMO_USERS === '1' ? ALL_SEED_USERS : ALL_SEED_USERS.filter((u) => u.role === 'super_admin');
 
 async function main() {
   const env = loadEnv();
@@ -118,7 +121,8 @@ async function main() {
   await db.insert(policies).values({ name: 'default', rules: DEFAULT_POLICY_RULES });
 
   for (const agent of SEED_AGENTS) {
-    await db.insert(agents).values(agent);
+    // The API creates the built-in agents at boot, so on a fresh database they may already exist.
+    await db.insert(agents).values(agent).onConflictDoNothing();
   }
 
   const passwordHash = await argon2.hash(DEV_PASSWORD);
@@ -132,10 +136,25 @@ async function main() {
         passwordHash,
         role: seedUser.role,
         clearance: seedUser.clearance,
+        // The super admin is platform-wide (no workspace); everyone else belongs to the default workspace.
+        workspaceId: seedUser.role === 'super_admin' ? null : workspace.id,
       })
       .returning();
-    if (row) {
+    if (row && seedUser.role !== 'super_admin') {
       await db.insert(projectMembers).values({ projectId: project.id, userId: row.id });
+    }
+  }
+
+  // Demo data for isolation testing: a second workspace with its own admin and employee.
+  if (process.env.SEED_DEMO_USERS === '1') {
+    const [second] = await db.insert(workspaces).values({ name: 'Second Workspace' }).returning();
+    const [secondProject] = await db.insert(projects).values({ workspaceId: second!.id, name: 'Second Project', defaultClassification: 1 }).returning();
+    for (const u of [
+      { email: 'wsadmin2@opex.local', name: 'Workspace Admin 2', role: 'workspace_admin', clearance: 2 },
+      { email: 'employee2@opex.local', name: 'Employee 2', role: 'employee', clearance: 1 },
+    ] as const) {
+      const [row] = await db.insert(users).values({ ...u, passwordHash, workspaceId: second!.id }).returning();
+      await db.insert(projectMembers).values({ projectId: secondProject!.id, userId: row!.id });
     }
   }
 

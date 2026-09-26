@@ -15,6 +15,22 @@ export function can(
     return { allowed: false, reason: 'user is not active' };
   }
 
+  // Workspace isolation: a workspace admin has admin powers only inside their own workspace.
+  if (
+    user.role === 'workspace_admin' &&
+    ctx.resourceWorkspaceId !== undefined &&
+    ctx.resourceWorkspaceId !== (user.workspaceId ?? null)
+  ) {
+    return { allowed: false, reason: 'resource belongs to another workspace' };
+  }
+  // Platform-wide settings are for the super admin only.
+  if (
+    (action === 'admin:models:manage' || action === 'admin:agents:manage' || action === 'admin:system:read') &&
+    user.role !== 'super_admin'
+  ) {
+    return { allowed: false, reason: 'this setting is platform-wide and requires super_admin' };
+  }
+
   switch (action) {
     case 'login':
       return { allowed: true };

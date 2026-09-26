@@ -7,6 +7,7 @@ import type { AuditWriter } from '../audit/writeAudit.js';
 import { artifacts, documents, projects, users } from '../db/schema/index.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
+import { inScopeWorkspace, sameWorkspace } from '../policy/scope.js';
 
 export type FileKind = 'document' | 'artifact' | 'workspace';
 
@@ -81,7 +82,7 @@ export function createAdminFilesRouter(db: Db, auditWriter: AuditWriter, dataDir
       res.status(403).json({ error: decision.reason ?? 'forbidden' });
       return;
     }
-    const projectRows = await db.select({ id: projects.id, name: projects.name }).from(projects);
+    const projectRows = await db.select({ id: projects.id, name: projects.name }).from(projects).where(inScopeWorkspace(req.user!, projects.workspaceId));
     const projectNames = new Map(projectRows.map((p) => [p.id, p.name]));
 
     const docs = await db
@@ -91,6 +92,7 @@ export function createAdminFilesRouter(db: Db, auditWriter: AuditWriter, dataDir
       })
       .from(documents)
       .leftJoin(users, eq(users.id, documents.uploadedBy))
+      .where(inScopeWorkspace(req.user!, documents.workspaceId))
       .orderBy(desc(documents.createdAt))
       .limit(1000);
     const arts = await db
@@ -100,6 +102,7 @@ export function createAdminFilesRouter(db: Db, auditWriter: AuditWriter, dataDir
       })
       .from(artifacts)
       .leftJoin(users, eq(users.id, artifacts.createdBy))
+      .where(inScopeWorkspace(req.user!, artifacts.workspaceId))
       .orderBy(desc(artifacts.createdAt))
       .limit(1000);
 
@@ -114,7 +117,8 @@ export function createAdminFilesRouter(db: Db, auditWriter: AuditWriter, dataDir
         owner: a.owner, sizeBytes: a.sizeBytes, mime: a.mime, classification: a.classification, status: a.kind,
         createdAt: a.createdAt.toISOString(), downloadUrl: `/artifacts/${a.id}`, conversationId: a.conversationId,
       })),
-      ...(await scanWorkspaces(dataDir, projectNames, new Map((await db.select({ id: users.id, email: users.email }).from(users)).map((u) => [u.id, u.email])))),
+      // Only projects in the admin's scope are in projectNames, so other workspaces' folders drop out here.
+      ...(await scanWorkspaces(dataDir, projectNames, new Map((await db.select({ id: users.id, email: users.email }).from(users)).map((u) => [u.id, u.email])))).filter((r) => projectNames.has(r.projectId)),
     ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
     const totals = {
@@ -137,7 +141,7 @@ export function createAdminFilesRouter(db: Db, auditWriter: AuditWriter, dataDir
     let name = id;
     if (kind === 'document') {
       const [doc] = await db.select().from(documents).where(eq(documents.id, id)).limit(1);
-      if (!doc) return void res.status(404).json({ error: 'not found' });
+      if (!doc || !sameWorkspace(user, doc.workspaceId)) return void res.status(404).json({ error: 'not found' });
       name = doc.filename;
       await db.delete(documents).where(eq(documents.id, id));
       const [others] = await db
@@ -147,13 +151,15 @@ export function createAdminFilesRouter(db: Db, auditWriter: AuditWriter, dataDir
       if (!others || others.n === 0) await rm(path.resolve(dataDir, 'files', doc.workspaceId, doc.sha256), { force: true }).catch(() => {});
     } else if (kind === 'artifact') {
       const [art] = await db.select().from(artifacts).where(eq(artifacts.id, id)).limit(1);
-      if (!art) return void res.status(404).json({ error: 'not found' });
+      if (!art || !sameWorkspace(user, art.workspaceId)) return void res.status(404).json({ error: 'not found' });
       name = art.filename;
       await db.delete(artifacts).where(eq(artifacts.id, id));
       await rm(path.resolve(dataDir, art.storagePath), { force: true }).catch(() => {});
     } else if (kind === 'workspace') {
       const w = decodeWorkspaceId(id);
       if (!w) return void res.status(400).json({ error: 'invalid id' });
+      const [proj] = await db.select({ workspaceId: projects.workspaceId }).from(projects).where(eq(projects.id, w.projectId)).limit(1);
+      if (!proj || !sameWorkspace(user, proj.workspaceId)) return void res.status(404).json({ error: 'not found' });
       const root = path.resolve(dataDir, 'workspaces', w.projectId, w.userId);
       const abs = path.resolve(root, w.rel);
       if (!abs.startsWith(root + path.sep)) return void res.status(400).json({ error: 'invalid path' });

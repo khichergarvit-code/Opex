@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm';
+import { inScopeWorkspace } from '../policy/scope.js';
 import { Router } from 'express';
 import type { Db } from '../db/client.js';
 import { projectMembers, projects } from '../db/schema/index.js';
@@ -10,7 +11,7 @@ export function createProjectsRouter(db: Db): Router {
   router.get('/projects', requireAuth(db), async (req, res) => {
     const user = req.user!;
     if (user.role === 'super_admin' || user.role === 'workspace_admin') {
-      const rows = await db.select().from(projects);
+      const rows = await db.select().from(projects).where(inScopeWorkspace(user, projects.workspaceId));
       res.json(rows);
       return;
     }

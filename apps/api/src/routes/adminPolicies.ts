@@ -5,6 +5,7 @@ import type { Db } from '../db/client.js';
 import { policies, users } from '../db/schema/index.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
+import { sameWorkspace } from '../policy/scope.js';
 import { policyRulesSchema } from '../policy/rules.js';
 import type { Action, PolicyContext } from '../policy/types.js';
 import type { AuditWriter } from '../audit/writeAudit.js';
@@ -26,6 +27,7 @@ export function createAdminPoliciesRouter(db: Db, auditWriter: AuditWriter): Rou
       res.status(403).json({ error: decision.reason ?? 'forbidden' });
       return;
     }
+    // Platform-wide policies (no workspace) are visible to everyone who may read policies; a workspace admin edits only their own workspace's.
     const rows = await db.select().from(policies).where(isNull(policies.workspaceId)).orderBy(desc(policies.updatedAt));
     res.json(rows);
   });
@@ -40,6 +42,11 @@ export function createAdminPoliciesRouter(db: Db, auditWriter: AuditWriter): Rou
     const parsed = putPolicySchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'invalid request body', details: parsed.error.flatten() });
+      return;
+    }
+    const [current] = await db.select({ workspaceId: policies.workspaceId }).from(policies).where(eq(policies.id, req.params.id as string)).limit(1);
+    if (current && user.role !== 'super_admin' && current.workspaceId !== (user.workspaceId ?? null)) {
+      res.status(403).json({ error: 'platform-wide policies can only be changed by a super admin' });
       return;
     }
     const [row] = await db
@@ -70,7 +77,7 @@ export function createAdminPoliciesRouter(db: Db, auditWriter: AuditWriter): Rou
       return;
     }
     const [target] = await db.select().from(users).where(eq(users.id, parsed.data.userId)).limit(1);
-    if (!target) {
+    if (!target || !sameWorkspace(req.user!, target.workspaceId)) {
       res.status(404).json({ error: 'user not found' });
       return;
     }

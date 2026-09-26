@@ -55,7 +55,7 @@ export function AdminLayout({
       <div className="p-6">
         {section === 'traces' && <TracesPage onBack={onBack} />}
         {section === 'usage' && <UsagePage onBack={onBack} />}
-        {section === 'users' && <UsersPage onBack={onBack} />}
+        {section === 'users' && <UsersPage onBack={onBack} isSuperAdmin={user.role === 'super_admin'} />}
         {section === 'groups' && <GroupsPage onBack={onBack} />}
         {section === 'access-requests' && <AccessRequestsPage onBack={onBack} />}
         {section === 'approvals' && <ApprovalsPage onBack={onBack} />}

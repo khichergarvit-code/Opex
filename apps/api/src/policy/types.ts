@@ -8,6 +8,8 @@ export interface AuthedUser {
   role: Role;
   clearance: Classification;
   status: 'active' | 'disabled';
+  /** The workspace this person belongs to; null for platform-wide super admins. */
+  workspaceId?: string | null;
 }
 
 export type Action =
@@ -40,6 +42,8 @@ export type Action =
   | 'admin:audit:read';
 
 export interface PolicyContext {
+  /** The workspace that owns the resource. A workspace admin is refused when it differs from their own. */
+  resourceWorkspaceId?: string | null;
   /** Present for conversation:* and document:* actions — the project in scope. */
   projectId?: string;
   /** Present for model:invoke — the model role being requested (router|general|...). */

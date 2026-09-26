@@ -1,10 +1,12 @@
-import { desc, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm';
 import { Router } from 'express';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { conversations, memories, policies, users, workspaces } from '../db/schema/index.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
+import { inScopeWorkspace, sameWorkspace } from '../policy/scope.js';
+import type { AuthedUser } from '../policy/types.js';
 import { policyRulesSchema } from '../policy/rules.js';
 import type { ModelGateway, SpanWriter } from '../models/gateway.js';
 import { runExtractionForConversation } from '../memory/extraction.js';
@@ -41,7 +43,7 @@ export function createAdminMemoryRouter(db: Db, gateway: ModelGateway, spanWrite
       })
       .from(conversations)
       .innerJoin(users, eq(conversations.userId, users.id))
-      .where(isNotNull(conversations.workingSummary))
+      .where(and(isNotNull(conversations.workingSummary), inScopeWorkspace(req.user!, conversations.workspaceId)))
       .orderBy(desc(conversations.updatedAt));
     res.json(
       rows.map((r) => ({
@@ -65,7 +67,7 @@ export function createAdminMemoryRouter(db: Db, gateway: ModelGateway, spanWrite
     const [row] = await db
       .update(conversations)
       .set({ workingSummary: null, updatedAt: new Date() })
-      .where(eq(conversations.id, conversationId))
+      .where(and(eq(conversations.id, conversationId), inScopeWorkspace(user, conversations.workspaceId)))
       .returning({ id: conversations.id });
     if (!row) {
       res.status(404).json({ error: 'conversation not found' });
@@ -97,7 +99,7 @@ export function createAdminMemoryRouter(db: Db, gateway: ModelGateway, spanWrite
       })
       .from(memories)
       .innerJoin(users, eq(memories.userId, users.id))
-      .where(isNull(memories.deletedAt))
+      .where(and(isNull(memories.deletedAt), inScopeWorkspace(req.user!, memories.workspaceId)))
       .orderBy(desc(memories.createdAt));
     res.json(rows);
   });
@@ -105,8 +107,8 @@ export function createAdminMemoryRouter(db: Db, gateway: ModelGateway, spanWrite
   router.delete('/admin/memory/long-term/:id', requireAuth(db), async (req, res) => {
     const user = req.user!;
     const memoryId = req.params.id as string;
-    const [row] = await db.select({ userId: memories.userId }).from(memories).where(eq(memories.id, memoryId)).limit(1);
-    if (!row) {
+    const [row] = await db.select({ userId: memories.userId, workspaceId: memories.workspaceId }).from(memories).where(eq(memories.id, memoryId)).limit(1);
+    if (!row || (row.userId !== user.id && !sameWorkspace(user, row.workspaceId))) {
       res.status(404).json({ error: 'memory not found' });
       return;
     }
@@ -120,7 +122,9 @@ export function createAdminMemoryRouter(db: Db, gateway: ModelGateway, spanWrite
     res.status(204).end();
   });
 
-  async function resolveWorkspaceId(explicit?: string): Promise<string | null> {
+  /** A workspace admin always works on their own workspace; only the super admin may name one. */
+  async function resolveWorkspaceId(user: AuthedUser, explicit?: string): Promise<string | null> {
+    if (user.role !== 'super_admin') return user.workspaceId ?? null;
     if (explicit) return explicit;
     const [ws] = await db.select({ id: workspaces.id }).from(workspaces).orderBy(workspaces.createdAt).limit(1);
     return ws?.id ?? null;
@@ -132,7 +136,7 @@ export function createAdminMemoryRouter(db: Db, gateway: ModelGateway, spanWrite
       res.status(403).json({ error: decision.reason ?? 'forbidden' });
       return;
     }
-    const workspaceId = await resolveWorkspaceId();
+    const workspaceId = await resolveWorkspaceId(req.user!);
     const [existing] = workspaceId ? await db.select().from(policies).where(eq(policies.workspaceId, workspaceId)).limit(1) : [];
     const rules = existing ? policyRulesSchema.parse(existing.rules) : policyRulesSchema.parse({});
     res.json({ memoryTtlDays: rules.memoryTtlDays });
@@ -150,7 +154,7 @@ export function createAdminMemoryRouter(db: Db, gateway: ModelGateway, spanWrite
       res.status(400).json({ error: 'invalid request body' });
       return;
     }
-    const workspaceId = await resolveWorkspaceId(parsed.data.workspaceId);
+    const workspaceId = await resolveWorkspaceId(user, parsed.data.workspaceId);
     if (!workspaceId) {
       res.status(404).json({ error: 'no workspace found' });
       return;
@@ -174,6 +178,11 @@ export function createAdminMemoryRouter(db: Db, gateway: ModelGateway, spanWrite
     const decision = can(req.user!, 'admin:memory:read');
     if (!decision.allowed) {
       res.status(403).json({ error: decision.reason ?? 'forbidden' });
+      return;
+    }
+    const [conv] = await db.select({ workspaceId: conversations.workspaceId }).from(conversations).where(eq(conversations.id, req.params.conversationId as string)).limit(1);
+    if (!conv || !sameWorkspace(req.user!, conv.workspaceId)) {
+      res.status(404).json({ error: 'conversation not found' });
       return;
     }
     await runExtractionForConversation({ db, gateway, spanWriter }, req.params.conversationId as string);

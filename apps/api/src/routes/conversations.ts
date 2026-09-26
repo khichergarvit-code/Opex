@@ -13,6 +13,7 @@ import { renderProjectNotesBlock } from '../memory/projectNotes.js';
 import type { ModelGateway, SpanWriter } from '../models/gateway.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
+import { projectWorkspaceId } from '../policy/scope.js';
 import { loadAgent, loadAgentSystemPrompt } from '../orchestrator/agents.js';
 import { runExecutor } from '../orchestrator/executor.js';
 import { route as routeMessage } from '../orchestrator/router.js';
@@ -183,6 +184,7 @@ export function createConversationsRouter(
     const decision = can(user, 'conversation:create', {
       projectId: parsed.data.projectId,
       isProjectMember: member,
+      resourceWorkspaceId: await projectWorkspaceId(db, parsed.data.projectId),
     });
     if (!decision.allowed) {
       res.status(403).json({ error: decision.reason ?? 'forbidden' });
@@ -247,6 +249,7 @@ export function createConversationsRouter(
     const decision = can(user, 'conversation:read', {
       projectId: conversation.projectId,
       isProjectMember: member,
+      resourceWorkspaceId: conversation.workspaceId,
     });
     if (!decision.allowed) {
       res.status(403).json({ error: decision.reason ?? 'forbidden' });
@@ -291,6 +294,7 @@ export function createConversationsRouter(
     const decision = can(user, 'conversation:message', {
       projectId: conversation.projectId,
       isProjectMember: member,
+      resourceWorkspaceId: conversation.workspaceId,
     });
     if (!decision.allowed) {
       res.status(403).json({ error: decision.reason ?? 'forbidden' });

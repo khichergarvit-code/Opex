@@ -7,6 +7,7 @@ import type { Db } from '../db/client.js';
 import { feedback, messages, users } from '../db/schema/index.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
+import { inScopeUsers } from '../policy/scope.js';
 import type { AuditWriter } from '../audit/writeAudit.js';
 
 const submitFeedbackSchema = z.object({
@@ -90,7 +91,7 @@ export function createFeedbackRouter(db: Db, auditWriter: AuditWriter): Router {
       .from(feedback)
       .leftJoin(messages, eq(messages.id, feedback.messageId))
       .leftJoin(users, eq(users.id, feedback.userId))
-      .where(rating ? eq(feedback.rating, rating as 'thumbs_up' | 'thumbs_down') : undefined)
+      .where(and(rating ? eq(feedback.rating, rating as 'thumbs_up' | 'thumbs_down') : undefined, inScopeUsers(req.user!, feedback.userId)))
       .orderBy(desc(feedback.createdAt));
     res.json(rows);
   });
@@ -110,7 +111,7 @@ export function createFeedbackRouter(db: Db, auditWriter: AuditWriter): Router {
     const [row] = await db
       .update(feedback)
       .set({ rootCauseTag: parsed.data.rootCauseTag })
-      .where(eq(feedback.id, req.params.id as string))
+      .where(and(eq(feedback.id, req.params.id as string), inScopeUsers(user, feedback.userId)))
       .returning();
     if (!row) {
       res.status(404).json({ error: 'feedback not found' });
@@ -137,7 +138,7 @@ export function createFeedbackRouter(db: Db, auditWriter: AuditWriter): Router {
       res.status(400).json({ error: 'invalid request body' });
       return;
     }
-    const [row] = await db.select().from(feedback).where(eq(feedback.id, req.params.id as string)).limit(1);
+    const [row] = await db.select().from(feedback).where(and(eq(feedback.id, req.params.id as string), inScopeUsers(user, feedback.userId))).limit(1);
     if (!row) {
       res.status(404).json({ error: 'feedback not found' });
       return;

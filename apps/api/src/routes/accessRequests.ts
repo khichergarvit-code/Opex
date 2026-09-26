@@ -1,10 +1,11 @@
 import { createAccessRequestSchema, decideAccessRequestSchema } from '@opex/shared';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { Router } from 'express';
 import type { Db } from '../db/client.js';
-import { accessGrants, accessRequests } from '../db/schema/index.js';
+import { accessGrants, accessRequests, users } from '../db/schema/index.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
+import { inScopeUsers, sameWorkspace } from '../policy/scope.js';
 import type { AuditWriter } from '../audit/writeAudit.js';
 
 /**
@@ -52,7 +53,7 @@ export function createAccessRequestsRouter(db: Db, auditWriter: AuditWriter): Ro
     const rows = await db
       .select()
       .from(accessRequests)
-      .where(status ? eq(accessRequests.status, status as 'pending' | 'approved' | 'denied') : undefined)
+      .where(and(status ? eq(accessRequests.status, status as 'pending' | 'approved' | 'denied') : undefined, inScopeUsers(user, accessRequests.userId)))
       .orderBy(desc(accessRequests.createdAt));
     res.json(rows);
   });
@@ -72,7 +73,8 @@ export function createAccessRequestsRouter(db: Db, auditWriter: AuditWriter): Ro
     }
 
     const [reqRow] = await db.select().from(accessRequests).where(eq(accessRequests.id, requestId)).limit(1);
-    if (!reqRow) {
+    const [requester] = reqRow ? await db.select({ workspaceId: users.workspaceId }).from(users).where(eq(users.id, reqRow.userId)).limit(1) : [];
+    if (!reqRow || !requester || !sameWorkspace(user, requester.workspaceId)) {
       res.status(404).json({ error: 'access request not found' });
       return;
     }

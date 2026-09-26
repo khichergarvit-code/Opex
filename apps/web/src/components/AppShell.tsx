@@ -153,12 +153,13 @@ export function AppShell({
 
         {isAdmin && (
           <>
-            <SidebarSection label="AI tools">{AI_TOOLS_SECTION.map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
+            {/* Models, agents and system settings are platform-wide: only a super admin sees them. */}
+            <SidebarSection label="AI tools">{AI_TOOLS_SECTION.filter((i) => user.role === 'super_admin' || i.key === 'policies').map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
             <SidebarSection label="Administration">{ADMIN_SECTION.slice(0, 5).map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
             <SidebarSection label="Monitoring">{ADMIN_SECTION.slice(5, 9).map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
             {/* The last three get a darker panel so they read as a separate, more technical group. */}
             <div className="mb-3 rounded-3xl bg-raised/80 p-1.5">
-              <SidebarSection label="Data and system">{ADMIN_SECTION.slice(9).map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
+              <SidebarSection label="Data and system">{ADMIN_SECTION.slice(9).filter((i) => user.role === 'super_admin' || i.key !== 'system').map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
             </div>
           </>
         )}

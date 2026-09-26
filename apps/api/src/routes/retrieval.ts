@@ -6,6 +6,7 @@ import { projectMembers, projects, traces, userGroups } from '../db/schema/index
 import type { ModelGateway, SpanWriter } from '../models/gateway.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
+import { projectWorkspaceId } from '../policy/scope.js';
 import { search } from '../retrieval/index.js';
 
 const searchRequestSchema = z.object({
@@ -39,7 +40,7 @@ export function createRetrievalRouter(db: Db, gateway: ModelGateway, spanWriter:
     }
 
     const member = await isProjectMember(db, user.id, projectId);
-    const decision = can(user, 'document:read', { projectId, isProjectMember: member });
+    const decision = can(user, 'document:read', { projectId, isProjectMember: member, resourceWorkspaceId: await projectWorkspaceId(db, projectId) });
     if (!decision.allowed) {
       res.status(403).json({ error: decision.reason ?? 'forbidden' });
       return;

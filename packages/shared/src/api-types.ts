@@ -163,6 +163,8 @@ export const createUserRequestSchema = z.object({
   password: z.string().min(12),
   role: roleSchema,
   clearance: classificationSchema,
+  /** Super admin only: which workspace the new person belongs to. Workspace admins always create inside their own. */
+  workspaceId: z.string().uuid().optional(),
 });
 export type CreateUserRequest = z.infer<typeof createUserRequestSchema>;
 
@@ -173,6 +175,8 @@ export const adminUserSchema = z.object({
   role: roleSchema,
   clearance: classificationSchema,
   status: userStatusSchema,
+  workspaceId: z.string().uuid().nullable().optional(),
+  workspaceName: z.string().nullable().optional(),
   createdAt: z.string(),
 });
 export type AdminUser = z.infer<typeof adminUserSchema>;

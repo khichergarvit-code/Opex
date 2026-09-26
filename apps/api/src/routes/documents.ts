@@ -9,6 +9,7 @@ import type { Db } from '../db/client.js';
 import { accessGrants, documents, jobs, projectMembers, projects, userGroups } from '../db/schema/index.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
+import { projectWorkspaceId } from '../policy/scope.js';
 import { loadActivePolicyRules } from '../policy/loadPolicyRules.js';
 
 /**
@@ -82,6 +83,7 @@ async function loadAndAuthorizeDocument(
   const decision = can(user, 'document:read', {
     projectId: doc.projectId,
     isProjectMember: member,
+    resourceWorkspaceId: doc.workspaceId,
     documentClassification: doc.classification as 0 | 1 | 2 | 3,
     documentAclGroupIds: doc.aclGroupIds,
     userGroupIds: userGroupRows.map((r) => r.groupId),
@@ -208,7 +210,7 @@ export function createDocumentsRouter(db: Db, dataDir: string): Router {
     const user = req.user!;
     const projectId = req.params.id as string;
     const member = await isProjectMember(db, user.id, projectId);
-    const decision = can(user, 'document:read', { projectId, isProjectMember: member });
+    const decision = can(user, 'document:read', { projectId, isProjectMember: member, resourceWorkspaceId: await projectWorkspaceId(db, projectId) });
     if (!decision.allowed) {
       res.status(403).json({ error: decision.reason ?? 'forbidden' });
       return;

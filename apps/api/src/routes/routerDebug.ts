@@ -6,6 +6,7 @@ import { projectMembers, traces } from '../db/schema/index.js';
 import type { ModelGateway } from '../models/gateway.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
+import { projectWorkspaceId } from '../policy/scope.js';
 import { projectHasReadyDocuments } from './docQa.js';
 import { route } from '../orchestrator/router.js';
 
@@ -36,7 +37,7 @@ export function createRouterDebugRouter(db: Db, gateway: ModelGateway): Router {
       return;
     }
     const member = await isProjectMember(db, user.id, projectId);
-    const decision = can(user, 'conversation:create', { projectId, isProjectMember: member });
+    const decision = can(user, 'conversation:create', { projectId, isProjectMember: member, resourceWorkspaceId: await projectWorkspaceId(db, projectId) });
     if (!decision.allowed) {
       res.status(403).json({ error: decision.reason ?? 'forbidden' });
       return;

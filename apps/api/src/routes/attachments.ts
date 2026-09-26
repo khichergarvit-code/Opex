@@ -79,7 +79,7 @@ export function createAttachmentsRouter(db: Db, dataDir: string): Router {
       return;
     }
     const member = await isProjectMember(db, user.id, conversation.projectId);
-    const decision = can(user, 'conversation:message', { projectId: conversation.projectId, isProjectMember: member });
+    const decision = can(user, 'conversation:message', { projectId: conversation.projectId, isProjectMember: member, resourceWorkspaceId: conversation.workspaceId });
     if (!decision.allowed) {
       res.status(403).json({ error: decision.reason ?? 'forbidden' });
       return;

@@ -5,6 +5,7 @@ import type { Db } from '../db/client.js';
 import { auditLog, conversations, messages, spans, traces, users } from '../db/schema/index.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
+import { inScopeUsers, inScopeWorkspace, sameWorkspace } from '../policy/scope.js';
 import type { AuditWriter } from '../audit/writeAudit.js';
 
 // Empty strings (an unselected filter) mean "no filter".
@@ -43,13 +44,16 @@ export function createAdminRouter(db: Db, auditWriter: AuditWriter): Router {
       status ? eq(spans.status, status) : undefined,
     ].filter((c): c is NonNullable<typeof c> => Boolean(c));
 
+    const scope = inScopeUsers(req.user!, traces.userId);
+    if (scope) conditions.push(scope);
     const rows = await db
-      .select()
+      .select({ span: spans })
       .from(spans)
+      .innerJoin(traces, eq(spans.traceId, traces.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(spans.createdAt))
       .limit(limit);
-    res.json(rows);
+    res.json(rows.map((r) => r.span));
   });
 
   router.get('/admin/usage', requireAuth(db), async (req, res) => {
@@ -75,7 +79,7 @@ export function createAdminRouter(db: Db, auditWriter: AuditWriter): Router {
       .from(spans)
       .innerJoin(traces, eq(spans.traceId, traces.id))
       .innerJoin(users, eq(traces.userId, users.id))
-      .where(and(eq(spans.kind, 'llm'), gte(spans.createdAt, since)))
+      .where(and(eq(spans.kind, 'llm'), gte(spans.createdAt, since), inScopeUsers(req.user!, traces.userId)))
       .groupBy(traces.userId, users.email, spans.model, sql`date_trunc('day', ${spans.createdAt})`)
       .orderBy(desc(sql`date_trunc('day', ${spans.createdAt})`));
 
@@ -101,7 +105,7 @@ export function createAdminRouter(db: Db, auditWriter: AuditWriter): Router {
       })
       .from(conversations)
       .innerJoin(users, eq(conversations.userId, users.id))
-      .where(userId ? eq(conversations.userId, userId) : undefined)
+      .where(and(userId ? eq(conversations.userId, userId) : undefined, inScopeWorkspace(req.user!, conversations.workspaceId)))
       .orderBy(desc(conversations.updatedAt))
       .limit(100);
     res.json(rows);
@@ -119,8 +123,8 @@ export function createAdminRouter(db: Db, auditWriter: AuditWriter): Router {
       return;
     }
     const id = req.params.id as string;
-    const [row] = await db.select({ id: conversations.id, userId: conversations.userId }).from(conversations).where(eq(conversations.id, id)).limit(1);
-    if (!row) {
+    const [row] = await db.select({ id: conversations.id, userId: conversations.userId, workspaceId: conversations.workspaceId }).from(conversations).where(eq(conversations.id, id)).limit(1);
+    if (!row || !sameWorkspace(user, row.workspaceId)) {
       res.status(404).json({ error: 'not found' });
       return;
     }
@@ -138,7 +142,7 @@ export function createAdminRouter(db: Db, auditWriter: AuditWriter): Router {
       return;
     }
     const [conversation] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
-    if (!conversation) {
+    if (!conversation || !sameWorkspace(admin, conversation.workspaceId)) {
       res.status(404).json({ error: 'conversation not found' });
       return;
     }
@@ -187,7 +191,7 @@ export function createAdminRouter(db: Db, auditWriter: AuditWriter): Router {
       })
       .from(auditLog)
       .leftJoin(users, eq(auditLog.actorId, users.id))
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .where(and(...conditions, inScopeUsers(req.user!, auditLog.actorId)))
       .orderBy(desc(auditLog.ts))
       .limit(limit);
     res.json(rows);
