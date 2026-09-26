@@ -376,3 +376,16 @@ export async function forgetAllMemories(): Promise<{ forgotten: number }> {
 export async function fetchMyMemories(): Promise<MyMemoryRow[]> {
   return request<MyMemoryRow[]>('/memory/mine');
 }
+
+export async function retryDocument(documentId: string): Promise<ApiDocument> {
+  return request<ApiDocument>(`/documents/${documentId}/retry`, { method: 'POST' });
+}
+
+/** Plain-language reason for a failed upload or ingest (raw library messages mean nothing to a user). */
+export function friendlyDocumentError(raw: string | null | undefined): string {
+  const text = raw ?? '';
+  if (/cached snapshot|HF_HUB_OFFLINE|outgoing traffic/i.test(text)) return "the document reader models aren't installed (run docling-warm, see RUNNER.md)";
+  if (/too large|413|exceeds/i.test(text)) return 'the file is larger than the upload limit';
+  if (/unsupported|415/i.test(text)) return 'this file type is not supported';
+  return text || 'could not be read';
+}

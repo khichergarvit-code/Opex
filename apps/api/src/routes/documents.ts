@@ -182,7 +182,26 @@ export function createDocumentsRouter(db: Db, dataDir: string): Router {
       .from(documents)
       .where(and(eq(documents.projectId, projectId), eq(documents.sha256, sha256)))
       .limit(1);
-    res.status(200).json(existing);
+    // Uploading a file whose earlier ingest failed is a retry, not a duplicate.
+    res.status(200).json(existing && existing.status === 'failed' ? await requeue(existing.id) : existing);
+  });
+
+  /** Puts a failed document back in the queue and returns the fresh row. */
+  async function requeue(documentId: string) {
+    const [row] = await db
+      .update(documents)
+      .set({ status: 'queued', errorMessage: null, pagesDone: 0 })
+      .where(and(eq(documents.id, documentId), eq(documents.status, 'failed')))
+      .returning();
+    if (row) await db.insert(jobs).values({ kind: 'ingest_document', payload: { documentId } });
+    const [current] = await db.select().from(documents).where(eq(documents.id, documentId)).limit(1);
+    return current;
+  }
+
+  router.post('/documents/:id/retry', requireAuth(db), async (req, res) => {
+    const doc = await loadAndAuthorizeDocument(db, req, res);
+    if (!doc) return;
+    res.json(doc.status === 'failed' ? await requeue(doc.id) : doc);
   });
 
   router.get('/projects/:id/documents', requireAuth(db), async (req, res) => {

@@ -172,7 +172,7 @@ services:
     volumes:
       - ./models:/models:ro
     mem_limit: 1g
-    command: ["-m", "/models/bge-m3-Q8_0.gguf", "--host", "0.0.0.0", "--port", "8083", "--embedding", "-c", "8192"]
+    command: ["-m", "/models/bge-m3-Q8_0.gguf", "--host", "0.0.0.0", "--port", "8083", "--embedding", "-c", "8192", "-b", "2048", "-ub", "2048"]
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8083/health || exit 1"]
       interval: 5s
@@ -321,7 +321,17 @@ services:
     command:
       - python
       - -c
-      - "from docling.document_converter import DocumentConverter; DocumentConverter(); print('[docling] model cache warmed')"
+      - |
+        import pathlib
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import PdfPipelineOptions
+        from docling.document_converter import DocumentConverter, PdfFormatOption
+        o = PdfPipelineOptions(); o.do_ocr = False   # same options as services/ingest docling_parse.py
+        DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=o)}).initialize_pipeline(InputFormat.PDF)
+        n = sum(1 for _ in pathlib.Path('/hf-cache').glob('hub/models--*'))
+        if n == 0:
+            raise SystemExit('[docling] no model folders were downloaded to the cache; check your internet connection and rerun')
+        print(f'[docling] model cache warmed ({n} model folders)')
 
   sandbox-image:
     profiles: ["setup"]

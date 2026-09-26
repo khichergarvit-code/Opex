@@ -17,6 +17,7 @@ export function Composer({
   onRemoveAttachment,
   docs = [],
   onRemoveDoc,
+  onRetryDoc,
   documents,
   onDocumentsChange,
 }: {
@@ -35,6 +36,7 @@ export function Composer({
   /** Documents (PDF etc.) being read for this message. */
   docs?: PendingDoc[];
   onRemoveDoc?: (key: string) => void;
+  onRetryDoc?: (key: string) => void;
   documents?: 'auto' | 'on' | 'off';
   onDocumentsChange?: (mode: 'auto' | 'on' | 'off') => void;
 }) {
@@ -98,8 +100,13 @@ export function Composer({
               <Icon name="file" className="h-4 w-4 shrink-0 text-accent-600" />
               <span className="max-w-[14rem] truncate">{d.name}</span>
               <span className={`text-xs ${d.status === 'failed' ? 'text-danger-700' : 'text-muted'}`}>
-                {d.status === 'ready' ? 'Ready' : d.status === 'failed' ? `Failed${d.error ? `: ${d.error}` : ''}` : 'Reading…'}
+                {d.status === 'ready' ? 'Ready' : d.status === 'failed' ? `Couldn't read it: ${d.error ?? 'unknown error'}` : 'Reading…'}
               </span>
+              {d.status === 'failed' && d.id && onRetryDoc && (
+                <button type="button" onClick={() => onRetryDoc(d.key)} className="rounded-full px-2 py-0.5 text-xs font-medium text-accent-700 hover:bg-accent-50">
+                  Retry
+                </button>
+              )}
               {onRemoveDoc && (
                 <button type="button" aria-label={`Remove ${d.name}`} onClick={() => onRemoveDoc(d.key)} className="grid h-5 w-5 place-items-center rounded-full text-muted hover:bg-raised">
                   <Icon name="close" className="h-3 w-3" />

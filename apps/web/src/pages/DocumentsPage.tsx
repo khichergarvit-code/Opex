@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ApiDocument, Classification, Project } from '@opex/shared';
-import { ApiError, createAccessRequest, fetchDocuments, uploadDocument } from '../lib/api';
+import { ApiError, createAccessRequest, fetchDocuments, friendlyDocumentError, retryDocument, uploadDocument } from '../lib/api';
 import { Button } from '../components/ui/Button';
 import { motion } from 'motion/react';
 import { Card } from '../components/ui/Card';
@@ -27,7 +27,7 @@ function DocumentCard({ doc, projectId, onOpen }: { doc: ApiDocument; projectId:
   const [live, setLive] = useState(doc);
 
   useEffect(() => {
-    if (doc.status === 'ready' || doc.status === 'failed') return;
+    if (live.status === 'ready' || live.status === 'failed') return;
     const es = new EventSource(`/documents/${doc.id}/progress`);
     es.addEventListener('progress', (ev) => {
       const data = JSON.parse((ev as MessageEvent).data) as {
@@ -40,7 +40,7 @@ function DocumentCard({ doc, projectId, onOpen }: { doc: ApiDocument; projectId:
     });
     es.onerror = () => es.close();
     return () => es.close();
-  }, [doc.id, doc.status]);
+  }, [doc.id, live.status]);
 
   return (
     <Card>
@@ -65,6 +65,18 @@ function DocumentCard({ doc, projectId, onOpen }: { doc: ApiDocument; projectId:
         ) : null}
         <span>{(live.sizeBytes / 1024).toFixed(0)} KB</span>
       </div>
+      {live.status === 'failed' && (
+        <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-danger-700">
+          Couldn't read it: {friendlyDocumentError(live.errorMessage)}
+          <button
+            type="button"
+            onClick={() => retryDocument(live.id).then((d) => setLive(d)).catch(() => {})}
+            className="rounded-full px-2 py-0.5 font-medium text-accent-700 hover:bg-accent-50"
+          >
+            Retry
+          </button>
+        </p>
+      )}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {live.status === 'ready' && (
           <Button

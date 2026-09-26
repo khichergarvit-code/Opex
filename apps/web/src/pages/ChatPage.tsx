@@ -15,6 +15,8 @@ import {
   uploadAttachment,
   uploadDocument,
   fetchDocument,
+  friendlyDocumentError,
+  retryDocument,
   type PendingDoc,
   type MessageAttachment,
   type ChatModelOption,
@@ -301,8 +303,8 @@ export function ChatPage({
     if (!projectId) return;
     for (const file of files) {
       const key = crypto.randomUUID();
-      if (file.size > 20 * 1024 * 1024) {
-        setPendingDocs((prev) => [...prev, { key, id: null, name: file.name, status: 'failed', error: 'larger than 20 MB' }]);
+      if (file.size > 50 * 1024 * 1024) {
+        setPendingDocs((prev) => [...prev, { key, id: null, name: file.name, status: 'failed', error: 'the file is larger than the upload limit' }]);
         continue;
       }
       setPendingDocs((prev) => [...prev, { key, id: null, name: file.name, status: 'queued' }]);
@@ -310,10 +312,21 @@ export function ChatPage({
         const doc = await uploadDocument(projectId, file);
         setPendingDocs((prev) => prev.map((d) => (d.key === key ? { ...d, id: doc.id, status: doc.status } : d)));
       } catch (err) {
-        const error = err instanceof Error ? err.message : 'upload failed';
+        const error = friendlyDocumentError(err instanceof Error ? err.message : 'upload failed');
         setPendingDocs((prev) => prev.map((d) => (d.key === key ? { ...d, status: 'failed', error } : d)));
       }
     }
+  }
+
+  /** Failed chip: put the document back in the queue and watch it again. */
+  function retryPendingDoc(key: string) {
+    const d = pendingDocs.find((x) => x.key === key);
+    if (!d?.id) return;
+    setPendingDocs((prev) => prev.map((x) => (x.key === key ? { ...x, status: 'queued', error: undefined } : x)));
+    retryDocument(d.id).catch((err) => {
+      const error = friendlyDocumentError(err instanceof Error ? err.message : '');
+      setPendingDocs((prev) => prev.map((x) => (x.key === key ? { ...x, status: 'failed', error } : x)));
+    });
   }
 
   // Poll documents still being read until they are ready or failed.
@@ -325,7 +338,7 @@ export function ChatPage({
         .filter((d) => d.id && d.status !== 'ready' && d.status !== 'failed')
         .forEach((d) => {
           fetchDocument(d.id!)
-            .then((doc) => setPendingDocs((prev) => prev.map((x) => (x.key === d.key ? { ...x, status: doc.status, error: doc.errorMessage ?? undefined } : x))))
+            .then((doc) => setPendingDocs((prev) => prev.map((x) => (x.key === d.key ? { ...x, status: doc.status, error: doc.status === 'failed' ? friendlyDocumentError(doc.errorMessage) : undefined } : x))))
             .catch(() => {});
         });
     }, 2000);
@@ -334,6 +347,7 @@ export function ChatPage({
 
   function handleSend(content: string) {
     // Attached documents: answer from documents for this turn, and clear the chips.
+    if (pendingDocs.some((d) => d.status === 'failed')) setStatus("An attached document couldn't be read, so this answer doesn't use it.");
     if (pendingDocs.some((d) => d.status === 'ready')) setDocumentMode('on');
     setPendingDocs([]);
     return runTurn(content, undefined, pendingDocs.some((d) => d.status === 'ready'));
@@ -722,7 +736,7 @@ export function ChatPage({
                   <Alert className="mb-2">The chat model isn't running right now. If it is starting, wait a minute; otherwise start it (see RUNNER.md).</Alert>
                 )}
                 {status && <Alert className="mb-2">{status}</Alert>}
-                <Composer disabled={!projectId} onSend={handleSend} models={chatModels} modelId={modelId} onModelChange={changeModel} attachments={pendingImages} uploading={uploading} onAttach={handleAttach} onRemoveAttachment={(id) => setPendingImages((prev) => prev.filter((a) => a.id !== id))} docs={pendingDocs} onRemoveDoc={(key) => setPendingDocs((prev) => prev.filter((d) => d.key !== key))} documents={documentMode} onDocumentsChange={setDocumentMode} />
+                <Composer disabled={!projectId} onSend={handleSend} models={chatModels} modelId={modelId} onModelChange={changeModel} attachments={pendingImages} uploading={uploading} onAttach={handleAttach} onRemoveAttachment={(id) => setPendingImages((prev) => prev.filter((a) => a.id !== id))} docs={pendingDocs} onRemoveDoc={(key) => setPendingDocs((prev) => prev.filter((d) => d.key !== key))} onRetryDoc={retryPendingDoc} documents={documentMode} onDocumentsChange={setDocumentMode} />
                 {!projectId && projects.length === 0 && (
                   <p className="mt-2 text-center text-xs text-faint">
                     You're not a member of any project yet — ask an admin to add you to one.
@@ -817,7 +831,7 @@ export function ChatPage({
                   onAttach={handleAttach}
                   onRemoveAttachment={(id) => setPendingImages((prev) => prev.filter((a) => a.id !== id))}
                   docs={pendingDocs}
-                  onRemoveDoc={(key) => setPendingDocs((prev) => prev.filter((d) => d.key !== key))}
+                  onRemoveDoc={(key) => setPendingDocs((prev) => prev.filter((d) => d.key !== key))} onRetryDoc={retryPendingDoc}
                   documents={documentMode}
                   onDocumentsChange={setDocumentMode}
                 />

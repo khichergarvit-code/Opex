@@ -34,5 +34,5 @@ eval/.gen-venv/
 scripts/spikes/results/.scratch/
 
 # downloaded native tool binaries (llama.cpp, stable-diffusion.cpp)
-tools/
+/tools/
 models/*.safetensors
