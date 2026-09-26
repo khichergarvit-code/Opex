@@ -13,6 +13,9 @@ import {
   stopConversation,
   submitFeedback,
   uploadAttachment,
+  uploadDocument,
+  fetchDocument,
+  type PendingDoc,
   type MessageAttachment,
   type ChatModelOption,
   type ConversationSummary,
@@ -75,6 +78,7 @@ export function ChatPage({
   const [elapsedMs, setElapsedMs] = useState(0);
   const [pendingImages, setPendingImages] = useState<MessageAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [pendingDocs, setPendingDocs] = useState<PendingDoc[]>([]);
   const [progress, setProgress] = useState<string | null>(null);
   const [chatModels, setChatModels] = useState<ChatModelOption[]>([]);
   const [modelId, setModelId] = useState<string>(() => {
@@ -207,7 +211,7 @@ export function ChatPage({
       if (settled || cancelled) return;
       // The server keeps generating after the browser leaves, then saves the
       // answer — poll until it lands.
-      setStatus('OpeX is still working on your last message…');
+      setStatus('OpeX is still answering in the background…');
       let tries = 0;
       pollRef.current = setInterval(() => {
         tries += 1;
@@ -267,8 +271,13 @@ export function ChatPage({
     );
   }
 
-  async function handleAttach(files: File[]) {
+  async function handleAttach(all: File[]) {
     if (!projectId) return;
+    const isImage = (f: File) => ['image/png', 'image/jpeg', 'image/webp'].includes(f.type);
+    const docFiles = all.filter((f) => !isImage(f));
+    const files = all.filter(isImage);
+    if (docFiles.length > 0) void attachDocuments(docFiles);
+    if (files.length === 0) return;
     const allowed = files.filter((f) => ['image/png', 'image/jpeg', 'image/webp'].includes(f.type) && f.size <= 8 * 1024 * 1024);
     if (allowed.length < files.length) setStatus('Only PNG, JPEG or WebP images up to 8 MB can be attached.');
     const room = 4 - pendingImages.length;
@@ -287,8 +296,47 @@ export function ChatPage({
     }
   }
 
+  /** PDFs and other documents go through normal ingest and become project documents; send waits until they are readable. */
+  async function attachDocuments(files: File[]) {
+    if (!projectId) return;
+    for (const file of files) {
+      const key = crypto.randomUUID();
+      if (file.size > 20 * 1024 * 1024) {
+        setPendingDocs((prev) => [...prev, { key, id: null, name: file.name, status: 'failed', error: 'larger than 20 MB' }]);
+        continue;
+      }
+      setPendingDocs((prev) => [...prev, { key, id: null, name: file.name, status: 'queued' }]);
+      try {
+        const doc = await uploadDocument(projectId, file);
+        setPendingDocs((prev) => prev.map((d) => (d.key === key ? { ...d, id: doc.id, status: doc.status } : d)));
+      } catch (err) {
+        const error = err instanceof Error ? err.message : 'upload failed';
+        setPendingDocs((prev) => prev.map((d) => (d.key === key ? { ...d, status: 'failed', error } : d)));
+      }
+    }
+  }
+
+  // Poll documents still being read until they are ready or failed.
+  const docsBusy = pendingDocs.some((d) => d.status !== 'ready' && d.status !== 'failed');
+  useEffect(() => {
+    if (!docsBusy) return;
+    const timer = setInterval(() => {
+      pendingDocs
+        .filter((d) => d.id && d.status !== 'ready' && d.status !== 'failed')
+        .forEach((d) => {
+          fetchDocument(d.id!)
+            .then((doc) => setPendingDocs((prev) => prev.map((x) => (x.key === d.key ? { ...x, status: doc.status, error: doc.errorMessage ?? undefined } : x))))
+            .catch(() => {});
+        });
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [docsBusy, pendingDocs]);
+
   function handleSend(content: string) {
-    return runTurn(content);
+    // Attached documents: answer from documents for this turn, and clear the chips.
+    if (pendingDocs.some((d) => d.status === 'ready')) setDocumentMode('on');
+    setPendingDocs([]);
+    return runTurn(content, undefined, pendingDocs.some((d) => d.status === 'ready'));
   }
 
   /** Edit: drop the message and everything after it, then re-run with the new text. */
@@ -311,6 +359,7 @@ export function ChatPage({
   async function runTurn(
     content: string,
     replace?: { replaceFromMessageId: string; keepBefore: number; attachments?: MessageAttachment[] },
+    forceDocuments = false,
   ) {
     if (!projectId) return;
     const convId = await ensureConversation();
@@ -354,13 +403,8 @@ export function ChatPage({
               setArtifacts((prev) => [...prev, ...newArtifacts]);
               // Show created images inline in the answer (non-images are hidden by the <img> error handler).
               if (event.data.status === 'ok') {
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantIdRef.current
-                      ? { ...m, attachments: [...(m.attachments ?? []), ...event.data.artifactIds.map((id) => ({ id, filename: 'generated image', mime: 'image/png' }))] }
-                      : m,
-                  ),
-                );
+                const made = event.data.artifacts ?? event.data.artifactIds.map((id) => ({ id, filename: 'result', mime: 'image/png' }));
+                setMessages((prev) => prev.map((m) => (m.id === assistantIdRef.current ? { ...m, attachments: [...(m.attachments ?? []), ...made] } : m)));
               }
             }
           }
@@ -461,7 +505,7 @@ export function ChatPage({
       controller.signal,
       modelId || undefined,
       sentImages.map((a) => a.id),
-      { documents: documentMode, replaceFromMessageId: replace?.replaceFromMessageId },
+      { documents: forceDocuments ? 'on' : documentMode, replaceFromMessageId: replace?.replaceFromMessageId },
     );
     // Aborted by the user clicking Stop — streamMessage resolves normally
     // (fetch-event-source's own abort path, not onError), so finalize here.
@@ -485,7 +529,7 @@ export function ChatPage({
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantIdRef.current
-              ? { ...m, content: result.answer ?? m.content, id: result.messageId ?? m.id }
+              ? { ...m, content: result.answer ?? m.content, id: result.messageId ?? m.id, attachments: result.attachments ?? m.attachments }
               : m,
           ),
         );
@@ -678,7 +722,7 @@ export function ChatPage({
                   <Alert className="mb-2">The chat model isn't running right now. If it is starting, wait a minute; otherwise start it (see RUNNER.md).</Alert>
                 )}
                 {status && <Alert className="mb-2">{status}</Alert>}
-                <Composer disabled={!projectId} onSend={handleSend} models={chatModels} modelId={modelId} onModelChange={changeModel} attachments={pendingImages} uploading={uploading} onAttach={handleAttach} onRemoveAttachment={(id) => setPendingImages((prev) => prev.filter((a) => a.id !== id))} documents={documentMode} onDocumentsChange={setDocumentMode} />
+                <Composer disabled={!projectId} onSend={handleSend} models={chatModels} modelId={modelId} onModelChange={changeModel} attachments={pendingImages} uploading={uploading} onAttach={handleAttach} onRemoveAttachment={(id) => setPendingImages((prev) => prev.filter((a) => a.id !== id))} docs={pendingDocs} onRemoveDoc={(key) => setPendingDocs((prev) => prev.filter((d) => d.key !== key))} documents={documentMode} onDocumentsChange={setDocumentMode} />
                 {!projectId && projects.length === 0 && (
                   <p className="mt-2 text-center text-xs text-faint">
                     You're not a member of any project yet — ask an admin to add you to one.
@@ -772,6 +816,8 @@ export function ChatPage({
                   uploading={uploading}
                   onAttach={handleAttach}
                   onRemoveAttachment={(id) => setPendingImages((prev) => prev.filter((a) => a.id !== id))}
+                  docs={pendingDocs}
+                  onRemoveDoc={(key) => setPendingDocs((prev) => prev.filter((d) => d.key !== key))}
                   documents={documentMode}
                   onDocumentsChange={setDocumentMode}
                 />

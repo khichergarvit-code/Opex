@@ -8,6 +8,7 @@ import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { ChatPage } from './pages/ChatPage';
 import { DocumentsPage } from './pages/DocumentsPage';
+import { WorkspacePage } from './pages/WorkspacePage';
 import { DocumentViewerPage } from './pages/DocumentViewerPage';
 import { AdminLayout, type AdminSection } from './pages/admin/AdminLayout';
 import { MyMemoriesPanel } from './components/MyMemoriesPanel';
@@ -122,6 +123,25 @@ export function App() {
         target={{ documentId: route.documentId, page: route.page, bbox: route.bbox }}
         onBack={() => (window.history.length > 1 ? window.history.back() : navigate({ name: 'documents' }))}
       />,
+    );
+  }
+
+  if (route.name === 'workspace') {
+    return shell(
+      'workspace',
+      activeProject ? (
+        <WorkspacePage
+          project={activeProject}
+          projects={allProjects}
+          isAdmin={ADMIN_ROLES.has(user.role)}
+          onProjectChange={(id) => {
+            storeProjectId(id);
+            setActiveProject(allProjects.find((p) => p.id === id) ?? activeProject);
+          }}
+        />
+      ) : (
+        <Skeleton className="p-6" />
+      ),
     );
   }
 

@@ -22,6 +22,8 @@ export interface ToolResult {
   ok: boolean;
   summary: string;
   artifactIds: string[];
+  /** Name and type of each artifact created, so the chat can show images inline and files as downloads. */
+  artifacts?: Array<{ id: string; filename: string; mime: string }>;
 }
 
 export interface ToolDefinition {

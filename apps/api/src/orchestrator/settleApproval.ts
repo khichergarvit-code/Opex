@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { approvals, messages, traces } from '../db/schema/index.js';
+import { approvals, artifacts, messages, traces } from '../db/schema/index.js';
 import type { ModelGateway, SpanWriter } from '../models/gateway.js';
 import { parseExecutorCheckpoint, resumeExecutor, type ExecutorOutcome } from './executor.js';
 
@@ -25,6 +25,8 @@ export interface SettleApprovalResult {
   status: ExecutorOutcome['status'] | 'error';
   messageId?: string;
   answer?: string;
+  /** Files/images the resumed tool call created, shown with the answer. */
+  attachments?: Array<{ id: string; filename: string; mime: string }>;
   /** Set only when status is 'approval_required' — a NEW, nested approval. */
   approvalId?: string;
 }
@@ -65,10 +67,14 @@ export async function settleApproval(
     return { status: 'approval_required', approvalId: outcome.approvalId };
   }
 
+  const attachments = await deps.db
+    .select({ id: artifacts.id, filename: artifacts.filename, mime: artifacts.mime })
+    .from(artifacts)
+    .where(eq(artifacts.traceId, row.traceId));
   const [assistantRow] = await deps.db
     .insert(messages)
-    .values({ conversationId: row.conversationId, role: 'assistant', content: outcome.answer, traceId: row.traceId, citations: [] })
+    .values({ conversationId: row.conversationId, role: 'assistant', content: outcome.answer, traceId: row.traceId, citations: [], attachments })
     .returning();
   await deps.db.update(traces).set({ status: 'ok', endedAt: new Date() }).where(eq(traces.id, row.traceId));
-  return { status: 'ok', messageId: assistantRow?.id, answer: outcome.answer };
+  return { status: 'ok', messageId: assistantRow?.id, answer: outcome.answer, attachments };
 }

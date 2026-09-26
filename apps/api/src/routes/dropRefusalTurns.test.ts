@@ -12,3 +12,14 @@ describe('dropRefusalTurns', () => {
     expect(dropRefusalTurns(turns)).toEqual(turns.slice(0, 2));
   });
 });
+
+describe('time refusals', () => {
+  it('drops an old "I can\'t check the time" answer and its question', () => {
+    const out = dropRefusalTurns([
+      { role: 'user', content: 'what is time now' },
+      { role: 'assistant', content: "I can’t access real-time data or check the current time." },
+      { role: 'user', content: 'hi' },
+    ]);
+    expect(out).toEqual([{ role: 'user', content: 'hi' }]);
+  });
+});

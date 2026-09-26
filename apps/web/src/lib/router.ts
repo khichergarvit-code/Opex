@@ -10,7 +10,8 @@ export type Route =
   | { name: 'documents' }
   | { name: 'viewer'; documentId: string; page?: number; bbox?: Bbox }
   | { name: 'admin'; section: AdminSectionKey }
-  | { name: 'memories' };
+  | { name: 'memories' }
+  | { name: 'workspace' };
 
 // Hash routing, not history mode: paths like /documents, /admin and /memory
 // are proxied to the API, so a hard refresh on them would never reach the SPA.
@@ -30,6 +31,8 @@ export function parseHash(hash: string): Route {
       return { name: 'documents' };
     case 'memories':
       return { name: 'memories' };
+    case 'workspace':
+      return { name: 'workspace' };
     case 'admin':
       return { name: 'admin', section: parts[1] ?? 'traces' };
     case 'viewer': {
@@ -60,6 +63,8 @@ export function routeToHash(route: Route): string {
       return '#/documents';
     case 'memories':
       return '#/memories';
+    case 'workspace':
+      return '#/workspace';
     case 'admin':
       return `#/admin/${route.section}`;
     case 'viewer': {

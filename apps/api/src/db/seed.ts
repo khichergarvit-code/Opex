@@ -58,6 +58,14 @@ const SEED_AGENTS = [
     toolAllowlist: ['generate_image'],
   },
   {
+    name: 'files',
+    description: "Creates, reads, edits, moves and deletes text files in the project's workspace; can read the user's saved memories. Changes always ask first.",
+    systemPromptTemplate: 'files-system.md',
+    modelRole: 'general' as const,
+    toolAllowlist: ['list_files', 'read_file', 'read_memories', 'write_file', 'edit_file', 'delete_file', 'move_file', 'create_folder', 'run_shell'],
+    requiresApprovalTools: ['write_file', 'edit_file', 'delete_file', 'move_file', 'create_folder', 'run_shell'],
+  },
+  {
     name: 'research',
     description: 'Answers multi-document, cross-referencing questions using document search and memory.',
     systemPromptTemplate: 'research-system.md',

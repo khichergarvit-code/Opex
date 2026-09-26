@@ -8,12 +8,7 @@ Documents mode (Auto/Always/Never), edit/regenerate/copy, document
 summarise (map-reduce, ACL in SQL), and a two-model stack (one VLM for
 chat/vision/routing + bge-m3) with every role's URL set in `.env`.
 
-**Memory layer reworked:** extraction reads only the user's own messages,
-runs immediately for self-statements (`memory_saved` event + Forget), always
-recalls the user's profile facts, supersedes contradicted facts, retries on
-model failure, and a user's facts are private, user-scope and recalled in every
-chat and space (team-wide facts also stored project-scope). Interrupted turns
-are closed at boot. Old auto-extracted rows are unchanged (offer to purge).
+**Memory layer reworked** (user-turn-only extraction, immediate learning, always-on recall): see `docs/archive/b2-b4.md`.
 
 **M1 (speed/Stop/context) done:** Stop now cancels every phase (signal through
 routing, memory, fold; `POST /conversations/:id/stop`; ended a live run in 1 s);
@@ -28,6 +23,12 @@ switch, image generation (`image` role/agent/`generate_image`, DreamShaper 8 LCM
 unused models + build cache removed (~18 GB). Bug list `bugs-runner.md`: unlike toggle,
 traces filter, feedback text, sortable tables, models toggle/order, memory admin TTL,
 history search/delete/clear, dates, emoji/dashed boxes fixed; more UI items open.
+
+**Files + terminal (this pass):** `files` agent with workspace tools (write/edit/move/delete/
+read/list, `read_memories`), sandboxed `run_shell`; every change or command asks first (approval
+card shows name/content/command); created files show as download chips; artifacts are now
+creator-or-admin only (was any project member); admin **Files** page (uploads, generated,
+workspace; download/delete audited). Small models paste instead of calling tools: executor nudges once.
 
 ## Decisions
 - **Invariant 3 narrowed, by the user's decision (2026-09-25):** a role's URL

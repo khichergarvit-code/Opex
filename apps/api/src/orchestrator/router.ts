@@ -66,6 +66,11 @@ export interface RouteInput {
 
 const IMAGE_REQUEST =
   /^\/image\b|\b(draw|generate|create|make|paint|render|design|produce|sketch)\b.{0,40}\b(image|picture|photo|illustration|drawing|logo|poster|artwork|painting|sketch|icon|wallpaper)\b/i;
+// "create/save/write/delete/list ... file(s)" or a named file such as notes.txt: goes to the files agent.
+const FILE_REQUEST =
+  /\b(crea\w*|generat\w*|mak\w*|writ\w*|sav\w*|produc\w*|export|add|new|delet\w*|remov\w*|renam\w*|mov\w*|edit|append|list|show|read|open|mkdir)\b.{0,60}\b(files?|folders?|director(y|ies)|workspace|[\w-]+\.(txt|md|csv|json|log|py|html|yaml|yml|xml|tsv))\b|^\s*mkdir\b/i;
+const SHELL_REQUEST = /^\s*\/shell\b|\b(run|execute|use)\b.{0,40}\b(command|shell|terminal|bash)\b|\bin (the|a) (terminal|shell)\b/i;
+const TIME_REQUEST = /\b(what('?s| is)?|tell me|give me|current)\b.{0,25}\b(time|date|day|month|year)\b|\bwhat time is it\b|\btoday'?s date\b/i;
 const GREETING = /^(hi|hello|hey|yo|thanks|thank you|thx|ok|okay|cool|great|nice|bye|good (morning|afternoon|evening|night))\b[\s!.,?]*$/i;
 // Words that suggest tools, files, code or a multi-step job: those go to the classifier.
 const NEEDS_TOOLS_OR_STEPS =
@@ -109,6 +114,15 @@ function ruleBasedRoute(input: RouteInput): RouteDecision | null {
       reason: '/code forces the code agent',
     };
   }
+  if ((FILE_REQUEST.test(trimmed) || SHELL_REQUEST.test(trimmed)) && !IMAGE_REQUEST.test(trimmed)) {
+    return {
+      taskType: 'files',
+      complexity: 'simple',
+      agent: 'files',
+      needs: { documents: false, memory: ['semantic'], tools: ['write_file', 'read_file', 'list_files', 'create_folder', 'read_memories', 'run_shell'] },
+      reason: 'you asked to work with a file',
+    };
+  }
   if (IMAGE_REQUEST.test(trimmed)) {
     return {
       taskType: 'image',
@@ -116,6 +130,15 @@ function ruleBasedRoute(input: RouteInput): RouteDecision | null {
       agent: 'image',
       needs: { documents: false, memory: [], tools: ['generate_image'] },
       reason: 'you asked for a new image to be created',
+    };
+  }
+  if (TIME_REQUEST.test(trimmed) && trimmed.split(/\s+/).length <= 12 && !FILE_REQUEST.test(trimmed)) {
+    return {
+      taskType: 'chat',
+      complexity: 'simple',
+      agent: 'general',
+      needs: { documents: false, memory: [], tools: [] },
+      reason: 'a question about the current time or date',
     };
   }
   // Plain chat needs no classifier call: on a CPU-only stack every router call costs several seconds.

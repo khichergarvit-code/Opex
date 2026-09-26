@@ -1,5 +1,5 @@
 import { useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from 'react';
-import type { ChatModelOption, MessageAttachment } from '../lib/api';
+import type { ChatModelOption, MessageAttachment, PendingDoc } from '../lib/api';
 import { Icon } from './ui/Icon';
 import { shortModelName } from '../lib/format';
 
@@ -15,6 +15,8 @@ export function Composer({
   uploading = false,
   onAttach,
   onRemoveAttachment,
+  docs = [],
+  onRemoveDoc,
   documents,
   onDocumentsChange,
 }: {
@@ -30,17 +32,21 @@ export function Composer({
   uploading?: boolean;
   onAttach?: (files: File[]) => void;
   onRemoveAttachment?: (id: string) => void;
+  /** Documents (PDF etc.) being read for this message. */
+  docs?: PendingDoc[];
+  onRemoveDoc?: (key: string) => void;
   documents?: 'auto' | 'on' | 'off';
   onDocumentsChange?: (mode: 'auto' | 'on' | 'off') => void;
 }) {
+  const docsBusy = docs.some((d) => d.status !== 'ready' && d.status !== 'failed');
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const [dragging, setDragging] = useState(false);
   const [value, setValue] = useState('');
 
   function submit() {
-    if ((!value.trim() && attachments.length === 0) || disabled || streaming || uploading) return;
-    onSend(value.trim() || 'Describe this image.');
+    if ((!value.trim() && attachments.length === 0) || disabled || streaming || uploading || docsBusy) return;
+    onSend(value.trim() || (attachments.length === 0 && docs.length > 0 ? 'Summarise this document.' : 'Describe this image.'));
     setValue('');
     if (taRef.current) taRef.current.style.height = 'auto';
   }
@@ -70,13 +76,13 @@ export function Composer({
   function handleDrop(e: DragEvent<HTMLFormElement>) {
     e.preventDefault();
     setDragging(false);
-    const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith('image/'));
+    const files = [...e.dataTransfer.files];
     if (files.length > 0 && onAttach) onAttach(files);
   }
 
   const chip =
     'appearance-none rounded-full border border-line bg-canvas py-1.5 pl-3 pr-7 text-xs text-fg-2 outline-none transition-colors hover:border-accent-300 focus-visible:border-accent-400 disabled:opacity-50';
-  const canSend = !disabled && !streaming && !uploading && (value.trim() !== '' || attachments.length > 0);
+  const canSend = !disabled && !streaming && !uploading && !docsBusy && (value.trim() !== '' || attachments.length > 0 || docs.some((d) => d.status === 'ready'));
   return (
     <form
       onDragOver={(e) => { e.preventDefault(); if (onAttach) setDragging(true); }}
@@ -85,6 +91,24 @@ export function Composer({
       onSubmit={handleSubmit}
       className={`flex flex-col gap-2 rounded-[28px] border ${dragging ? 'border-accent-500 bg-accent-50' : 'border-line bg-surface'} px-4 pb-3 pt-3 shadow-card transition-[border-color,box-shadow] duration-200 focus-within:border-accent-400 focus-within:ring-4 focus-within:ring-accent-100`}
     >
+      {docs.length > 0 && (
+        <div className="flex w-full flex-wrap gap-2">
+          {docs.map((d) => (
+            <span key={d.key} className="inline-flex max-w-full items-center gap-2 rounded-2xl border border-line bg-canvas px-3 py-2 text-sm text-fg">
+              <Icon name="file" className="h-4 w-4 shrink-0 text-accent-600" />
+              <span className="max-w-[14rem] truncate">{d.name}</span>
+              <span className={`text-xs ${d.status === 'failed' ? 'text-danger-700' : 'text-muted'}`}>
+                {d.status === 'ready' ? 'Ready' : d.status === 'failed' ? `Failed${d.error ? `: ${d.error}` : ''}` : 'Reading…'}
+              </span>
+              {onRemoveDoc && (
+                <button type="button" aria-label={`Remove ${d.name}`} onClick={() => onRemoveDoc(d.key)} className="grid h-5 w-5 place-items-center rounded-full text-muted hover:bg-raised">
+                  <Icon name="close" className="h-3 w-3" />
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
       {(attachments.length > 0 || uploading) && (
         <div className="flex w-full flex-wrap gap-2">
           {attachments.map((a) => (
@@ -129,7 +153,7 @@ export function Composer({
             <input
               ref={fileRef}
               type="file"
-              accept="image/png,image/jpeg,image/webp"
+              accept="image/png,image/jpeg,image/webp,.pdf,.docx,.pptx,.xlsx,.csv,.html"
               multiple
               className="sr-only"
               tabIndex={-1}
@@ -141,8 +165,8 @@ export function Composer({
             />
             <button
               type="button"
-              aria-label="Attach an image"
-              title="Attach an image (PNG, JPEG or WebP). You can also paste or drop one."
+              aria-label="Attach an image or document"
+              title="Attach an image (PNG, JPEG, WebP) or a document (PDF, DOCX, PPTX, XLSX, CSV, HTML). Documents are saved to the project. You can also drop files here."
               disabled={disabled || uploading}
               onClick={() => fileRef.current?.click()}
               className="grid h-9 w-9 place-items-center rounded-full text-fg-2 transition-colors hover:bg-accent-100 hover:text-accent-700 disabled:opacity-50"

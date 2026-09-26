@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   ApiError,
+  adminDeleteConversation,
   fetchAdminConversationMessages,
   fetchAdminConversations,
   type AdminConversationRow,
@@ -11,6 +12,8 @@ import { Card } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { Alert } from '../../components/ui/Alert';
+import { Button } from '../../components/ui/Button';
+import { formatDateTime, formatFullDateTime } from '../../lib/format';
 
 export function ConversationViewerPage({ onBack: _onBack }: { onBack: () => void }) {
   const [conversations, setConversations] = useState<AdminConversationRow[]>([]);
@@ -60,7 +63,9 @@ export function ConversationViewerPage({ onBack: _onBack }: { onBack: () => void
                   className={`cursor-pointer border-b border-line last:border-0 ${selected === c.id ? 'bg-accent-50' : 'hover:bg-raised'}`}
                 >
                   <td className="px-3 py-2">{c.userEmail}</td>
-                  <td className="px-3 py-2 text-muted">{c.updatedAt}</td>
+                  <td className="px-3 py-2 text-muted" title={formatFullDateTime(c.updatedAt)}>
+                    {formatDateTime(c.updatedAt)}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -68,6 +73,27 @@ export function ConversationViewerPage({ onBack: _onBack }: { onBack: () => void
         </Card>
 
         <div className="flex w-1/2 flex-col gap-2">
+          {selected && (
+            <div className="flex items-center justify-between rounded-2xl bg-raised/60 px-3 py-2 text-sm">
+              <span className="text-muted">Deleting removes the chat for its owner too. Memories learned from it are kept.</span>
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={() => {
+                  if (!window.confirm('Delete this conversation permanently? This is recorded in the audit log.')) return;
+                  adminDeleteConversation(selected)
+                    .then(() => {
+                      setConversations((prev) => prev.filter((c) => c.id !== selected));
+                      setSelected(null);
+                      setMessages([]);
+                    })
+                    .catch((err) => setError(err instanceof ApiError ? err.message : 'failed to delete'));
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+          )}
           {messages.map((m) => (
             <div
               key={m.id}

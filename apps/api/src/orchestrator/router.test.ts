@@ -82,7 +82,7 @@ describe('route() — fast rules that skip the classifier', () => {
   it('still classifies with the model when documents exist or tool words appear', async () => {
     const chat = vi.fn().mockRejectedValue(new Error('x'));
     await route({ ...base, gateway: { chat } as never, message: 'explain how a heat exchanger works', hasReadyDocuments: true });
-    await route({ ...base, gateway: { chat } as never, message: 'create a file with the results', hasReadyDocuments: false });
+    await route({ ...base, gateway: { chat } as never, message: 'analyze the results and then plot them', hasReadyDocuments: false });
     expect(chat).toHaveBeenCalledTimes(2);
   });
   it('does not call the model once the run was stopped', async () => {
@@ -90,6 +90,40 @@ describe('route() — fast rules that skip the classifier', () => {
     const ctl = new AbortController();
     ctl.abort();
     await route({ ...base, gateway: { chat } as never, message: 'flange bolt spec', hasReadyDocuments: true, signal: ctl.signal });
+    expect(chat).not.toHaveBeenCalled();
+  });
+});
+
+describe('route() — file requests', () => {
+  const base = { attachments: [], user: user(), traceId: 't1', hasReadyDocuments: true };
+  it.each([
+    'can you generate a docs file with all the context of this memory name context-chat-memory.txt',
+    'create a file called notes.md',
+    'save this as report.csv',
+    'delete the file old.txt',
+    'list the files in my workspace',
+    'creare a folder',
+    'make a folder called reports',
+    'run the command wc -l notes.txt',
+    'execute a bash command in the terminal to count lines',
+  ])('routes "%s" to the files agent without a model call', async (message) => {
+    const chat = vi.fn();
+    const d = await route({ ...base, gateway: { chat } as never, message });
+    expect(d.agent).toBe('files');
+    expect(chat).not.toHaveBeenCalled();
+  });
+  it('still sends image requests and ordinary questions elsewhere', async () => {
+    const chat = vi.fn().mockRejectedValue(new Error('x'));
+    expect((await route({ ...base, gateway: { chat } as never, message: 'draw a picture of a pump' })).agent).toBe('image');
+    expect((await route({ ...base, gateway: { chat } as never, message: 'what does the manual say about file transfers?' })).agent).not.toBe('files');
+  });
+});
+
+describe('route() — time questions', () => {
+  it.each(['what is time now', 'tell me current time in ist', "what's the date today", 'what time is it'])('answers "%s" as plain chat without a model call', async (message) => {
+    const chat = vi.fn();
+    const d = await route({ attachments: [], user: user(), traceId: 't1', hasReadyDocuments: true, gateway: { chat } as never, message });
+    expect(d.agent).toBe('general');
     expect(chat).not.toHaveBeenCalled();
   });
 });

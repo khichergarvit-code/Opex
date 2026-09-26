@@ -106,7 +106,8 @@ async function preflight(modelsDir: string, neededBytes: number): Promise<void> 
   }
   const meminfo = await readFile('/proc/meminfo', 'utf8').catch(() => '');
   const kb = Number(/MemTotal:\s+(\d+)/.exec(meminfo)?.[1] ?? 0);
-  if (kb > 0 && kb * 1024 < 9.5 * GB) {
+  // Only the bundled CPU model needs the memory; a natively served (GPU) model has LLM_MAIN_URL set.
+  if (!process.env.LLM_MAIN_URL?.trim() && kb > 0 && kb * 1024 < 9.5 * GB) {
     console.warn(
       `WARNING: Docker has ${((kb * 1024) / GB).toFixed(1)} GB of memory. The chat model needs about 10 GB — raise it in Docker Desktop (Settings > Resources) or WSL2's .wslconfig, or the model container will be killed.`,
     );
@@ -120,6 +121,7 @@ async function main() {
   const { items, missingUrl } = planDownloads(await loadManifest(manifestPath), await loadDownloads(manifestPath));
   for (const f of missingUrl) console.warn(`[skip] ${f}: no source_url/sha256 in the manifest — provide the file manually.`);
 
+  console.log(`Model tier: ${process.env.LLM_TIER?.trim() || 'small'}. Files needed: ${items.map((i) => i.file).join(', ')}`);
   const todo: DownloadItem[] = [];
   for (const item of items) {
     const dest = path.join(modelsDir, item.file);

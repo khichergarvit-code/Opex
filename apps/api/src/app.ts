@@ -12,6 +12,8 @@ import { createConversationsRouter } from './routes/conversations.js';
 import { createDocumentsRouter } from './routes/documents.js';
 import { createRetrievalRouter } from './routes/retrieval.js';
 import { createAdminRouter } from './routes/admin.js';
+import { createAdminFilesRouter } from './routes/adminFiles.js';
+import { createWorkspaceRouter } from './routes/workspace.js';
 import { createArtifactsRouter } from './routes/artifacts.js';
 import { createAttachmentsRouter } from './routes/attachments.js';
 import { createRouterDebugRouter } from './routes/routerDebug.js';
@@ -48,6 +50,8 @@ export function createApp(db: Db, env: Env): Express {
   app.use(createDocumentsRouter(db, env.DATA_DIR));
   app.use(createRetrievalRouter(db, gateway, spanWriter));
   app.use(createAdminRouter(db, auditWriter));
+  app.use(createAdminFilesRouter(db, auditWriter, env.DATA_DIR));
+  app.use(createWorkspaceRouter(db, auditWriter, env.DATA_DIR));
   app.use(createArtifactsRouter(db, env.DATA_DIR));
   app.use(createAttachmentsRouter(db, env.DATA_DIR));
   app.use(createRouterDebugRouter(db, gateway));

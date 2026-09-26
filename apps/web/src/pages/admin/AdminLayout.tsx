@@ -13,6 +13,7 @@ import { PoliciesPage } from './PoliciesPage';
 import { AgentsPage } from './AgentsPage';
 import { MemoryPage } from './MemoryPage';
 import { FeedbackPage } from './FeedbackPage';
+import { FilesPage } from './FilesPage';
 import { SystemPage } from './SystemPage';
 
 export type AdminSection =
@@ -22,6 +23,7 @@ export type AdminSection =
   | 'groups'
   | 'access-requests'
   | 'approvals'
+  | 'files'
   | 'conversations'
   | 'audit-log'
   | 'models'
@@ -57,6 +59,7 @@ export function AdminLayout({
         {section === 'groups' && <GroupsPage onBack={onBack} />}
         {section === 'access-requests' && <AccessRequestsPage onBack={onBack} />}
         {section === 'approvals' && <ApprovalsPage onBack={onBack} />}
+        {section === 'files' && <FilesPage onBack={onBack} />}
         {section === 'conversations' && <ConversationViewerPage onBack={onBack} />}
         {section === 'audit-log' && <AuditLogPage onBack={onBack} />}
         {section === 'models' && <ModelsPage onBack={onBack} />}

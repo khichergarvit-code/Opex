@@ -71,6 +71,21 @@ interface LoopState {
   messages: ChatMessage[];
   iteration: number;
   toolCallCount: number;
+  /** Set once the model has been told to use the file tool instead of pasting content into the chat. */
+  nudged?: boolean;
+}
+
+const CREATE_FILE_INTENT = /\b(create|generate|make|write|save|produce|export)\b.{0,80}\b(files?|[\w-]+\.(txt|md|csv|json|log|py|html|yaml|yml|xml|tsv))\b/i;
+
+/**
+ * Small models often paste a file's content into the chat instead of calling write_file. When the user asked
+ * for a file and no write_file call happened, the loop asks once more, explicitly, for the tool call.
+ */
+function shouldNudgeToWriteFile(agent: AgentConfig, state: LoopState): boolean {
+  if (state.nudged || !agent.toolAllowlist.includes('write_file')) return false;
+  const request = [...state.messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+  if (!CREATE_FILE_INTENT.test(request)) return false;
+  return !state.messages.some((m) => m.tool_calls?.some((c) => c.function.name === 'write_file'));
 }
 
 interface LoopCtx {
@@ -385,6 +400,18 @@ async function continueLoop(
       traceId: ctx.traceId,
     });
 
+    if (result.toolCalls.length === 0 && shouldNudgeToWriteFile(ctx.agent, state)) {
+      state.nudged = true;
+      if (streamedThisTurn) callbacks.onDraftReset?.();
+      state.messages.push({ role: 'assistant', content: result.content });
+      state.messages.push({
+        role: 'user',
+        content:
+          'You did not create the file. Call the write_file tool now with the file name the user asked for and the full content. Do not paste the content into the chat.',
+      });
+      state.iteration++;
+      continue;
+    }
     if (result.toolCalls.length === 0) {
       return { status: 'ok', answer: result.content, toolCallCount: state.toolCallCount, hitIterationLimit: false };
     }

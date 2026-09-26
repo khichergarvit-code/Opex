@@ -1,0 +1,18 @@
+# Linux + NVIDIA only: run the chat model in a container on the GPU (needs the NVIDIA Container Toolkit).
+# macOS and Windows: Docker cannot reach the GPU there; use scripts/run-native-llama.* instead (see RUNNER.md).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile docker-gpu up -d
+# Leave COMPOSE_PROFILES empty and the LLM_*_URL variables empty in .env (this service is called llm-main).
+services:
+  llm-main:
+    profiles: ["docker-gpu"]
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    mem_limit: 8g
+    command: ["-m", "/models/${LLM_MODEL_FILE:-Qwen3VL-4B-Instruct-Q4_K_M.gguf}", "--mmproj", "/models/${LLM_MMPROJ_FILE:-mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf}", "--host", "0.0.0.0", "--port", "8082", "-c", "${LLM_CTX_LEN:-8192}", "-np", "1", "--cache-reuse", "256", "--jinja", "-ngl", "99"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

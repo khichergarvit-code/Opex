@@ -39,4 +39,4 @@ cat <<MSG
 Starting the image server on port $PORT.
 Add this line to .env, then restart the API:   LLM_IMAGE_URL=http://host.docker.internal:$PORT
 MSG
-exec "$SD" -m "$MODEL" --listen-ip 0.0.0.0 --listen-port "$PORT" --steps 4 --cfg-scale 1.5 --sampling-method lcm --diffusion-fa
+exec "$SD" -m "$MODEL" --listen-ip "${HOST:-127.0.0.1}" --listen-port "$PORT" --steps 4 --cfg-scale 1.5 --sampling-method lcm --diffusion-fa

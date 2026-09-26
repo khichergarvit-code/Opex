@@ -16,6 +16,13 @@ export function createArtifactsRouter(db: Db, dataDir: string): Router {
       res.status(404).json({ error: 'not found' });
       return;
     }
+    // Artifacts come out of one person's private conversation (their memories, files, images). Only the creator or
+    // an administrator may open them, even when another user shares the project.
+    const isAdmin = user.role === 'super_admin' || user.role === 'workspace_admin';
+    if (artifact.createdBy !== user.id && !isAdmin) {
+      res.status(403).json({ error: 'this file belongs to another user' });
+      return;
+    }
     const [membership] = await db
       .select()
       .from(projectMembers)

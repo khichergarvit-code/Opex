@@ -20,6 +20,7 @@ const ADMIN_SECTION: Array<{ key: string; label: string; icon: IconName }> = [
   { key: 'groups', label: 'Groups', icon: 'users' },
   { key: 'access-requests', label: 'Access requests', icon: 'inbox' },
   { key: 'approvals', label: 'Approvals', icon: 'check' },
+  { key: 'files', label: 'Files', icon: 'file' },
   { key: 'audit-log', label: 'Audit log', icon: 'list' },
   { key: 'traces', label: 'Traces', icon: 'pulse' },
   { key: 'usage', label: 'Usage', icon: 'coins' },
@@ -90,6 +91,7 @@ export function AppShell({
       navigate({ name: 'chat', conversationId: last ?? undefined });
     }
     else if (key === 'documents') navigate({ name: 'documents' });
+    else if (key === 'workspace') navigate({ name: 'workspace' });
     else if (key === 'my-memories') navigate({ name: 'memories' });
     else navigate({ name: 'admin', section: key });
   }
@@ -130,6 +132,7 @@ export function AppShell({
         <SidebarSection>
           {item('chat', 'Chat', 'chat')}
           {item('documents', 'Documents', 'file')}
+          {item('workspace', 'My files', 'layers')}
         </SidebarSection>
 
         {recent.length > 0 && (
@@ -151,11 +154,11 @@ export function AppShell({
         {isAdmin && (
           <>
             <SidebarSection label="AI tools">{AI_TOOLS_SECTION.map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
-            <SidebarSection label="Administration">{ADMIN_SECTION.slice(0, 4).map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
-            <SidebarSection label="Monitoring">{ADMIN_SECTION.slice(4, 8).map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
+            <SidebarSection label="Administration">{ADMIN_SECTION.slice(0, 5).map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
+            <SidebarSection label="Monitoring">{ADMIN_SECTION.slice(5, 9).map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
             {/* The last three get a darker panel so they read as a separate, more technical group. */}
             <div className="mb-3 rounded-3xl bg-raised/80 p-1.5">
-              <SidebarSection label="Data and system">{ADMIN_SECTION.slice(8).map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
+              <SidebarSection label="Data and system">{ADMIN_SECTION.slice(9).map((i) => item(i.key, i.label, i.icon))}</SidebarSection>
             </div>
           </>
         )}

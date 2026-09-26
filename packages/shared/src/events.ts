@@ -76,7 +76,7 @@ export type CitationEvent = z.infer<typeof citationEventSchema>;
 export const routeEventSchema = z.object({
   type: z.literal('route'),
   data: z.object({
-    taskType: z.enum(['chat', 'doc_qa', 'analysis', 'code', 'research', 'vision', 'image']),
+    taskType: z.enum(['chat', 'doc_qa', 'analysis', 'code', 'research', 'vision', 'image', 'files']),
     agent: z.string(),
     complexity: z.enum(['simple', 'multi_step']),
     reason: z.string(),
@@ -101,6 +101,7 @@ export const toolResultEventSchema = z.object({
     status: z.enum(['ok', 'error']),
     summary: z.string(),
     artifactIds: z.array(z.string().uuid()).default([]),
+    artifacts: z.array(z.object({ id: z.string().uuid(), filename: z.string(), mime: z.string() })).optional(),
   }),
 });
 export type ToolResultEvent = z.infer<typeof toolResultEventSchema>;

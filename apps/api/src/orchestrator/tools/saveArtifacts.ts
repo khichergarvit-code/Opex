@@ -9,6 +9,14 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   '.csv': 'text/csv',
   '.txt': 'text/plain',
   '.json': 'application/json',
+  '.md': 'text/markdown',
+  '.html': 'text/html',
+  '.log': 'text/plain',
+  '.py': 'text/x-python',
+  '.yaml': 'text/yaml',
+  '.yml': 'text/yaml',
+  '.xml': 'application/xml',
+  '.tsv': 'text/tab-separated-values',
 };
 
 function mimeFor(filename: string): string {
@@ -22,16 +30,20 @@ function mimeFor(filename: string): string {
  * there's only one classification source (the current task), not a
  * multi-document synthesis yet.
  */
-export async function saveArtifacts(
+export async function saveArtifacts(ctx: ToolContext, kind: string, files: SandboxFileOutput[]): Promise<string[]> {
+  return (await saveArtifactRecords(ctx, kind, files)).map((r) => r.id);
+}
+
+export async function saveArtifactRecords(
   ctx: ToolContext,
   kind: string,
   files: SandboxFileOutput[],
-): Promise<string[]> {
+): Promise<Array<{ id: string; filename: string; mime: string }>> {
   if (files.length === 0) return [];
   const destDir = path.resolve(ctx.dataDir, 'artifacts', ctx.workspaceId, ctx.traceId);
   await mkdir(destDir, { recursive: true });
 
-  const ids: string[] = [];
+  const records: Array<{ id: string; filename: string; mime: string }> = [];
   for (const file of files) {
     const buffer = Buffer.from(file.contentBase64, 'base64');
     const safeName = path.basename(file.path);
@@ -53,7 +65,7 @@ export async function saveArtifacts(
         createdBy: ctx.user.id,
       })
       .returning({ id: artifacts.id });
-    if (row) ids.push(row.id);
+    if (row) records.push({ id: row.id, filename: safeName, mime: mimeFor(safeName) });
   }
-  return ids;
+  return records;
 }

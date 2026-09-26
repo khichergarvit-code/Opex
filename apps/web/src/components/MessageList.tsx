@@ -6,6 +6,7 @@ import { TypingDots } from './ui/TypingDots';
 import { Icon } from './ui/Icon';
 import { CitationChip } from './CitationChip';
 import { StatusPill } from './ui/Badge';
+import { FileViewer } from './FileViewer';
 
 export interface DisplayMessage {
   id: string;
@@ -144,6 +145,7 @@ export function MessageList({
 }) {
   const lastId = messages[messages.length - 1]?.id;
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [openFile, setOpenFile] = useState<MessageAttachment | null>(null);
   const [rated, setRated] = useState<Record<string, 'thumbs_up' | 'thumbs_down' | null>>({});
   // Clicking the same rating again removes it (un-like); the server is the source of truth.
   const ratingOf = (m: DisplayMessage) => (m.id in rated ? rated[m.id] : m.rating) ?? null;
@@ -175,18 +177,34 @@ export function MessageList({
         >
           {m.attachments && m.attachments.length > 0 && (
             <div className={`flex flex-wrap gap-2 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              {m.attachments.map((a) => (
-                <a key={a.id} href={`/artifacts/${a.id}`} target="_blank" rel="noreferrer">
-                  <img
-                    src={`/artifacts/${a.id}`}
-                    alt={a.filename}
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                    }}
-                    className={`rounded-2xl object-cover shadow-card ${m.role === 'assistant' ? 'max-h-80 max-w-[min(24rem,100%)]' : 'max-h-52 max-w-[16rem]'}`}
-                  />
-                </a>
-              ))}
+              {m.attachments.map((a) =>
+                a.mime.startsWith('image/') ? (
+                  <a key={a.id} href={`/artifacts/${a.id}`} target="_blank" rel="noreferrer">
+                    <img
+                      src={`/artifacts/${a.id}`}
+                      alt={a.filename}
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                      className={`rounded-2xl object-cover shadow-card ${m.role === 'assistant' ? 'max-h-80 max-w-[min(24rem,100%)]' : 'max-h-52 max-w-[16rem]'}`}
+                    />
+                  </a>
+                ) : (
+                  <span key={a.id} className="inline-flex items-center gap-2.5 rounded-2xl border border-line bg-surface px-4 py-2.5 text-sm text-fg shadow-card">
+                    <Icon name="file" className="h-5 w-5 text-accent-600" />
+                    <span className="flex min-w-0 flex-col">
+                      <span className="max-w-[16rem] truncate font-medium">{a.filename}</span>
+                      <span className="text-xs text-muted">Saved in your files</span>
+                    </span>
+                    <button type="button" onClick={() => setOpenFile(a)} className="rounded-full px-3 py-1 text-xs font-medium text-accent-700 hover:bg-accent-50">
+                      Open
+                    </button>
+                    <a href={`/artifacts/${a.id}`} download={a.filename} className="rounded-full px-3 py-1 text-xs text-fg-2 hover:bg-raised">
+                      Download
+                    </a>
+                  </span>
+                ),
+              )}
             </div>
           )}
           {editingId === m.id && onEdit ? (
@@ -301,6 +319,7 @@ export function MessageList({
           )}
         </motion.div>
       ))}
+      {openFile && <FileViewer name={openFile.filename} src={`/artifacts/${openFile.id}`} downloadUrl={`/artifacts/${openFile.id}`} onClose={() => setOpenFile(null)} />}
     </div>
   );
 }

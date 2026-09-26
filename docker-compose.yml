@@ -297,6 +297,7 @@ services:
       MODELS_DIR: /models
       MANIFEST_PATH: /app/infra/models/manifest.yaml
       LLM_TIER: ${LLM_TIER:-small}
+      LLM_MAIN_URL: ${LLM_MAIN_URL:-}
       DO_NOT_TRACK: "1"
     volumes:
       - ./models:/models

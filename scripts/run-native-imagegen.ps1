@@ -37,4 +37,4 @@ try {
 } catch {}
 
 Write-Host "Starting the image server on port $Port. Add LLM_IMAGE_URL=http://host.docker.internal:$Port to .env and restart the API."
-& $Server.FullName -m $Model --listen-ip 0.0.0.0 --listen-port $Port --steps 4 --cfg-scale 1.5 --sampling-method lcm --diffusion-fa @offload
+& $Server.FullName -m $Model --listen-ip $(if ($env:HOST) { $env:HOST } else { "127.0.0.1" }) --listen-port $Port --steps 4 --cfg-scale 1.5 --sampling-method lcm --diffusion-fa @offload

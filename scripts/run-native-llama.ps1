@@ -13,6 +13,10 @@ switch ($Tier) {
   default    { throw "LLM_TIER must be small or standard" }
 }
 $Port = if ($env:PORT) { $env:PORT } else { "8082" }
+# Loopback is enough for Docker Desktop's host.docker.internal; set $env:HOST = "0.0.0.0" only on a trusted network (the model API has no login).
+$HostAddr = if ($env:HOST) { $env:HOST } else { "127.0.0.1" }
+if ($HostAddr -eq "0.0.0.0") { Write-Warning "HOST=0.0.0.0 exposes the model to your whole network (no login)." }
+$WriteEnv = $args -contains "-WriteEnv"
 
 # Context size and KV-cache precision follow the GPU memory: a 4 GB card (e.g. RTX 3050 laptop) cannot hold
 # the model plus a large context, so it gets a smaller, quantized cache.
@@ -56,7 +60,22 @@ if (-not $Server) {
 }
 $ServerPath = if ($Server.FullName) { $Server.FullName } else { $Server.Source }
 
-Write-Host "Starting the '$Tier' model on port $Port with GPU offload."
+if ($WriteEnv) {
+  $EnvFile = Join-Path $Root ".env"
+  if (-not (Test-Path $EnvFile)) { Copy-Item (Join-Path $Root ".env.example") $EnvFile }
+  $lines = [System.Collections.Generic.List[string]](Get-Content $EnvFile)
+  function Set-EnvLine($key, $value) {
+    $i = $lines.FindIndex({ param($l) $l -match "^$key=" })
+    if ($i -ge 0) { $lines[$i] = "$key=$value" } else { $lines.Add("$key=$value") }
+  }
+  Set-EnvLine "COMPOSE_PROFILES" ""
+  Set-EnvLine "LLM_TIER" $Tier
+  Set-EnvLine "LLM_CTX_LEN" $Ctx
+  foreach ($r in "MAIN","ROUTER","VISION") { Set-EnvLine "LLM_${r}_URL" "http://host.docker.internal:$Port" }
+  Set-Content -Path $EnvFile -Value $lines
+  Write-Host ".env updated. Apply with: docker compose up -d"
+}
+Write-Host "Starting the '$Tier' model on port $Port with GPU offload (listening on $HostAddr)."
 Write-Host "Add these lines to .env, then run: docker compose stop llm-main; docker compose up -d api"
 Write-Host "  LLM_TIER=$Tier"
 Write-Host "  LLM_CTX_LEN=$Ctx"
@@ -64,6 +83,6 @@ Write-Host "  LLM_MAIN_URL=http://host.docker.internal:$Port"
 Write-Host "  LLM_ROUTER_URL=http://host.docker.internal:$Port"
 Write-Host "  LLM_VISION_URL=http://host.docker.internal:$Port"
 
-$argsList = @("-m", $ModelPath, "--host", "0.0.0.0", "--port", $Port, "-c", $Ctx, "-np", "1", "--jinja", "-ngl", "99") + $KvArgs
+$argsList = @("-m", $ModelPath, "--host", $HostAddr, "--port", $Port, "-c", $Ctx, "-np", "1", "--jinja", "-ngl", "99") + $KvArgs
 if (Test-Path $MmprojPath) { $argsList += @("--mmproj", $MmprojPath) }
 & $ServerPath @argsList

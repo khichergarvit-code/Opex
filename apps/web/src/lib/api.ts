@@ -295,6 +295,7 @@ export interface DecideApprovalResult {
   status: 'ok' | 'error' | 'approval_required';
   messageId?: string;
   answer?: string;
+  attachments?: MessageAttachment[];
 }
 
 export async function decideApproval(id: string, decision: 'approved' | 'denied'): Promise<DecideApprovalResult> {
@@ -308,6 +309,14 @@ export async function decideApproval(id: string, decision: 'approved' | 'denied'
 export async function submitFeedback(messageId: string, rating: 'thumbs_up' | 'thumbs_down'): Promise<'thumbs_up' | 'thumbs_down' | null> {
   const res = await request<{ rating: 'thumbs_up' | 'thumbs_down' | null }>('/feedback', { method: 'POST', body: JSON.stringify({ messageId, rating }) });
   return res.rating;
+}
+
+export interface PendingDoc {
+  key: string;
+  id: string | null;
+  name: string;
+  status: ApiDocument['status'];
+  error?: string;
 }
 
 export async function uploadDocument(projectId: string, file: File): Promise<ApiDocument> {

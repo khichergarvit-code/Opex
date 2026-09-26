@@ -25,6 +25,7 @@ import { dropRefusalTurns } from './dropRefusalTurns.js';
 import { loadAttachments } from './attachments.js';
 import type { AuditWriter } from '../audit/writeAudit.js';
 import { buildDocQaPrompt, extractCitedMarkers, loadUserGroupIds, projectHasReadyDocuments } from './docQa.js';
+import { currentTimeLine } from '../prompts/clock.js';
 import { buildCitationMap } from '../retrieval/index.js';
 import { quickExtract } from '../memory/quickExtract.js';
 import { looksLikeSelfStatement } from '../memory/qualityFilter.js';
@@ -56,6 +57,8 @@ function runTimings(res: Response): NonNullable<Extract<SseEvent, { type: 'done'
 }
 
 function sendEvent(res: Response, event: SseEvent): void {
+  // The browser may have left (closed tab, navigated away); the turn keeps running and is saved, so skip the write.
+  if (res.destroyed || res.writableEnded) return;
   const stats = runStats.get(res) ?? { startedAt: Date.now(), tokens: 0 };
   runStats.set(res, stats);
   if (event.type === 'route') stats.routeAt = Date.now();
@@ -67,11 +70,11 @@ function sendEvent(res: Response, event: SseEvent): void {
 }
 
 /** Turns a raw model-call failure into something a non-technical user can act on. */
-/** Images a tool created this turn, in the shape the chat already uses for message attachments. */
+/** Files and images a tool created this turn, in the shape the chat already uses for message attachments. */
 async function generatedImageAttachments(db: Db, ids: string[]): Promise<Array<{ id: string; filename: string; mime: string }>> {
   if (ids.length === 0) return [];
   const rows = await db.select({ id: artifacts.id, filename: artifacts.filename, mime: artifacts.mime }).from(artifacts).where(inArray(artifacts.id, ids));
-  return rows.filter((r) => r.mime.startsWith('image/'));
+  return rows;
 }
 
 function describeModelError(err: unknown): string {
@@ -362,16 +365,13 @@ export function createConversationsRouter(
       connection: 'keep-alive',
     });
 
-    // Pressing Stop (or closing the tab) aborts the model call itself, so
-    // CPU isn't burnt finishing an answer nobody is reading.
+    // Only Stop (button or /stop) aborts the model call. Closing the tab or navigating away lets the
+    // turn finish in the background and be saved; the web page polls for it when the chat is reopened.
     const abort = new AbortController();
     activeRuns.set(conversation.id, abort);
     let clientGone = false;
     res.on('close', () => {
-      if (!res.writableFinished) {
-        clientGone = true;
-        abort.abort();
-      }
+      if (!res.writableFinished) clientGone = true;
     });
     const progress = (phase: ProgressEvent['data']['phase'], label: string) =>
       sendEvent(res, { type: 'progress', data: { phase, label } });
@@ -497,7 +497,9 @@ export function createConversationsRouter(
       sendEvent(res, { type: 'memory_used', data: { id: conversation.projectId, kind: 'project' } });
     }
     const memoryPrefix = [projectNotesBlock, longTermMemoryBlock].filter(Boolean).join('\n\n');
-    const userContent = memoryPrefix ? `${memoryPrefix}\n\n${parsed.data.content}` : parsed.data.content;
+    // The model has no clock: give it the real time right next to the question (a system-prompt line gets ignored).
+    const clockBlock = `<server_clock>${currentTimeLine()}</server_clock>`;
+    const userContent = `${clockBlock}\n\n${memoryPrefix ? `${memoryPrefix}\n\n` : ''}${parsed.data.content}`;
 
     let assistantContent = '';
     let answerSource: 'documents' | 'general' | null = null;
@@ -679,7 +681,7 @@ export function createConversationsRouter(
         answerSource = 'general';
         sendEvent(res, { type: 'source', data: { kind: 'general' } });
         progress('generating', 'No match in your documents. Answering from general knowledge…');
-        const chatPrompt = await readFile(GENERAL_FALLBACK_PROMPT_PATH, 'utf8');
+        const chatPrompt = `${await readFile(GENERAL_FALLBACK_PROMPT_PATH, 'utf8')}\n${currentTimeLine()}`;
         try {
           for await (const delta of gateway.chatStream({
             onContextTrim: notifyTrim,
@@ -828,6 +830,7 @@ export function createConversationsRouter(
                     status: e.result?.ok ? 'ok' : 'error',
                     summary: e.result?.summary ?? '',
                     artifactIds: e.result?.artifactIds ?? [],
+                    artifacts: e.result?.artifacts,
                   },
                 });
               },
@@ -862,7 +865,7 @@ export function createConversationsRouter(
         }
       }
     } else {
-      const systemPrompt = await readFile(CHAT_SYSTEM_PROMPT_PATH, 'utf8');
+      const systemPrompt = `${await readFile(CHAT_SYSTEM_PROMPT_PATH, 'utf8')}\n${currentTimeLine()}`;
       try {
         progress('generating', 'Writing the answer…');
         for await (const delta of gateway.chatStream({
@@ -884,8 +887,8 @@ export function createConversationsRouter(
       }
     }
 
-    // Stopped by closing the tab, pressing Stop, or the stop endpoint — all three abort the same controller.
-    const wasStopped = clientGone || abort.signal.aborted;
+    // Stopped by the Stop button or the stop endpoint (both abort the same controller). A closed tab is not a stop.
+    const wasStopped = abort.signal.aborted;
     if (wasStopped) failureMessage = '';
     if (!pausedForApproval) {
       let assistantMessageId = '';
