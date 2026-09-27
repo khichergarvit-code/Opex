@@ -27,6 +27,7 @@ import { streamMessage } from '../lib/sse';
 import { AppShell } from '../components/AppShell';
 import { Composer } from '../components/Composer';
 import { FollowupBar } from '../components/FollowupBar';
+import { TaskProgressCard, type TaskStep } from '../components/TaskProgressCard';
 import { shortModelName } from '../lib/format';
 import { MessageList, type DisplayMessage } from '../components/MessageList';
 import { AgentTimeline } from '../components/AgentTimeline';
@@ -84,6 +85,7 @@ export function ChatPage({
   const [uploading, setUploading] = useState(false);
   const [pendingDocs, setPendingDocs] = useState<PendingDoc[]>([]);
   const [queuedMessage, setQueuedMessage] = useState('');
+  const [taskSteps, setTaskSteps] = useState<{ title: string; meta: string; items: TaskStep[] } | null>(null);
   const suppressQueuedRef = useRef(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [chatModels, setChatModels] = useState<ChatModelOption[]>([]);
@@ -161,6 +163,7 @@ export function ChatPage({
     setStreaming(false);
     setPendingImages([]);
     setDocumentMode('auto');
+    setTaskSteps(null);
   }
 
   async function removeChats(target: string | 'all') {
@@ -438,6 +441,9 @@ export function ChatPage({
           setTimelineEvents((prev) => [...prev, event]);
           if (event.type === 'route') {
             setLastRoutedAgent(event.data.agent);
+          }
+          if (event.type === 'steps') {
+            setTaskSteps(event.data);
           }
           if (event.type === 'tool_result') {
             const newArtifacts = event.data.artifactIds.map((id) => ({ id, toolName: 'tool' }));
@@ -816,6 +822,23 @@ export function ChatPage({
                   onFeedback={(messageId, rating) => submitFeedback(messageId, rating)}
                   projectId={projectId}
                 />
+                {streaming && taskSteps && (
+                  <div className="mt-3">
+                    <TaskProgressCard
+                      title={taskSteps.title}
+                      meta={taskSteps.meta}
+                      items={taskSteps.items}
+                      elapsedMs={elapsedMs}
+                      onStop={stopGenerating}
+                      onBackground={() => {
+                        // The server keeps going; leaving this chat just stops watching it live —
+                        // reopening it later will show the finished summaries.
+                        notifyChatsChanged();
+                        startNewChat();
+                      }}
+                    />
+                  </div>
+                )}
                 {status && <p className="mt-2 text-xs text-faint">{status}</p>}
                 {pendingApproval && (
                   <ApprovalPrompt

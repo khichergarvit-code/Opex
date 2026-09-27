@@ -30,7 +30,7 @@ import { currentTimeLine } from '../prompts/clock.js';
 import { buildCitationMap } from '../retrieval/index.js';
 import { quickExtract } from '../memory/quickExtract.js';
 import { looksLikeSelfStatement } from '../memory/qualityFilter.js';
-import { isSummarizeRequest, listVisibleDocuments, loadDocumentChunks, pickTarget, summarizeChunks, type VisibleDocument } from '../orchestrator/summarize.js';
+import { isSummarizeAllRequest, isSummarizeRequest, listVisibleDocuments, loadDocumentChunks, pickTarget, stripMarkers, summarizeChunks, type VisibleDocument } from '../orchestrator/summarize.js';
 import { isWriteCodeOnlyRequest } from '../orchestrator/codeIntent.js';
 
 const GENERAL_FALLBACK_PROMPT_PATH = new URL('../prompts/general-fallback.md', import.meta.url);
@@ -431,26 +431,28 @@ export function createConversationsRouter(
     // (ACL in the SQL), so it needs no router call.
     let summarizeTarget: VisibleDocument | null = null;
     let summarizeAsk: string | null = null;
+    let summarizeAll: VisibleDocument[] | null = null;
     if (documentMode !== 'off' && hasReadyDocuments && attachments.length === 0 && isSummarizeRequest(parsed.data.content)) {
       const groupIds = await loadUserGroupIds(db, user.id);
-      const target = pickTarget(
-        parsed.data.content,
-        await listVisibleDocuments(db, { workspaceId: conversation.workspaceId, projectId: conversation.projectId, userId: user.id, clearance: user.clearance, groupIds }),
-      );
-      if (target.kind === 'found') summarizeTarget = target.document;
-      if (target.kind === 'ambiguous') {
+      const visibleDocs = await listVisibleDocuments(db, { workspaceId: conversation.workspaceId, projectId: conversation.projectId, userId: user.id, clearance: user.clearance, groupIds });
+      if (isSummarizeAllRequest(parsed.data.content) && visibleDocs.length > 1) {
+        summarizeAll = visibleDocs.slice(0, 12);
+      }
+      const target = summarizeAll ? { kind: 'found' as const, document: visibleDocs[0]! } : pickTarget(parsed.data.content, visibleDocs);
+      if (!summarizeAll && target.kind === 'found') summarizeTarget = target.document;
+      if (!summarizeAll && target.kind === 'ambiguous') {
         summarizeAsk = `Which document should I summarise? I can see:\n${target.names.map((n) => `- ${n}`).join('\n')}\n\nReply with something like "summarise ${target.names[0]}".`;
       }
     }
 
     let routeDecision =
-      summarizeTarget || summarizeAsk
+      summarizeAll || summarizeTarget || summarizeAsk
         ? {
             taskType: 'doc_qa' as const,
             complexity: 'simple' as const,
             agent: 'doc_qa' as const,
             needs: { documents: true, memory: [] as Array<'semantic' | 'episodic'>, tools: [] as string[] },
-            reason: summarizeTarget ? `summarising ${summarizeTarget.filename}` : 'summary requested; asking which document',
+            reason: summarizeAll ? `summarising ${summarizeAll.length} documents` : summarizeTarget ? `summarising ${summarizeTarget.filename}` : 'summary requested; asking which document',
           }
         : documentMode === 'on' && hasReadyDocuments && attachments.length === 0
         ? {
@@ -539,6 +541,88 @@ export function createConversationsRouter(
 
     if (abort.signal.aborted) {
       // Stopped before any answer work started: nothing to generate.
+    } else if (summarizeAll) {
+      // Several documents, one after another, with a live progress card (see the 'steps' SSE event);
+      // each summary lands in the answer as it finishes. Section markers are per-document, so they're
+      // stripped and this combined answer carries no citation chips.
+      try {
+        answerSource = 'documents';
+        answerClassification = Math.max(...summarizeAll.map((d) => d.classification)) as typeof answerClassification; // invariant 9
+        sendEvent(res, { type: 'source', data: { kind: 'documents' } });
+        const groupIds = await loadUserGroupIds(db, user.id);
+        const items = summarizeAll.map((d) => ({
+          id: d.id,
+          label: d.filename,
+          kind: (d.filename.split('.').pop() ?? 'file').toUpperCase().slice(0, 4),
+          state: 'queued' as 'queued' | 'running' | 'done' | 'failed',
+          detail: 'Queued' as string | undefined,
+        }));
+        const title = `Summarising ${items.length} documents`;
+        const meta = `Documents in ${project?.name ?? 'this project'}`;
+        const pushSteps = () => sendEvent(res, { type: 'steps', data: { title, meta, items: items.map((i) => ({ ...i })) } });
+        pushSteps();
+        for (const [index, doc] of summarizeAll.entries()) {
+          if (abort.signal.aborted) break;
+          const item = items[index]!;
+          item.state = 'running';
+          item.detail = 'Reading…';
+          pushSteps();
+          try {
+            const chunkRows = await loadDocumentChunks(db, {
+              workspaceId: conversation.workspaceId,
+              projectId: conversation.projectId,
+              userId: user.id,
+              clearance: user.clearance,
+              groupIds,
+              documentId: doc.id,
+            });
+            const header = `${index > 0 ? '\n\n' : ''}**${doc.filename}**\n\n`;
+            if (chunkRows.length === 0) {
+              const note = `${header}_No readable text found._`;
+              assistantContent += note;
+              sendEvent(res, { type: 'token', data: { delta: note } });
+              item.state = 'failed';
+              item.detail = 'No readable text';
+            } else {
+              const result = await summarizeChunks(
+                {
+                  gateway,
+                  user,
+                  traceId: trace.id,
+                  signal: abort.signal,
+                  modelId: chosenModelId,
+                  onProgress: (label) => {
+                    item.detail = label;
+                    pushSteps();
+                  },
+                  onToken: () => {},
+                },
+                doc.filename,
+                chunkRows,
+              );
+              const piece = header + stripMarkers(result.text).trim();
+              assistantContent += piece;
+              sendEvent(res, { type: 'token', data: { delta: piece } });
+              item.state = 'done';
+              item.detail = 'Summarised';
+            }
+          } catch (err) {
+            if (abort.signal.aborted) break;
+            item.state = 'failed';
+            item.detail = describeModelError(err);
+          }
+          pushSteps();
+        }
+        if (!assistantContent.trim() && !abort.signal.aborted) {
+          traceStatus = 'error';
+          failureMessage = 'None of the documents could be summarised.';
+          sendEvent(res, { type: 'error', data: { message: failureMessage } });
+        }
+      } catch (err) {
+        traceStatus = 'error';
+        failureMessage = describeModelError(err);
+        if (!abort.signal.aborted) sendEvent(res, { type: 'error', data: { message: failureMessage } });
+      }
     } else if (summarizeAsk) {
       assistantContent = summarizeAsk;
       answerSource = 'documents';
