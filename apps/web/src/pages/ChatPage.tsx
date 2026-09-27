@@ -654,7 +654,7 @@ export function ChatPage({
       onNewChat={startNewChat}
       onLoggedOut={onLoggedOut}
     >
-      <div className="mx-auto flex h-full max-w-5xl flex-col gap-6 p-4 md:flex-row md:p-6">
+      <div className={`mx-auto flex h-full flex-col gap-6 p-4 md:flex-row md:p-6 ${showTimeline ? 'max-w-7xl' : 'max-w-5xl'}`}>
         <div className="flex flex-1 flex-col">
           <div className="mb-4 flex items-center justify-between">
             <ProjectSwitcher

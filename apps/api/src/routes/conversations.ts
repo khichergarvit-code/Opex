@@ -31,6 +31,7 @@ import { buildCitationMap } from '../retrieval/index.js';
 import { quickExtract } from '../memory/quickExtract.js';
 import { looksLikeSelfStatement } from '../memory/qualityFilter.js';
 import { isSummarizeRequest, listVisibleDocuments, loadDocumentChunks, pickTarget, summarizeChunks, type VisibleDocument } from '../orchestrator/summarize.js';
+import { isWriteCodeOnlyRequest } from '../orchestrator/codeIntent.js';
 
 const GENERAL_FALLBACK_PROMPT_PATH = new URL('../prompts/general-fallback.md', import.meta.url);
 const CHAT_SYSTEM_PROMPT_PATH = new URL('../prompts/chat-system.md', import.meta.url);
@@ -797,7 +798,15 @@ export function createConversationsRouter(
       // admin-created custom agent (B5's POST /admin/agents) — all go
       // through the same executor loop, gated only by whether loadAgent
       // finds an enabled row for that name.
-      const agentConfig = await loadAgent(db, routeDecision.agent);
+      let agentConfig = await loadAgent(db, routeDecision.agent);
+      // A plain "write me this code" request should show the source and stop there — the Run button
+      // in the chat handles execution now. Withholding just code_exec isn't enough: a small model,
+      // still wanting to act, reached for make_chart instead and never wrote the code at all
+      // (confirmed live) — so this turn offers no tools at all, which reliably gets a plain text +
+      // fenced-code answer instead of asking the model nicely not to use one (isWriteCodeOnlyRequest).
+      if (agentConfig && agentConfig.name === 'code' && isWriteCodeOnlyRequest(parsed.data.content)) {
+        agentConfig = { ...agentConfig, toolAllowlist: [] };
+      }
       if (!agentConfig) {
         traceStatus = 'error';
         sendEvent(res, { type: 'error', data: { message: `agent "${routeDecision.agent}" is not configured` } });
