@@ -25,6 +25,7 @@ const normalize = (s: string) => s.toLowerCase().replace(/\.[a-z0-9]{2,5}$/, '')
 export interface VisibleDocument {
   id: string;
   filename: string;
+  mime: string;
   classification: number;
   pageCount: number | null;
 }
@@ -58,7 +59,7 @@ export async function listVisibleDocuments(
 ): Promise<VisibleDocument[]> {
   const groups = uuidArrayLiteral(p.groupIds);
   const rows = await db
-    .select({ id: documents.id, filename: documents.filename, classification: documents.classification, pageCount: documents.pageCount })
+    .select({ id: documents.id, filename: documents.filename, mime: documents.mime, classification: documents.classification, pageCount: documents.pageCount })
     .from(documents)
     .where(
       and(

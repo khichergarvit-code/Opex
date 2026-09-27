@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { aclWhereClause } from './aclFilter.js';
+import { buildFtsQuery } from './ftsQuery.js';
 import type { RetrievedChunk, SearchParams } from './types.js';
 
 interface FtsRow {
@@ -21,15 +22,18 @@ export async function ftsSearch(
   topK: number,
 ): Promise<RetrievedChunk[]> {
   const where = aclWhereClause(params);
+  const ftsQuery = buildFtsQuery(params.query);
+  if (!ftsQuery) return [];
 
-  // 'simple' config throughout — matches the tsv column's own config, so
-  // Hindi text isn't broken by English stemming (documents.md).
+  // 'simple' config throughout — matches the tsv column's own config, so Hindi text isn't broken by
+  // English stemming (documents.md). The query is an OR of significant terms (buildFtsQuery), not the
+  // raw sentence: websearch_to_tsquery ANDs every word, which a short table row or fact never has all of.
   const rows = (await db.execute(sql`
     SELECT c.id, c.document_id, c.page, c.bbox, c.section_path, c.text, c.kind, c.suspicious,
-           ts_rank(c.tsv, websearch_to_tsquery('simple', ${params.query})) AS score
+           ts_rank(c.tsv, to_tsquery('simple', ${ftsQuery})) AS score
     FROM chunks c
     WHERE ${where}
-      AND c.tsv @@ websearch_to_tsquery('simple', ${params.query})
+      AND c.tsv @@ to_tsquery('simple', ${ftsQuery})
     ORDER BY score DESC
     LIMIT ${topK}
   `)) as unknown as FtsRow[];

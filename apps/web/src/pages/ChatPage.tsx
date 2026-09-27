@@ -346,11 +346,12 @@ export function ChatPage({
   }, [docsBusy, pendingDocs]);
 
   function handleSend(content: string) {
-    // Attached documents: answer from documents for this turn, and clear the chips.
+    // Attached documents: answer from documents for this turn, show a chip on the message, and clear the composer.
+    const readyDocs = pendingDocs.filter((d) => d.status === 'ready');
     if (pendingDocs.some((d) => d.status === 'failed')) setStatus("An attached document couldn't be read, so this answer doesn't use it.");
-    if (pendingDocs.some((d) => d.status === 'ready')) setDocumentMode('on');
+    if (readyDocs.length > 0) setDocumentMode('on');
     setPendingDocs([]);
-    return runTurn(content, undefined, pendingDocs.some((d) => d.status === 'ready'));
+    return runTurn(content, undefined, readyDocs.length > 0, readyDocs);
   }
 
   /** Edit: drop the message and everything after it, then re-run with the new text. */
@@ -374,11 +375,14 @@ export function ChatPage({
     content: string,
     replace?: { replaceFromMessageId: string; keepBefore: number; attachments?: MessageAttachment[] },
     forceDocuments = false,
+    sentDocs: PendingDoc[] = [],
   ) {
     if (!projectId) return;
     const convId = await ensureConversation();
     activeConvRef.current = convId;
-    const sentImages = replace ? (replace.attachments ?? []) : pendingImages;
+    // Documents (PDFs etc.) attached this turn get a chip on the message just like images, once the
+    // server confirms them (it re-checks ACL — see routes/conversations.ts); shown right away, optimistically.
+    const sentImages = replace ? (replace.attachments ?? []) : [...pendingImages, ...sentDocs.map((d) => ({ id: d.id!, filename: d.name, mime: 'application/pdf' }))];
     if (!replace) setPendingImages([]);
     userMsgIdRef.current = crypto.randomUUID();
     assistantIdRef.current = crypto.randomUUID();
@@ -518,8 +522,8 @@ export function ChatPage({
       },
       controller.signal,
       modelId || undefined,
-      sentImages.map((a) => a.id),
-      { documents: forceDocuments ? 'on' : documentMode, replaceFromMessageId: replace?.replaceFromMessageId },
+      pendingImages.map((a) => a.id),
+      { documents: forceDocuments ? 'on' : documentMode, replaceFromMessageId: replace?.replaceFromMessageId, documentIds: sentDocs.map((d) => d.id!) },
     );
     // Aborted by the user clicking Stop — streamMessage resolves normally
     // (fetch-event-source's own abort path, not onError), so finalize here.

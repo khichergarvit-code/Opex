@@ -14,6 +14,7 @@ let documentId: string;
 let publicChunkId: string;
 let restrictedChunkId: string;
 let groupGatedChunkId: string;
+let tableRowChunkId: string;
 const RESTRICTED_GROUP_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_GROUP_ID = '22222222-2222-2222-2222-222222222222';
 
@@ -91,11 +92,23 @@ beforeAll(async () => {
         text: 'group gated torque spec bolt C',
         chunkIndex: 2,
       },
+      {
+        documentId,
+        workspaceId,
+        projectId,
+        classification: 0,
+        kind: 'table',
+        page: 4,
+        bbox: { x0: 0, y0: 0, x1: 1, y1: 1 },
+        text: '| Ni | 1.0 | 0.4 |\n| Cu | 1.0 | 0.4 |',
+        chunkIndex: 3,
+      },
     ])
     .returning({ id: chunks.id });
   publicChunkId = rows[0]!.id;
   restrictedChunkId = rows[1]!.id;
   groupGatedChunkId = rows[2]!.id;
+  tableRowChunkId = rows[3]!.id;
 
   // Give each row a distinct embedding so vector ranking is deterministic.
   await db.execute(
@@ -106,6 +119,9 @@ beforeAll(async () => {
   );
   await db.execute(
     sql`UPDATE chunks SET embedding = ${fakeEmbedding(3)}::vector WHERE id = ${groupGatedChunkId}`,
+  );
+  await db.execute(
+    sql`UPDATE chunks SET embedding = ${fakeEmbedding(4)}::vector WHERE id = ${tableRowChunkId}`,
   );
 });
 
@@ -125,6 +141,18 @@ function paramsFor(overrides: Partial<SearchParams>): SearchParams {
     ...overrides,
   };
 }
+
+describe('FTS survives a conversational question (regression: OR of terms, not AND of the whole sentence)', () => {
+  it('finds a short table row from a long, typo-laden natural-language question', async () => {
+    if (!db) return;
+    const ftsResults = await ftsSearch(
+      db,
+      paramsFor({ query: 'can you identify the difference and report me for the level of cu ad NI' }),
+      10,
+    );
+    expect(ftsResults.map((c) => c.id)).toContain(tableRowChunkId);
+  });
+});
 
 describe('retrieval ACL filtering (invariant #4)', () => {
   it('a Public-clearance user with no groups only sees the public chunk', async () => {

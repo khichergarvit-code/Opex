@@ -28,6 +28,8 @@ export const postMessageRequestSchema = z.object({
   modelId: z.string().min(1).max(100).optional(),
   /** Ids from POST /conversations/:id/attachments (images the user attached to this message). */
   attachmentIds: z.array(z.string().uuid()).max(4).optional(),
+  /** Documents (PDF etc.) attached to this message via the composer — must belong to the conversation's project. */
+  documentIds: z.array(z.string().uuid()).max(4).optional(),
   /** Per-chat document use: auto (router decides, falls back to general knowledge), on (always), off (never). */
   documents: z.enum(['auto', 'on', 'off']).optional(),
   /** Edit/regenerate: delete this user message and everything after it, then answer the new content. */

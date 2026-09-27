@@ -354,12 +354,30 @@ export function createConversationsRouter(
     const [trace] = await db.insert(traces).values({ userId: user.id, conversationId: conversation.id }).returning();
     if (!trace) throw new Error('failed to open trace');
 
+    // Documents attached via the composer: verified against the same ACL-checked list doc_qa itself
+    // uses (never trust the client's ids), so a PDF a user just sent shows a chip like an image does.
+    const requestedDocumentIds = new Set(parsed.data.documentIds ?? []);
+    let sentDocuments: Array<{ id: string; filename: string; mime: string }> = [];
+    if (requestedDocumentIds.size > 0) {
+      const groupIdsForAttach = await loadUserGroupIds(db, user.id);
+      const visible = await listVisibleDocuments(db, {
+        workspaceId: conversation.workspaceId,
+        projectId: conversation.projectId,
+        userId: user.id,
+        clearance: user.clearance,
+        groupIds: groupIdsForAttach,
+      });
+      sentDocuments = visible
+        .filter((d) => requestedDocumentIds.has(d.id))
+        .map((d) => ({ id: d.id, filename: d.filename, mime: d.mime }));
+    }
+
     const [savedUserMessage] = await db.insert(messages).values({
       conversationId: conversation.id,
       role: 'user',
       content: parsed.data.content,
       traceId: trace.id,
-      attachments: attachments.map(({ id, filename, mime }) => ({ id, filename, mime })),
+      attachments: [...attachments.map(({ id, filename, mime }) => ({ id, filename, mime })), ...sentDocuments],
     }).returning({ id: messages.id });
     await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, conversation.id));
 

@@ -29,7 +29,7 @@ export async function streamMessage(
   signal?: AbortSignal,
   modelId?: string,
   attachmentIds?: string[],
-  options: { documents?: 'auto' | 'on' | 'off'; replaceFromMessageId?: string } = {},
+  options: { documents?: 'auto' | 'on' | 'off'; replaceFromMessageId?: string; documentIds?: string[] } = {},
 ): Promise<void> {
   await fetchEventSource(`/conversations/${conversationId}/messages`, {
     method: 'POST',
