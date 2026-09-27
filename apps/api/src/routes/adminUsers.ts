@@ -98,26 +98,41 @@ export function createAdminUsersRouter(db: Db, auditWriter: AuditWriter): Router
       }
     }
 
-    const passwordHash = await argon2.hash(parsed.data.password);
-    const [row] = await db
-      .insert(users)
-      .values({
-        email: parsed.data.email,
-        name: parsed.data.name,
-        passwordHash,
-        role: parsed.data.role,
-        clearance: parsed.data.clearance,
-        workspaceId,
-      })
-      .returning({
-        id: users.id,
-        email: users.email,
-        name: users.name,
-        role: users.role,
-        clearance: users.clearance,
-        status: users.status,
-        createdAt: users.createdAt,
-      });
+    const data = parsed.data;
+    const passwordHash = await argon2.hash(data.password);
+    async function insertUser() {
+      return db
+        .insert(users)
+        .values({
+          email: data.email,
+          name: data.name,
+          passwordHash,
+          role: data.role,
+          clearance: data.clearance,
+          workspaceId,
+        })
+        .returning({
+          id: users.id,
+          email: users.email,
+          name: users.name,
+          role: users.role,
+          clearance: users.clearance,
+          status: users.status,
+          createdAt: users.createdAt,
+        });
+    }
+    let inserted: Awaited<ReturnType<typeof insertUser>>;
+    try {
+      inserted = await insertUser();
+    } catch (err) {
+      // Postgres unique-violation on users.email — a plain, expected input error, not a server fault.
+      if (err instanceof Error && 'code' in err && (err as { code?: string }).code === '23505') {
+        res.status(409).json({ error: 'an account with this email already exists' });
+        return;
+      }
+      throw err;
+    }
+    const [row] = inserted;
     if (chosenProjectId) {
       await db.insert(projectMembers).values({ projectId: chosenProjectId, userId: row!.id }).onConflictDoNothing();
     }

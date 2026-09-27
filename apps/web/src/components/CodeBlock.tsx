@@ -71,7 +71,8 @@ export function CodeBlock({ code, lang, projectId }: { code: string; lang?: stri
     <div className="my-1.5 overflow-hidden rounded-lg border border-black/40 bg-[#0d0d0d] text-[#e6e6e6]" style={{ colorScheme: 'dark' }}>
       <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
         <span className="font-mono text-[11px] uppercase tracking-wide text-white/50">{lang || 'code'}</span>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
+          {projectId && !runnable && <span className="text-[11px] text-white/35">Python only</span>}
           {projectId && (
             <button
               type="button"

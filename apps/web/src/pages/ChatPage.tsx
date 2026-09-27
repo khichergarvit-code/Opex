@@ -881,20 +881,20 @@ export function ChatPage({
 
         {showTimeline && (
           <div className="w-full shrink-0 overflow-y-auto md:w-80">
-            <Card className="!p-3.5">
-              <p className="mb-2 text-sm font-semibold text-fg">Activity Run</p>
+            <Card className="!p-2.5">
+              <p className="mb-1 text-sm font-semibold text-fg">Activity Run</p>
               <AgentTimeline events={timelineEvents} streaming={streaming} />
             </Card>
-            <Card className="mt-1.5 !p-3.5">
-              <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-faint">Current model</p>
+            <Card className="mt-1 !p-2.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-faint">Current model</p>
               {lastRoutedAgent ? (
                 <p className="text-sm text-fg">{lastRoutedAgent} agent</p>
               ) : (
                 <p className="text-sm text-faint">No agent routed yet</p>
               )}
             </Card>
-            <Card className="mt-1.5 !p-3.5">
-              <p className="mb-1.5 text-sm font-semibold text-fg">Artifacts</p>
+            <Card className="mt-1 !p-2.5">
+              <p className="mb-0.5 text-sm font-semibold text-fg">Artifacts</p>
               <ArtifactsPanel artifacts={artifacts} />
             </Card>
           </div>

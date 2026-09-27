@@ -1,17 +1,15 @@
 import { Icon } from './Icon';
 
-/** Compact single-row empty state — an icon beside the text, not stacked with large padding, so a card with
- * nothing in it yet reads as one calm line instead of a tall mostly-empty box. */
+/** Compact single-line empty state — an inline icon beside the text, no icon backdrop or stacked
+ * padding, so a card with nothing in it yet reads as one calm line, not a padded box. */
 export function EmptyState({ title, description }: { title: string; description?: string }) {
   return (
-    <div className="flex items-center gap-2.5 py-2 text-left">
-      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent-100 text-accent-600">
-        <Icon name="inbox" className="h-3.5 w-3.5" />
-      </span>
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-fg-2">{title}</p>
-        {description && <p className="text-xs text-muted">{description}</p>}
-      </div>
+    <div className="flex items-center gap-1.5 py-1 text-left text-sm">
+      <Icon name="inbox" className="h-3.5 w-3.5 shrink-0 text-faint" />
+      <p className="min-w-0 truncate text-fg-2">
+        {title}
+        {description && <span className="ml-1.5 text-xs text-muted">{description}</span>}
+      </p>
     </div>
   );
 }
