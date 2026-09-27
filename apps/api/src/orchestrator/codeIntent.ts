@@ -5,8 +5,11 @@
  * of relying on the model to choose not to use a tool it's been handed — the same
  * rule-decides-instead-of-asking-the-model pattern already used for isSummarizeRequest.
  */
-const RUN_INTENT = /\b(run|runs?|execute|exec|test|output|result|prints?|what does|check)\b/i;
-const WRITE_CODE_INTENT = /\b(write|give|create|show|generate)\b.{0,30}\bcode\b/i;
+// "print"/"prints" is deliberately NOT here: "write code that prints 1 to 100" describes what the
+// code should do, not a request to see it run — treating "print" as a run signal made that (very
+// common) phrasing fall through to auto-run every time (confirmed live).
+const RUN_INTENT = /\b(run|runs?|execute|exec|test|output|result|what does|check)\b/i;
+const WRITE_CODE_INTENT = /\b(write|give|create|show|generate)\b.{0,30}\b(code|program|script|function|snippet)\b/i;
 
 /** True when the message is a plain "write me this code" request, with no run/execute/output ask. */
 export function isWriteCodeOnlyRequest(message: string): boolean {

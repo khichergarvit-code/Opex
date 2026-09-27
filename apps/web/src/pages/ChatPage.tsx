@@ -883,12 +883,14 @@ export function ChatPage({
           <div className="w-full shrink-0 overflow-y-auto md:w-80">
             <Card className="!p-2.5">
               <p className="mb-1 text-sm font-semibold text-fg">Activity Run</p>
-              <AgentTimeline events={timelineEvents} streaming={streaming} />
+              <AgentTimeline events={timelineEvents} streaming={streaming} reopenedWithHistory={timelineEvents.length === 0 && messages.length > 0} />
             </Card>
             <Card className="mt-1 !p-2.5">
               <p className="text-xs font-semibold uppercase tracking-wide text-faint">Current model</p>
               {lastRoutedAgent ? (
                 <p className="text-sm text-fg">{lastRoutedAgent} agent</p>
+              ) : messages.length > 0 ? (
+                <p className="text-sm text-faint">Not shown for a reopened chat — send a new message</p>
               ) : (
                 <p className="text-sm text-faint">No agent routed yet</p>
               )}

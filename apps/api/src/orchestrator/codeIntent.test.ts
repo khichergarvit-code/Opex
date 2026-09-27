@@ -9,6 +9,16 @@ describe('isWriteCodeOnlyRequest', () => {
     expect(isWriteCodeOnlyRequest('create code to reverse a string')).toBe(true);
   });
 
+  it('recognises "program"/"script"/"function"/"snippet" as synonyms for code', () => {
+    expect(isWriteCodeOnlyRequest('write program to print 1 to 100 in python')).toBe(true);
+    expect(isWriteCodeOnlyRequest('write a script that prints hello world')).toBe(true);
+    expect(isWriteCodeOnlyRequest('give me a function to add two numbers')).toBe(true);
+  });
+
+  it('does not treat "print" in the code description itself as a run request', () => {
+    expect(isWriteCodeOnlyRequest('write code that prints the sum of 5 and 3')).toBe(true);
+  });
+
   it('is false when the person also asks to run/execute/test it', () => {
     expect(isWriteCodeOnlyRequest('write code and run it')).toBe(false);
     expect(isWriteCodeOnlyRequest('write python code and show me the output')).toBe(false);

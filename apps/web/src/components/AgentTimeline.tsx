@@ -69,11 +69,26 @@ function StepIcon({ isLast, streaming, isError }: { isLast: boolean; streaming: 
   );
 }
 
-/** Built purely from the SSE stream already flowing through lib/sse.ts — no separate backend endpoint. */
-export function AgentTimeline({ events, streaming = false }: { events: SseEvent[]; streaming?: boolean }) {
+/** Built purely from the SSE stream already flowing through lib/sse.ts — no separate backend endpoint;
+ * nothing is persisted, so reopening a chat with real history in it still starts empty here. */
+export function AgentTimeline({
+  events,
+  streaming = false,
+  reopenedWithHistory = false,
+}: {
+  events: SseEvent[];
+  streaming?: boolean;
+  /** True when this chat already has messages but no live events yet — says why honestly, instead of
+   * "no activity yet" next to a transcript that clearly shows the agent did something. */
+  reopenedWithHistory?: boolean;
+}) {
   const visible = events.filter((e) => !HIDDEN.includes(e.type));
   if (visible.length === 0) {
-    return <EmptyState title="No activity yet" description="Send a message to see agent steps here." />;
+    return reopenedWithHistory ? (
+      <EmptyState title="Not kept for a reopened chat" description="Send a new message to see it live." />
+    ) : (
+      <EmptyState title="No activity yet" description="Send a message to see agent steps here." />
+    );
   }
   // A code_exec/run_shell result's own tool_call carries the tool name; matched by callId so its output
   // renders as a dark terminal panel instead of a truncated grey line.
