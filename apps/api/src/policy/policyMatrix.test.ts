@@ -42,6 +42,9 @@ const MATRIX: Row[] = [
   },
   { role: 'employee', action: 'conversation:create', ctx: { isProjectMember: true }, expected: true },
   { role: 'employee', action: 'conversation:create', ctx: { isProjectMember: false }, expected: false },
+  { role: 'employee', action: 'sandbox:run', ctx: { isProjectMember: true }, expected: true },
+  { role: 'employee', action: 'sandbox:run', ctx: { isProjectMember: false }, expected: false },
+  { role: 'super_admin', action: 'sandbox:run', ctx: { isProjectMember: false }, expected: true },
   { role: 'employee', action: 'conversation:read', ctx: { isProjectMember: true }, expected: true },
   { role: 'employee', action: 'conversation:message', ctx: { isProjectMember: true }, expected: true },
   { role: 'employee', action: 'document:upload', ctx: { isProjectMember: true }, expected: true },
@@ -122,7 +125,7 @@ describe('can() — unified policy matrix', () => {
   it('covers every Action value at least once', () => {
     const covered = new Set(MATRIX.map((r) => r.action));
     const allActions: Action[] = [
-      'login', 'model:invoke', 'conversation:create', 'conversation:read', 'conversation:message',
+      'login', 'model:invoke', 'conversation:create', 'conversation:read', 'conversation:message', 'sandbox:run',
       'document:upload', 'document:read', 'tool:invoke', 'admin:traces:read', 'admin:usage:read',
       'access_request:create', 'access_request:approve', 'access_grant:read', 'user:create',
       'user:disable', 'group:manage', 'admin:policies:read', 'admin:policies:write',

@@ -135,7 +135,7 @@ export function AppShell({
           {item('workspace', 'My files', 'layers')}
         </SidebarSection>
 
-        {recent.length > 0 && (
+        {recent.length > 0 && !isAdmin && (
           <SidebarSection label="Recent chats">
             {recent.map((c) => (
               <SidebarNavItem
@@ -174,7 +174,7 @@ export function AppShell({
           </div>
         </div>
         <div className="flex flex-col gap-0.5">
-          <SidebarNavItem label="What OpeX remembers" icon={<Icon name="memory" />} active={activeKey === 'my-memories'} onClick={() => onNavigate('my-memories')} />
+          {/* <SidebarNavItem label="What OpeX remembers" icon={<Icon name="memory" />} active={activeKey === 'my-memories'} onClick={() => onNavigate('my-memories')} /> */}
           <SidebarNavItem label="Sign out" icon={<Icon name="logout" />} onClick={onLoggedOut} />
         </div>
       </div>

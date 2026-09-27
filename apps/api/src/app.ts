@@ -30,6 +30,7 @@ import { createMemoryRouter } from './routes/memory.js';
 import { createModelsRouter } from './routes/models.js';
 import { createFeedbackRouter } from './routes/feedback.js';
 import { createAdminSystemRouter } from './routes/adminSystem.js';
+import { createSandboxRunRouter } from './routes/sandboxRun.js';
 import { createDbAuditWriter } from './audit/writeAudit.js';
 
 export function createApp(db: Db, env: Env): Express {
@@ -49,6 +50,7 @@ export function createApp(db: Db, env: Env): Express {
   app.use(createConversationsRouter(db, gateway, spanWriter, env, auditWriter));
   app.use(createDocumentsRouter(db, env.DATA_DIR));
   app.use(createRetrievalRouter(db, gateway, spanWriter));
+  app.use(createSandboxRunRouter(db, spanWriter, auditWriter, env));
   app.use(createAdminRouter(db, auditWriter));
   app.use(createAdminFilesRouter(db, auditWriter, env.DATA_DIR));
   app.use(createWorkspaceRouter(db, auditWriter, env.DATA_DIR));

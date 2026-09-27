@@ -148,6 +148,20 @@ export async function createConversation(projectId: string): Promise<{ id: strin
   return request('/conversations', { method: 'POST', body: JSON.stringify({ projectId }) });
 }
 
+export interface RunSnippetResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  stdoutTruncated: boolean;
+  stderrTruncated: boolean;
+  timedOut: boolean;
+}
+
+/** Runs a Python snippet from a chat code block for real, in the same sandbox the agent uses. */
+export async function runSnippet(projectId: string, code: string): Promise<RunSnippetResult> {
+  return request<RunSnippetResult>(`/projects/${projectId}/sandbox/run`, { method: 'POST', body: JSON.stringify({ code }) });
+}
+
 export async function fetchDocuments(projectId: string): Promise<ApiDocument[]> {
   return request<ApiDocument[]>(`/projects/${projectId}/documents`);
 }

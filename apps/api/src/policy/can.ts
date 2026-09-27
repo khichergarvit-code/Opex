@@ -55,7 +55,8 @@ export function can(
 
     case 'conversation:create':
     case 'conversation:read':
-    case 'conversation:message': {
+    case 'conversation:message':
+    case 'sandbox:run': {
       if (user.role === 'super_admin' || user.role === 'workspace_admin') {
         return { allowed: true };
       }

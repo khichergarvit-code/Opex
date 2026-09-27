@@ -814,6 +814,7 @@ export function ChatPage({
                   messages={messages}
                   onOpenCitation={(c) => onOpenCitation(c.documentId, c.page, c.bbox)}
                   onFeedback={(messageId, rating) => submitFeedback(messageId, rating)}
+                  projectId={projectId}
                 />
                 {status && <p className="mt-2 text-xs text-faint">{status}</p>}
                 {pendingApproval && (

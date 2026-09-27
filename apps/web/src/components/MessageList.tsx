@@ -123,11 +123,11 @@ function renderTextWithCitations(content: string, citations: Citation[], onOpenC
 }
 
 /** Fenced ```code``` blocks render as a dark, monospaced panel; everything else keeps the citation-chip rendering. */
-function renderContentWithCitations(content: string, citations: Citation[], onOpenCitation: (c: Citation) => void) {
+function renderContentWithCitations(content: string, citations: Citation[], onOpenCitation: (c: Citation) => void, projectId?: string) {
   const segments = splitContentSegments(content);
   return segments.map((seg, i) =>
     seg.kind === 'code' ? (
-      <CodeBlock key={i} code={seg.text} lang={seg.lang} />
+      <CodeBlock key={i} code={seg.text} lang={seg.lang} projectId={projectId} />
     ) : (
       <span key={i}>{renderTextWithCitations(seg.text, citations, onOpenCitation, String(i))}</span>
     ),
@@ -143,6 +143,7 @@ export function MessageList({
   onForgetMemory,
   busy = false,
   pending,
+  projectId,
 }: {
   messages: DisplayMessage[];
   onOpenCitation: (c: Citation) => void;
@@ -155,6 +156,8 @@ export function MessageList({
   busy?: boolean;
   /** What the server is doing for the newest assistant message, while it is being produced. */
   pending?: { label: string; elapsedMs: number } | null;
+  /** Lets an assistant message's Python code blocks offer a real Run button. */
+  projectId?: string;
 }) {
   const lastId = messages[messages.length - 1]?.id;
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -247,7 +250,7 @@ export function MessageList({
             ) : m.content === '' && progressLine(m) ? (
               progressLine(m)
             ) : (
-              renderContentWithCitations(m.content, m.citations ?? [], onOpenCitation)
+              renderContentWithCitations(m.content, m.citations ?? [], onOpenCitation, projectId)
             )}
           </div>
           )}

@@ -42,6 +42,8 @@ export const projectSchema = z.object({
   workspaceId: z.string().uuid(),
   name: z.string(),
   defaultClassification: classificationSchema,
+  /** Present when an admin can see projects from more than one workspace, so same-named projects stay distinguishable. */
+  workspaceName: z.string().nullable().optional(),
 });
 export type Project = z.infer<typeof projectSchema>;
 
