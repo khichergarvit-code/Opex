@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { AdminUser, Role } from '@opex/shared';
 import { request } from '../../lib/api';
-import { ApiError, createAdminUser, fetchAdminUsers, setAdminUserStatus } from '../../lib/api';
+import { ApiError, createAdminUser, fetchAdminUsers, fetchProjects, setAdminUserStatus } from '../../lib/api';
+import type { Project } from '@opex/shared';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -19,6 +20,8 @@ export function UsersPage({ onBack: _onBack, isSuperAdmin }: { onBack: () => voi
   const [workspaces, setWorkspaces] = useState<WorkspaceRow[]>([]);
   const [workspaceId, setWorkspaceId] = useState('');
   const [newWorkspace, setNewWorkspace] = useState('');
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
+  const [projectId, setProjectId] = useState('');
   const [rows, setRows] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +42,14 @@ export function UsersPage({ onBack: _onBack, isSuperAdmin }: { onBack: () => voi
   useEffect(reload, []);
   useEffect(() => {
     if (isSuperAdmin) request<WorkspaceRow[]>('/admin/workspaces').then((w) => { setWorkspaces(w); setWorkspaceId((cur) => cur || w[0]?.id || ''); }).catch(() => {});
+    fetchProjects().then(setAllProjects).catch(() => {});
   }, [isSuperAdmin]);
+
+  // Only shown when the chosen workspace already has more than one project — otherwise the server picks
+  // (or creates) one automatically. workspaceId is empty for a workspace admin's own account, so fall back
+  // to whatever projects that admin can see.
+  const projectsInWorkspace = workspaceId ? allProjects.filter((p) => p.workspaceId === workspaceId) : allProjects;
+  const needsProjectChoice = role !== 'super_admin' && projectsInWorkspace.length > 1;
 
   async function handleCreateWorkspace(e: React.FormEvent) {
     e.preventDefault();
@@ -58,7 +68,9 @@ export function UsersPage({ onBack: _onBack, isSuperAdmin }: { onBack: () => voi
     e.preventDefault();
     setError(null);
     try {
-      await createAdminUser({ email, name, password, role, clearance: clearance as 0 | 1 | 2 | 3, ...(isSuperAdmin && role !== 'super_admin' && workspaceId ? { workspaceId } : {}) });
+      await createAdminUser({ email, name, password, role, clearance: clearance as 0 | 1 | 2 | 3, ...(isSuperAdmin && role !== 'super_admin' && workspaceId ? { workspaceId } : {}), ...(needsProjectChoice && projectId ? { projectId } : {}) });
+      setProjectId('');
+      fetchProjects().then(setAllProjects).catch(() => {});
       setEmail('');
       setName('');
       setPassword('');
@@ -99,6 +111,14 @@ export function UsersPage({ onBack: _onBack, isSuperAdmin }: { onBack: () => voi
               ))}
             </SelectField>
           )}
+          {needsProjectChoice && (
+            <SelectField label="Project" hint="This workspace has more than one project — pick which one this person joins." value={projectId} onChange={(e) => setProjectId(e.target.value)} required>
+              <option value="">Choose a project…</option>
+              {projectsInWorkspace.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </SelectField>
+          )}
           <SelectField label="Clearance" hint="The most sensitive documents this person may read." value={clearance} onChange={(e) => setClearance(Number(e.target.value))}>
             <option value={0}>0 · Public</option>
             <option value={1}>1 · Internal</option>
@@ -132,6 +152,7 @@ export function UsersPage({ onBack: _onBack, isSuperAdmin }: { onBack: () => voi
             { key: 'email', label: 'Email' },
             { key: 'name', label: 'Name' },
             { key: 'role', label: 'Role' },
+            { key: 'projectName', label: 'Project', render: (r) => r.projectName ?? (r.role === 'super_admin' ? 'All workspaces' : '—') },
             {
               key: 'workspaceName',
               label: 'Workspace',

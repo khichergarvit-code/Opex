@@ -26,6 +26,8 @@ import { navigate } from '../lib/router';
 import { streamMessage } from '../lib/sse';
 import { AppShell } from '../components/AppShell';
 import { Composer } from '../components/Composer';
+import { FollowupBar } from '../components/FollowupBar';
+import { shortModelName } from '../lib/format';
 import { MessageList, type DisplayMessage } from '../components/MessageList';
 import { AgentTimeline } from '../components/AgentTimeline';
 import { ArtifactsPanel, type DisplayArtifact } from '../components/ArtifactsPanel';
@@ -81,6 +83,8 @@ export function ChatPage({
   const [pendingImages, setPendingImages] = useState<MessageAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const [pendingDocs, setPendingDocs] = useState<PendingDoc[]>([]);
+  const [queuedMessage, setQueuedMessage] = useState('');
+  const suppressQueuedRef = useRef(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [chatModels, setChatModels] = useState<ChatModelOption[]>([]);
   const [modelId, setModelId] = useState<string>(() => {
@@ -261,6 +265,8 @@ export function ChatPage({
   }
 
   function stopGenerating() {
+    suppressQueuedRef.current = true;
+    setQueuedMessage('');
     abortRef.current?.abort();
     if (activeConvRef.current) stopConversation(activeConvRef.current).catch(() => {});
     // Show the result at once; the server finishes closing the turn in the background.
@@ -353,6 +359,24 @@ export function ChatPage({
     setPendingDocs([]);
     return runTurn(content, undefined, readyDocs.length > 0, readyDocs);
   }
+
+  // The moment a turn finishes on its own (not via Stop), send whatever follow-up was queued while it ran.
+  useEffect(() => {
+    if (!streaming && queuedMessage && !suppressQueuedRef.current) {
+      const q = queuedMessage;
+      setQueuedMessage('');
+      handleSend(q);
+    }
+    suppressQueuedRef.current = false;
+  }, [streaming]);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape' && streaming) stopGenerating();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [streaming]);
 
   /** Edit: drop the message and everything after it, then re-run with the new text. */
   function handleEdit(messageId: string, text: string) {
@@ -822,23 +846,33 @@ export function ChatPage({
                   <Alert className="mb-2">The chat model isn't running right now. If it is starting, wait a minute; otherwise start it (see RUNNER.md).</Alert>
                 )}
                 {status && /upload|attach|image|vision/i.test(status) && <Alert className="mb-2">{status}</Alert>}
-                <Composer
-                  disabled={!projectId || Boolean(pendingApproval)}
-                  streaming={streaming}
-                  onSend={handleSend}
-                  onStop={stopGenerating}
-                  models={chatModels}
-                  modelId={modelId}
-                  onModelChange={changeModel}
-                  attachments={pendingImages}
-                  uploading={uploading}
-                  onAttach={handleAttach}
-                  onRemoveAttachment={(id) => setPendingImages((prev) => prev.filter((a) => a.id !== id))}
-                  docs={pendingDocs}
-                  onRemoveDoc={(key) => setPendingDocs((prev) => prev.filter((d) => d.key !== key))} onRetryDoc={retryPendingDoc}
-                  documents={documentMode}
-                  onDocumentsChange={setDocumentMode}
-                />
+                {streaming && !pendingApproval ? (
+                  <FollowupBar
+                    contextLabel={projects.find((p) => p.id === projectId)?.name ?? 'This project'}
+                    modelLabel={shortModelName(chatModels.find((m) => m.id === modelId)?.label ?? modelId ?? '')}
+                    queued={queuedMessage}
+                    onQueue={setQueuedMessage}
+                    onStop={stopGenerating}
+                  />
+                ) : (
+                  <Composer
+                    disabled={!projectId || Boolean(pendingApproval)}
+                    streaming={streaming}
+                    onSend={handleSend}
+                    onStop={stopGenerating}
+                    models={chatModels}
+                    modelId={modelId}
+                    onModelChange={changeModel}
+                    attachments={pendingImages}
+                    uploading={uploading}
+                    onAttach={handleAttach}
+                    onRemoveAttachment={(id) => setPendingImages((prev) => prev.filter((a) => a.id !== id))}
+                    docs={pendingDocs}
+                    onRemoveDoc={(key) => setPendingDocs((prev) => prev.filter((d) => d.key !== key))} onRetryDoc={retryPendingDoc}
+                    documents={documentMode}
+                    onDocumentsChange={setDocumentMode}
+                  />
+                )}
               </div>
             </>
           )}
@@ -850,7 +884,7 @@ export function ChatPage({
               <p className="mb-2 text-sm font-semibold text-fg">Activity Run</p>
               <AgentTimeline events={timelineEvents} streaming={streaming} />
             </Card>
-            <Card className="mt-2.5 !p-3.5">
+            <Card className="mt-1.5 !p-3.5">
               <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-faint">Current model</p>
               {lastRoutedAgent ? (
                 <p className="text-sm text-fg">{lastRoutedAgent} agent</p>
@@ -858,7 +892,7 @@ export function ChatPage({
                 <p className="text-sm text-faint">No agent routed yet</p>
               )}
             </Card>
-            <Card className="mt-2.5 !p-3.5">
+            <Card className="mt-1.5 !p-3.5">
               <p className="mb-1.5 text-sm font-semibold text-fg">Artifacts</p>
               <ArtifactsPanel artifacts={artifacts} />
             </Card>

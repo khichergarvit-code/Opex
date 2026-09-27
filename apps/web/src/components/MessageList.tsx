@@ -7,6 +7,7 @@ import { Icon } from './ui/Icon';
 import { CitationChip } from './CitationChip';
 import { StatusPill } from './ui/Badge';
 import { FileViewer } from './FileViewer';
+import { CodeBlock, splitContentSegments } from './CodeBlock';
 
 export interface DisplayMessage {
   id: string;
@@ -105,7 +106,7 @@ function EditBox({ initial, onSave, onCancel }: { initial: string; onSave: (text
 }
 
 /** Splits "...bolt [1] needs..." into text/chip parts, rendering a chip for every [n] with a known citation. */
-function renderContentWithCitations(content: string, citations: Citation[], onOpenCitation: (c: Citation) => void) {
+function renderTextWithCitations(content: string, citations: Citation[], onOpenCitation: (c: Citation) => void, keyPrefix: string) {
   if (citations.length === 0) return content;
   const byMarker = new Map(citations.map((c) => [c.marker, c]));
   const parts = content.split(/(\[\d+\])/g);
@@ -114,11 +115,23 @@ function renderContentWithCitations(content: string, citations: Citation[], onOp
     if (match) {
       const citation = byMarker.get(Number(match[1]));
       if (citation) {
-        return <CitationChip key={i} citation={citation} onOpen={onOpenCitation} />;
+        return <CitationChip key={`${keyPrefix}-${i}`} citation={citation} onOpen={onOpenCitation} />;
       }
     }
-    return <span key={i}>{part}</span>;
+    return <span key={`${keyPrefix}-${i}`}>{part}</span>;
   });
+}
+
+/** Fenced ```code``` blocks render as a dark, monospaced panel; everything else keeps the citation-chip rendering. */
+function renderContentWithCitations(content: string, citations: Citation[], onOpenCitation: (c: Citation) => void) {
+  const segments = splitContentSegments(content);
+  return segments.map((seg, i) =>
+    seg.kind === 'code' ? (
+      <CodeBlock key={i} code={seg.text} lang={seg.lang} />
+    ) : (
+      <span key={i}>{renderTextWithCitations(seg.text, citations, onOpenCitation, String(i))}</span>
+    ),
+  );
 }
 
 export function MessageList({

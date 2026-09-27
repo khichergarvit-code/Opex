@@ -167,12 +167,15 @@ export const createUserRequestSchema = z.object({
   clearance: classificationSchema,
   /** Super admin only: which workspace the new person belongs to. Workspace admins always create inside their own. */
   workspaceId: z.string().uuid().optional(),
+  /** Which project to add them to, when their workspace has more than one (otherwise the one project, or a new 'Default Project', is picked automatically). */
+  projectId: z.string().uuid().optional(),
 });
 export type CreateUserRequest = z.infer<typeof createUserRequestSchema>;
 
 export const adminUserSchema = z.object({
   id: z.string().uuid(),
   email: z.string(),
+  projectName: z.string().nullable().optional(),
   name: z.string(),
   role: roleSchema,
   clearance: classificationSchema,

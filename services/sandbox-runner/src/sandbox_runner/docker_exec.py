@@ -24,6 +24,8 @@ import base64
 import json
 import os
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 
 import docker
@@ -63,7 +65,16 @@ def _resolve_persist_path(project_id: str) -> str:
     return os.path.join(PERSIST_HOST_BASE_DIR, project_id)
 
 _BOOTSTRAP_SCRIPT = r"""
-import base64, json, os, subprocess, sys
+import base64, json, os, shutil, subprocess, sys
+
+# Wipe any files a previous job left in /work — real for a reused warm container (see the pool
+# below), harmless (already empty) for a freshly created one.
+for _name in os.listdir("/work"):
+    _p = os.path.join("/work", _name)
+    try:
+        shutil.rmtree(_p) if os.path.isdir(_p) else os.remove(_p)
+    except OSError:
+        pass
 
 payload = json.loads(base64.b64decode(sys.argv[1]))
 input_files = payload["input_files"]
@@ -177,6 +188,143 @@ def _resolve_runtime(client: docker.DockerClient) -> str | None:
     return "runsc" if "runsc" in runtimes else None
 
 
+# --- Warm container pool (non-persist runs only) -----------------------------------------------
+# Every run previously paid a full container create+start+teardown, which dominates latency for
+# short snippets. A persist=true run still always gets its own fresh container (its bind mount is
+# fixed at creation time to one project's directory, so it can never be shared) — only the common,
+# no-persist "run this snippet" path is pooled.
+#
+# A pooled container's own idle process is `sleep infinity`; a run execs the bootstrap into it via
+# `exec_run` instead of creating a new container. All of the hardening flags (network_mode=none,
+# read_only, cap_drop, pids_limit, mem_limit, nano_cpus, security_opt, user) are set once at
+# container *creation* and apply to every exec inside it identically — reuse changes none of them.
+# A container is discarded (not returned to the pool) after MAX_REUSES execs, or the moment it's
+# no longer running, to bound any drift from a misbehaving prior run.
+OUTER_TIMEOUT_PAD = int(os.environ.get("SANDBOX_OUTER_TIMEOUT_PAD", "10"))
+POOL_MAX_PER_IMAGE = int(os.environ.get("SANDBOX_POOL_MAX_PER_IMAGE", "2"))
+MAX_REUSES = int(os.environ.get("SANDBOX_POOL_MAX_REUSES", "25"))
+
+_pool_lock = threading.Lock()
+_pool: dict[str, list[tuple["docker.models.containers.Container", int]]] = {}
+
+
+def _idle_container_kwargs(image: str, runtime: str | None) -> dict:
+    kwargs: dict = {
+        "image": image,
+        "command": ["sleep", "infinity"],
+        "network_mode": "none",
+        "read_only": True,
+        "tmpfs": {"/work": "size=256m,mode=1777"},
+        "volumes": {},
+        "mem_limit": "1g",
+        "nano_cpus": 1_000_000_000,
+        "pids_limit": 128,
+        "cap_drop": ["ALL"],
+        "security_opt": ["no-new-privileges"],
+        "user": "10001",
+        "working_dir": "/work",
+    }
+    if runtime is not None:
+        kwargs["runtime"] = runtime
+    return kwargs
+
+
+def _discard(container) -> None:
+    try:
+        container.remove(force=True)
+    except Exception:
+        pass
+
+
+def _acquire_idle_container(client, image: str, runtime: str | None):
+    """Pops a still-running, not-yet-worn-out idle container for this image, or creates one."""
+    with _pool_lock:
+        bucket = _pool.get(image, [])
+        while bucket:
+            container, reuse_count = bucket.pop()
+            try:
+                container.reload()
+            except Exception:
+                _discard(container)
+                continue
+            if container.status == "running" and reuse_count < MAX_REUSES:
+                return container, reuse_count
+            _discard(container)
+    container = client.containers.create(**_idle_container_kwargs(image, runtime))
+    container.start()
+    return container, 0
+
+
+def _release_idle_container(image: str, container, reuse_count: int, healthy: bool) -> None:
+    """Returns a container to the pool for the next run, or discards it (never leaked either way)."""
+    if healthy and reuse_count < MAX_REUSES:
+        try:
+            container.reload()
+            still_running = container.status == "running"
+        except Exception:
+            still_running = False
+        if still_running:
+            with _pool_lock:
+                bucket = _pool.setdefault(image, [])
+                if len(bucket) < POOL_MAX_PER_IMAGE:
+                    bucket.append((container, reuse_count))
+                    return
+    _discard(container)
+
+
+_exec_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="sandbox-exec")
+
+
+def _run_via_pool(image: str, runtime: str | None, payload_b64: str, timeout_s: int) -> RunResult:
+    container, reuse_count = _acquire_idle_container(docker.from_env(), image, runtime)
+    healthy = False
+    try:
+        outer_timeout = timeout_s + OUTER_TIMEOUT_PAD
+        future = _exec_pool.submit(
+            container.exec_run,
+            ["python3", "-c", _BOOTSTRAP_SCRIPT, payload_b64],
+            user="10001",
+        )
+        try:
+            exit_code, output = future.result(timeout=outer_timeout)
+        except FutureTimeoutError:
+            return RunResult(
+                exit_code=-1,
+                stdout="",
+                stderr="sandbox container did not respond within the outer timeout",
+                stdout_truncated=False,
+                stderr_truncated=False,
+                timed_out=True,
+            )
+
+        raw_logs = (output or b"").decode("utf-8", errors="replace")
+        try:
+            result = json.loads(raw_logs.strip().splitlines()[-1]) if raw_logs.strip() else {}
+        except (json.JSONDecodeError, IndexError):
+            result = {}
+
+        stdout, stdout_trunc = _truncate_text(result.get("stdout", ""), MAX_OUTPUT_BYTES)
+        stderr_text = result.get("stderr", "")
+        if not result:
+            stderr_text = f"bootstrap produced no parseable output; raw logs: {raw_logs[:500]}"
+        stderr, stderr_trunc = _truncate_text(stderr_text, MAX_OUTPUT_BYTES)
+
+        # A clean exec (even one whose *user code* failed, exit_code != 0 inside the JSON) is healthy
+        # and safe to reuse; only exec_run itself failing at the process level says otherwise.
+        healthy = exit_code == 0 or bool(result)
+        return RunResult(
+            exit_code=result.get("exit_code", -1),
+            stdout=stdout,
+            stderr=stderr,
+            stdout_truncated=stdout_trunc,
+            stderr_truncated=stderr_trunc,
+            files=[FileOutput(**f) for f in result.get("files", [])],
+            timed_out=result.get("timed_out", False),
+        )
+    finally:
+        _release_idle_container(image, container, reuse_count + 1, healthy)
+
+
 def run_in_sandbox(
     image: str,
     code: str | None,
@@ -206,6 +354,12 @@ def run_in_sandbox(
     }
     payload_b64 = base64.b64encode(json.dumps(payload).encode()).decode("ascii")
 
+    if not persist:
+        try:
+            return _run_via_pool(image, runtime, payload_b64, timeout_s)
+        except Exception:
+            pass  # any pool trouble falls back to the always-correct fresh-container path below
+
     create_kwargs: dict = {
         "image": image,
         "command": ["python3", "-c", _BOOTSTRAP_SCRIPT, payload_b64],
@@ -232,7 +386,7 @@ def run_in_sandbox(
         # Generous outer bound — the bootstrap enforces the real timeout_s
         # internally via subprocess.run(timeout=...); this just guards
         # against the bootstrap itself (not the user code) hanging.
-        outer_timeout = timeout_s + 10
+        outer_timeout = timeout_s + OUTER_TIMEOUT_PAD
         try:
             container.wait(timeout=outer_timeout)
         except Exception:

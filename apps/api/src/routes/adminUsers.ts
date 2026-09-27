@@ -3,7 +3,7 @@ import { createUserRequestSchema } from '@opex/shared';
 import { desc, eq } from 'drizzle-orm';
 import { Router } from 'express';
 import type { Db } from '../db/client.js';
-import { users, workspaces } from '../db/schema/index.js';
+import { projectMembers, projects, users, workspaces } from '../db/schema/index.js';
 import { adminScope, sameWorkspace } from '../policy/scope.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { can } from '../policy/can.js';
@@ -67,6 +67,37 @@ export function createAdminUsersRouter(db: Db, auditWriter: AuditWriter): Router
       res.status(403).json({ error: 'your account is not assigned to a workspace' });
       return;
     }
+    // Everyone but a platform-wide super admin needs a project to actually do anything (chat, documents —
+    // every project-scoped check in policy/can.ts requires it). Pick or create one now, not later:
+    // no production membership is ever created outside this path or the seed script.
+    let projectName: string | null = null;
+    let chosenProjectId: string | null = null;
+    if (workspaceId) {
+      const workspaceProjects = await db.select({ id: projects.id, name: projects.name }).from(projects).where(eq(projects.workspaceId, workspaceId));
+      if (workspaceProjects.length === 0) {
+        const [created] = await db.insert(projects).values({ workspaceId, name: 'Default Project', defaultClassification: 1 }).returning();
+        chosenProjectId = created!.id;
+        projectName = created!.name;
+      } else if (workspaceProjects.length === 1) {
+        chosenProjectId = workspaceProjects[0]!.id;
+        projectName = workspaceProjects[0]!.name;
+      } else if (parsed.data.projectId) {
+        const match = workspaceProjects.find((p) => p.id === parsed.data.projectId);
+        if (!match) {
+          res.status(400).json({ error: 'that project is not in the chosen workspace' });
+          return;
+        }
+        chosenProjectId = match.id;
+        projectName = match.name;
+      } else {
+        res.status(400).json({
+          error: 'this workspace has more than one project — choose one',
+          projects: workspaceProjects,
+        });
+        return;
+      }
+    }
+
     const passwordHash = await argon2.hash(parsed.data.password);
     const [row] = await db
       .insert(users)
@@ -87,13 +118,16 @@ export function createAdminUsersRouter(db: Db, auditWriter: AuditWriter): Router
         status: users.status,
         createdAt: users.createdAt,
       });
+    if (chosenProjectId) {
+      await db.insert(projectMembers).values({ projectId: chosenProjectId, userId: row!.id }).onConflictDoNothing();
+    }
     await auditWriter.writeAudit({
       actorId: user.id,
       action: 'user.create',
       resource: row!.id,
-      details: { email: parsed.data.email, role: parsed.data.role, clearance: parsed.data.clearance },
+      details: { email: parsed.data.email, role: parsed.data.role, clearance: parsed.data.clearance, projectId: chosenProjectId },
     });
-    res.status(201).json(row);
+    res.status(201).json({ ...row, projectName });
   });
 
   async function setStatus(req: import('express').Request, res: import('express').Response, status: 'active' | 'disabled') {
