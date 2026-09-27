@@ -1,6 +1,9 @@
 import { AnimatePresence, motion } from 'motion/react';
 import type { SseEvent } from '@opex/shared';
 import { EmptyState } from './ui/EmptyState';
+import { CodeBlock } from './CodeBlock';
+
+const CODE_TOOLS = new Set(['code_exec', 'run_shell']);
 
 const EVENT_LABELS: Partial<Record<SseEvent['type'], string>> = {
   route: 'Routed',
@@ -66,12 +69,32 @@ function StepIcon({ isLast, streaming, isError }: { isLast: boolean; streaming: 
   );
 }
 
-/** Built purely from the SSE stream already flowing through lib/sse.ts — no separate backend endpoint. */
-export function AgentTimeline({ events, streaming = false }: { events: SseEvent[]; streaming?: boolean }) {
+/** Built purely from the SSE stream already flowing through lib/sse.ts — no separate backend endpoint;
+ * nothing is persisted, so reopening a chat with real history in it still starts empty here. */
+export function AgentTimeline({
+  events,
+  streaming = false,
+  reopenedWithHistory = false,
+}: {
+  events: SseEvent[];
+  streaming?: boolean;
+  /** True when this chat already has messages but no live events yet — says why honestly, instead of
+   * "no activity yet" next to a transcript that clearly shows the agent did something. */
+  reopenedWithHistory?: boolean;
+}) {
   const visible = events.filter((e) => !HIDDEN.includes(e.type));
   if (visible.length === 0) {
-    return <EmptyState title="No activity yet" description="Send a message to see agent steps here." />;
+    return reopenedWithHistory ? (
+      <EmptyState title="Not kept for a reopened chat" description="Send a new message to see it live." />
+    ) : (
+      <EmptyState title="No activity yet" description="Send a message to see agent steps here." />
+    );
   }
+  // A code_exec/run_shell result's own tool_call carries the tool name; matched by callId so its output
+  // renders as a dark terminal panel instead of a truncated grey line.
+  const callToolNames = new Map(
+    events.filter((e): e is Extract<SseEvent, { type: 'tool_call' }> => e.type === 'tool_call').map((e) => [e.data.callId, e.data.toolName]),
+  );
   return (
     <div className="flex flex-col gap-1">
       <AnimatePresence initial={false}>
@@ -86,7 +109,11 @@ export function AgentTimeline({ events, streaming = false }: { events: SseEvent[
           <StepIcon isLast={i === visible.length - 1} streaming={streaming} isError={event.type === 'error'} />
           <div className="min-w-0 flex-1 border-l-2 border-line pb-1 pl-2.5 leading-tight">
             <p className="text-xs font-semibold text-fg-2">{EVENT_LABELS[event.type] ?? event.type}</p>
-            <p className="text-[11px] leading-snug text-muted">{describeEvent(event)}</p>
+            {event.type === 'tool_result' && CODE_TOOLS.has(callToolNames.get(event.data.callId) ?? '') ? (
+              <CodeBlock code={event.data.summary} lang="output" />
+            ) : (
+              <p className="text-[11px] leading-snug text-muted">{describeEvent(event)}</p>
+            )}
           </div>
         </motion.div>
       ))}

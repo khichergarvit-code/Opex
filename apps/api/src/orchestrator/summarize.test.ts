@@ -45,3 +45,18 @@ describe('batching', () => {
     expect(sampleChunks(all)).toBe(all);
   });
 });
+
+import { isSummarizeAllRequest, stripMarkers } from './summarize.js';
+
+describe('summarise all', () => {
+  it('detects requests for several documents', () => {
+    expect(isSummarizeAllRequest('summarize all')).toBe(true);
+    expect(isSummarizeAllRequest('Summarise every document please')).toBe(true);
+    expect(isSummarizeAllRequest('summarise pump-manual.pdf')).toBe(false);
+    expect(isSummarizeAllRequest('what is in all of them')).toBe(false);
+  });
+
+  it('strips per-document section markers', () => {
+    expect(stripMarkers('Torque is 460 Nm [2]. Then inspect [1, 3].')).toBe('Torque is 460 Nm. Then inspect.');
+  });
+});

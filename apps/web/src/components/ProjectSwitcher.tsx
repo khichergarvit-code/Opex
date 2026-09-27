@@ -10,6 +10,11 @@ export function ProjectSwitcher({ projects, value, onChange }: { projects: Proje
   useDismiss(ref, open, () => setOpen(false));
   const current = projects.find((p) => p.id === value);
   const many = projects.length > 1;
+  // An admin who can see more than one workspace's projects needs the workspace named too — otherwise
+  // two workspaces' same-named "Default Project" rows are indistinguishable. A normal user only ever
+  // has one workspace's projects, so their switcher is unchanged.
+  const multiWorkspace = new Set(projects.map((p) => p.workspaceId)).size > 1;
+  const labelFor = (p: Project) => (multiWorkspace && p.workspaceName ? `${p.name} — ${p.workspaceName}` : p.name);
 
   return (
     <div className="relative" ref={ref}>
@@ -24,7 +29,7 @@ export function ProjectSwitcher({ projects, value, onChange }: { projects: Proje
         <span className="grid h-5 w-5 place-items-center rounded-md bg-accent-100 text-[11px] font-semibold text-accent-700" aria-hidden="true">
           {(current?.name ?? '?').slice(0, 1).toUpperCase()}
         </span>
-        <span className="max-w-[12rem] truncate">{current?.name ?? 'No project'}</span>
+        <span className="max-w-[16rem] truncate">{current ? labelFor(current) : 'No project'}</span>
         {many && <Icon name="arrowDown" className="h-3.5 w-3.5 text-muted" />}
       </button>
       {open && (
@@ -40,7 +45,7 @@ export function ProjectSwitcher({ projects, value, onChange }: { projects: Proje
                 className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm hover:bg-raised ${p.id === value ? 'bg-accent-50 font-medium text-accent-700' : 'text-fg-2'}`}
               >
                 {p.id === value && <Icon name="check" className="h-4 w-4" />}
-                <span className="truncate">{p.name}</span>
+                <span className="truncate">{labelFor(p)}</span>
               </button>
             </li>
           ))}

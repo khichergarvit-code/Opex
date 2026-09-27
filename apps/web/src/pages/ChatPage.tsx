@@ -26,6 +26,9 @@ import { navigate } from '../lib/router';
 import { streamMessage } from '../lib/sse';
 import { AppShell } from '../components/AppShell';
 import { Composer } from '../components/Composer';
+import { FollowupBar } from '../components/FollowupBar';
+import { TaskProgressCard, type TaskStep } from '../components/TaskProgressCard';
+import { shortModelName } from '../lib/format';
 import { MessageList, type DisplayMessage } from '../components/MessageList';
 import { AgentTimeline } from '../components/AgentTimeline';
 import { ArtifactsPanel, type DisplayArtifact } from '../components/ArtifactsPanel';
@@ -81,6 +84,9 @@ export function ChatPage({
   const [pendingImages, setPendingImages] = useState<MessageAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const [pendingDocs, setPendingDocs] = useState<PendingDoc[]>([]);
+  const [queuedMessage, setQueuedMessage] = useState('');
+  const [taskSteps, setTaskSteps] = useState<{ title: string; meta: string; items: TaskStep[] } | null>(null);
+  const suppressQueuedRef = useRef(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [chatModels, setChatModels] = useState<ChatModelOption[]>([]);
   const [modelId, setModelId] = useState<string>(() => {
@@ -157,6 +163,7 @@ export function ChatPage({
     setStreaming(false);
     setPendingImages([]);
     setDocumentMode('auto');
+    setTaskSteps(null);
   }
 
   async function removeChats(target: string | 'all') {
@@ -261,6 +268,8 @@ export function ChatPage({
   }
 
   function stopGenerating() {
+    suppressQueuedRef.current = true;
+    setQueuedMessage('');
     abortRef.current?.abort();
     if (activeConvRef.current) stopConversation(activeConvRef.current).catch(() => {});
     // Show the result at once; the server finishes closing the turn in the background.
@@ -354,6 +363,24 @@ export function ChatPage({
     return runTurn(content, undefined, readyDocs.length > 0, readyDocs);
   }
 
+  // The moment a turn finishes on its own (not via Stop), send whatever follow-up was queued while it ran.
+  useEffect(() => {
+    if (!streaming && queuedMessage && !suppressQueuedRef.current) {
+      const q = queuedMessage;
+      setQueuedMessage('');
+      handleSend(q);
+    }
+    suppressQueuedRef.current = false;
+  }, [streaming]);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape' && streaming) stopGenerating();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [streaming]);
+
   /** Edit: drop the message and everything after it, then re-run with the new text. */
   function handleEdit(messageId: string, text: string) {
     if (streaming) return;
@@ -414,6 +441,9 @@ export function ChatPage({
           setTimelineEvents((prev) => [...prev, event]);
           if (event.type === 'route') {
             setLastRoutedAgent(event.data.agent);
+          }
+          if (event.type === 'steps') {
+            setTaskSteps(event.data);
           }
           if (event.type === 'tool_result') {
             const newArtifacts = event.data.artifactIds.map((id) => ({ id, toolName: 'tool' }));
@@ -630,7 +660,7 @@ export function ChatPage({
       onNewChat={startNewChat}
       onLoggedOut={onLoggedOut}
     >
-      <div className="mx-auto flex h-full max-w-5xl flex-col gap-6 p-4 md:flex-row md:p-6">
+      <div className={`mx-auto flex h-full flex-col gap-6 p-4 md:flex-row md:p-6 ${showTimeline ? 'max-w-7xl' : 'max-w-5xl'}`}>
         <div className="flex flex-1 flex-col">
           <div className="mb-4 flex items-center justify-between">
             <ProjectSwitcher
@@ -790,7 +820,25 @@ export function ChatPage({
                   messages={messages}
                   onOpenCitation={(c) => onOpenCitation(c.documentId, c.page, c.bbox)}
                   onFeedback={(messageId, rating) => submitFeedback(messageId, rating)}
+                  projectId={projectId}
                 />
+                {streaming && taskSteps && (
+                  <div className="mt-3">
+                    <TaskProgressCard
+                      title={taskSteps.title}
+                      meta={taskSteps.meta}
+                      items={taskSteps.items}
+                      elapsedMs={elapsedMs}
+                      onStop={stopGenerating}
+                      onBackground={() => {
+                        // The server keeps going; leaving this chat just stops watching it live —
+                        // reopening it later will show the finished summaries.
+                        notifyChatsChanged();
+                        startNewChat();
+                      }}
+                    />
+                  </div>
+                )}
                 {status && <p className="mt-2 text-xs text-faint">{status}</p>}
                 {pendingApproval && (
                   <ApprovalPrompt
@@ -822,23 +870,33 @@ export function ChatPage({
                   <Alert className="mb-2">The chat model isn't running right now. If it is starting, wait a minute; otherwise start it (see RUNNER.md).</Alert>
                 )}
                 {status && /upload|attach|image|vision/i.test(status) && <Alert className="mb-2">{status}</Alert>}
-                <Composer
-                  disabled={!projectId || Boolean(pendingApproval)}
-                  streaming={streaming}
-                  onSend={handleSend}
-                  onStop={stopGenerating}
-                  models={chatModels}
-                  modelId={modelId}
-                  onModelChange={changeModel}
-                  attachments={pendingImages}
-                  uploading={uploading}
-                  onAttach={handleAttach}
-                  onRemoveAttachment={(id) => setPendingImages((prev) => prev.filter((a) => a.id !== id))}
-                  docs={pendingDocs}
-                  onRemoveDoc={(key) => setPendingDocs((prev) => prev.filter((d) => d.key !== key))} onRetryDoc={retryPendingDoc}
-                  documents={documentMode}
-                  onDocumentsChange={setDocumentMode}
-                />
+                {streaming && !pendingApproval ? (
+                  <FollowupBar
+                    contextLabel={projects.find((p) => p.id === projectId)?.name ?? 'This project'}
+                    modelLabel={shortModelName(chatModels.find((m) => m.id === modelId)?.label ?? modelId ?? '')}
+                    queued={queuedMessage}
+                    onQueue={setQueuedMessage}
+                    onStop={stopGenerating}
+                  />
+                ) : (
+                  <Composer
+                    disabled={!projectId || Boolean(pendingApproval)}
+                    streaming={streaming}
+                    onSend={handleSend}
+                    onStop={stopGenerating}
+                    models={chatModels}
+                    modelId={modelId}
+                    onModelChange={changeModel}
+                    attachments={pendingImages}
+                    uploading={uploading}
+                    onAttach={handleAttach}
+                    onRemoveAttachment={(id) => setPendingImages((prev) => prev.filter((a) => a.id !== id))}
+                    docs={pendingDocs}
+                    onRemoveDoc={(key) => setPendingDocs((prev) => prev.filter((d) => d.key !== key))} onRetryDoc={retryPendingDoc}
+                    documents={documentMode}
+                    onDocumentsChange={setDocumentMode}
+                  />
+                )}
               </div>
             </>
           )}
@@ -846,20 +904,22 @@ export function ChatPage({
 
         {showTimeline && (
           <div className="w-full shrink-0 overflow-y-auto md:w-80">
-            <Card className="!p-3.5">
-              <p className="mb-2 text-sm font-semibold text-fg">Activity Run</p>
-              <AgentTimeline events={timelineEvents} streaming={streaming} />
+            <Card className="!p-2.5">
+              <p className="mb-1 text-sm font-semibold text-fg">Activity Run</p>
+              <AgentTimeline events={timelineEvents} streaming={streaming} reopenedWithHistory={timelineEvents.length === 0 && messages.length > 0} />
             </Card>
-            <Card className="mt-2.5 !p-3.5">
-              <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-faint">Current model</p>
+            <Card className="mt-1 !p-2.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-faint">Current model</p>
               {lastRoutedAgent ? (
                 <p className="text-sm text-fg">{lastRoutedAgent} agent</p>
+              ) : messages.length > 0 ? (
+                <p className="text-sm text-faint">Not shown for a reopened chat — send a new message</p>
               ) : (
                 <p className="text-sm text-faint">No agent routed yet</p>
               )}
             </Card>
-            <Card className="mt-2.5 !p-3.5">
-              <p className="mb-1.5 text-sm font-semibold text-fg">Artifacts</p>
+            <Card className="mt-1 !p-2.5">
+              <p className="mb-0.5 text-sm font-semibold text-fg">Artifacts</p>
               <ArtifactsPanel artifacts={artifacts} />
             </Card>
           </div>

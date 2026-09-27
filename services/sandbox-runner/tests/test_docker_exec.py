@@ -7,6 +7,14 @@ from sandbox_runner import docker_exec
 from sandbox_runner.docker_exec import FileInput, InvalidProjectIdError, run_in_sandbox
 
 
+def _fake_pooled_client(container: MagicMock, exec_json: dict, runtimes: dict | None = None) -> MagicMock:
+    """A pooled (non-persist) run: create the idle container, then exec_run the job into it."""
+    client = _fake_client(container, runtimes)
+    container.exec_run.return_value = (exec_json.get("_exit_code", 0), _logs_json(exec_json))
+    container.status = "running"
+    return client
+
+
 def _fake_client(container: MagicMock, runtimes: dict | None = None) -> MagicMock:
     client = MagicMock()
     client.containers.create.return_value = container
@@ -56,12 +64,13 @@ def test_container_is_created_with_the_exact_hardening_flags() -> None:
 
 
 def test_uses_runsc_when_the_docker_daemon_reports_it_available() -> None:
+    docker_exec._pool.clear()
     container = MagicMock()
-    container.wait.return_value = {"StatusCode": 0}
-    container.logs.return_value = _logs_json(
-        {"exit_code": 0, "stdout": "", "stderr": "", "timed_out": False, "files": []}
+    client = _fake_pooled_client(
+        container,
+        {"exit_code": 0, "stdout": "", "stderr": "", "timed_out": False, "files": []},
+        runtimes={"runc": {}, "runsc": {"path": "/usr/bin/runsc"}},
     )
-    client = _fake_client(container, runtimes={"runc": {}, "runsc": {"path": "/usr/bin/runsc"}})
 
     with patch("docker.from_env", return_value=client):
         run_in_sandbox(image="img", code="pass", command=None, files=[], timeout_s=10)
@@ -84,14 +93,12 @@ def test_raises_when_neither_code_nor_command_given() -> None:
 
 
 def test_truncates_long_stdout() -> None:
+    docker_exec._pool.clear()
     container = MagicMock()
-    container.wait.return_value = {"StatusCode": 0}
     big = "x" * (70 * 1024)
-    container.logs.return_value = _logs_json(
-        {"exit_code": 0, "stdout": big, "stderr": "", "timed_out": False, "files": []}
-    )
+    client = _fake_pooled_client(container, {"exit_code": 0, "stdout": big, "stderr": "", "timed_out": False, "files": []})
 
-    with patch("docker.from_env", return_value=_fake_client(container)):
+    with patch("docker.from_env", return_value=client):
         result = run_in_sandbox(image="img", code="pass", command=None, files=[], timeout_s=10)
 
     assert result.stdout_truncated is True
@@ -99,12 +106,9 @@ def test_truncates_long_stdout() -> None:
 
 
 def test_passes_input_files_via_the_bootstrap_payload_not_put_archive() -> None:
+    docker_exec._pool.clear()
     container = MagicMock()
-    container.wait.return_value = {"StatusCode": 0}
-    container.logs.return_value = _logs_json(
-        {"exit_code": 0, "stdout": "", "stderr": "", "timed_out": False, "files": []}
-    )
-    client = _fake_client(container)
+    client = _fake_pooled_client(container, {"exit_code": 0, "stdout": "", "stderr": "", "timed_out": False, "files": []})
 
     with patch("docker.from_env", return_value=client):
         run_in_sandbox(
@@ -115,51 +119,63 @@ def test_passes_input_files_via_the_bootstrap_payload_not_put_archive() -> None:
             timeout_s=10,
         )
 
-    # No archive API calls — file I/O goes through the bootstrap's own argv payload.
+    # No archive API calls — file I/O goes through the bootstrap's own argv payload, delivered via exec_run.
     assert not container.put_archive.called
     assert not container.get_archive.called
-    command = client.containers.create.call_args.kwargs["command"]
-    assert command[0] == "python3"
-    assert command[1] == "-c"
+    exec_command = container.exec_run.call_args.args[0]
+    assert exec_command[0] == "python3"
+    assert exec_command[1] == "-c"
 
 
 def test_reports_output_files_from_the_bootstrap_json() -> None:
+    docker_exec._pool.clear()
     container = MagicMock()
-    container.wait.return_value = {"StatusCode": 0}
-    container.logs.return_value = _logs_json(
+    client = _fake_pooled_client(
+        container,
         {
             "exit_code": 0,
             "stdout": "",
             "stderr": "",
             "timed_out": False,
             "files": [{"path": "chart.png", "content_base64": "aGVsbG8="}],
-        }
+        },
     )
 
-    with patch("docker.from_env", return_value=_fake_client(container)):
+    with patch("docker.from_env", return_value=client):
         result = run_in_sandbox(image="img", code="pass", command=None, files=[], timeout_s=10)
 
     assert len(result.files) == 1
     assert result.files[0].path == "chart.png"
 
 
-def test_kills_the_container_when_the_outer_wait_times_out() -> None:
+def test_kills_the_container_when_the_outer_wait_times_out(monkeypatch) -> None:
+    docker_exec._pool.clear()
+    monkeypatch.setattr(docker_exec, "OUTER_TIMEOUT_PAD", 0)
     container = MagicMock()
-    container.wait.side_effect = TimeoutError("timed out")
+    container.status = "running"
 
-    with patch("docker.from_env", return_value=_fake_client(container)):
+    def _hangs(*_args, **_kwargs):
+        import time
+
+        time.sleep(2)
+
+    container.exec_run.side_effect = _hangs
+    client = _fake_client(container)
+
+    with patch("docker.from_env", return_value=client):
         result = run_in_sandbox(image="img", code="while True: pass", command=None, files=[], timeout_s=1)
 
     assert result.timed_out is True
-    assert container.kill.called
 
 
 def test_malformed_bootstrap_output_is_reported_not_raised() -> None:
+    docker_exec._pool.clear()
     container = MagicMock()
-    container.wait.return_value = {"StatusCode": 1}
-    container.logs.return_value = b"not json at all"
+    container.status = "running"
+    container.exec_run.return_value = (1, b"not json at all")
+    client = _fake_client(container)
 
-    with patch("docker.from_env", return_value=_fake_client(container)):
+    with patch("docker.from_env", return_value=client):
         result = run_in_sandbox(image="img", code="pass", command=None, files=[], timeout_s=10)
 
     assert result.exit_code == -1
@@ -231,14 +247,60 @@ def test_persist_requires_a_project_id() -> None:
 
 
 def test_no_persist_means_no_extra_volumes() -> None:
+    docker_exec._pool.clear()
     container = MagicMock()
-    container.wait.return_value = {"StatusCode": 0}
-    container.logs.return_value = _logs_json(
-        {"exit_code": 0, "stdout": "", "stderr": "", "timed_out": False, "files": []}
-    )
-    client = _fake_client(container)
+    client = _fake_pooled_client(container, {"exit_code": 0, "stdout": "", "stderr": "", "timed_out": False, "files": []})
 
     with patch("docker.from_env", return_value=client):
         run_in_sandbox(image="img", code="pass", command=None, files=[], timeout_s=10)
 
     assert client.containers.create.call_args.kwargs["volumes"] == {}
+
+
+def test_pool_reuses_the_same_idle_container_across_calls() -> None:
+    docker_exec._pool.clear()
+    container = MagicMock()
+    client = _fake_pooled_client(container, {"exit_code": 0, "stdout": "1", "stderr": "", "timed_out": False, "files": []})
+
+    with patch("docker.from_env", return_value=client):
+        run_in_sandbox(image="img", code="pass", command=None, files=[], timeout_s=10)
+        run_in_sandbox(image="img", code="pass", command=None, files=[], timeout_s=10)
+
+    # Only the first call creates a container; the second reuses it via exec_run.
+    assert client.containers.create.call_count == 1
+    assert container.exec_run.call_count == 2
+    docker_exec._pool.clear()
+
+
+def test_pool_discards_a_container_that_is_no_longer_running() -> None:
+    docker_exec._pool.clear()
+    dead = MagicMock()
+    dead.status = "exited"
+    docker_exec._pool["img"] = [(dead, 0)]
+
+    fresh = MagicMock()
+    client = _fake_pooled_client(fresh, {"exit_code": 0, "stdout": "", "stderr": "", "timed_out": False, "files": []})
+
+    with patch("docker.from_env", return_value=client):
+        run_in_sandbox(image="img", code="pass", command=None, files=[], timeout_s=10)
+
+    assert dead.remove.called
+    assert client.containers.create.called
+    docker_exec._pool.clear()
+
+
+def test_persist_run_never_touches_the_pool() -> None:
+    docker_exec._pool.clear()
+    container = MagicMock()
+    container.wait.return_value = {"StatusCode": 0}
+    container.logs.return_value = _logs_json({"exit_code": 0, "stdout": "", "stderr": "", "timed_out": False, "files": []})
+    client = _fake_client(container)
+    project_id = "11111111-1111-1111-1111-111111111111"
+
+    with patch.object(docker_exec, "PERSIST_BASE_DIR", "/tmp"), patch.object(docker_exec, "PERSIST_HOST_BASE_DIR", "/tmp"):
+        with patch("docker.from_env", return_value=client):
+            run_in_sandbox(image="img", code="pass", command=None, files=[], timeout_s=10, persist=True, project_id=project_id)
+
+    assert not container.exec_run.called
+    assert container.remove.called
+    assert docker_exec._pool == {}

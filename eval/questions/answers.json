@@ -38,5 +38,21 @@
   {
     "question": "What is the maximum dry-run time for the pump?",
     "expectedKeyword": "30"
+  },
+  {
+    "question": "generate a image for photorealistic image of a modern building",
+    "expectedKeyword": "kjfbe"
+  },
+  {
+    "question": "What are the details of cu and benzene",
+    "expectedKeyword": "some_more_precisness"
+  },
+  {
+    "question": "What is information about Ni",
+    "expectedKeyword": "parsing"
+  },
+  {
+    "question": "what is info about cu",
+    "expectedKeyword": "parsing"
   }
 ]

@@ -1,5 +1,7 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/roboto-flex';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
 
 /* Material Tonal · Teal — OpeX's design tokens (Tailwind v4 CSS-first).
    Every colour utility in the app (bg-canvas, text-fg, border-line,
@@ -7,6 +9,7 @@
    block only. The font is an npm package bundled by Vite (no CDN). */
 @theme {
   --font-sans: 'Roboto Flex Variable', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* Surfaces: tonal elevation instead of heavy borders. */
   --color-canvas: #f5faf9;

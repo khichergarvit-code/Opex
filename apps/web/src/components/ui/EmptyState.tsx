@@ -1,13 +1,15 @@
 import { Icon } from './Icon';
 
+/** Compact single-line empty state — an inline icon beside the text, no icon backdrop or stacked
+ * padding, so a card with nothing in it yet reads as one calm line, not a padded box. */
 export function EmptyState({ title, description }: { title: string; description?: string }) {
   return (
-    <div className="flex flex-col items-center px-4 py-10 text-center">
-      <span className="mb-3 grid h-11 w-11 place-items-center rounded-full bg-accent-100 text-accent-600">
-        <Icon name="inbox" className="h-6 w-6" />
-      </span>
-      <p className="text-sm font-medium text-fg-2">{title}</p>
-      {description && <p className="mt-1 max-w-xs text-xs text-muted">{description}</p>}
+    <div className="flex items-center gap-1.5 py-1 text-left text-sm">
+      <Icon name="inbox" className="h-3.5 w-3.5 shrink-0 text-faint" />
+      <p className="min-w-0 truncate text-fg-2">
+        {title}
+        {description && <span className="ml-1.5 text-xs text-muted">{description}</span>}
+      </p>
     </div>
   );
 }

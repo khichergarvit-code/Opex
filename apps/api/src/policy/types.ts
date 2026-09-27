@@ -39,7 +39,8 @@ export type Action =
   | 'admin:feedback:triage'
   | 'admin:system:read'
   | 'admin:conversation:read'
-  | 'admin:audit:read';
+  | 'admin:audit:read'
+  | 'sandbox:run';
 
 export interface PolicyContext {
   /** The workspace that owns the resource. A workspace admin is refused when it differs from their own. */
